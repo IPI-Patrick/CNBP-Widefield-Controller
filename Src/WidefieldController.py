@@ -5,9 +5,6 @@ from Utils.utils import load_window_classes
 
 WINDOWS_FOLDER = os.path.join(os.path.dirname(__file__), "Windows")
 
-def test():
-    print("Test function called")
-
 def setup():
     # Create the window
     dpg.create_context()
@@ -43,10 +40,8 @@ def setup():
     window_classes = load_window_classes(WINDOWS_FOLDER)
     class_objects  = []
     for cls in window_classes:
-        try:
             class_objects.append(cls())  # Each class should create its window in __init__
-        except Exception as e:
-            print(f"Failed to initialize window {cls.__name__}: {e}")
+            # print(f"Failed to initialize window {cls.__name__}: {e}")
 
     dpg.show_viewport()
 

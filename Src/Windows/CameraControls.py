@@ -456,20 +456,25 @@ class CameraSystem:
         dpg.set_value(self.settings_ram_estimate, f"{file_size_mb:.2f} MB")
 
         # Calculate the disk capacity
-        file_location       = settings["spool_location"]
-        total, used, free   = shutil.disk_usage(file_location)
-        disk_used           = used / total
-        file_used           = file_size_b / total
-        total_used          = disk_used + file_used
+        try:
+            file_location       = settings["spool_location"]
+            total, used, free   = shutil.disk_usage(file_location)
 
-        self.update_multi_bar( self.disk_capacity_bar, f"Disk: {total_used:.2%}", disk_used, file_used )
-        
+            disk_used           = used / total
+            file_used           = file_size_b / total
+            total_used          = disk_used + file_used
+
+            self.update_multi_bar( self.disk_capacity_bar, f"Disk: {total_used:.2%}", disk_used, file_used )            
+        except FileNotFoundError:
+            print("CameraSystem: Spool location not found, using default location.")
+
         # Calculate the estimated RAM usage
         ram_used            = psutil.virtual_memory().used / psutil.virtual_memory().total
         ram_total           = psutil.virtual_memory().total        
         file_used           = file_size_b / ram_total
 
         self.update_multi_bar( self.ram_capacity_bar, f"Ram: {ram_used + file_used:.2%}", ram_used, file_used )
+        
 
         # Calculate camera ram usage
         camera_ram_cap      = self.andor.getRamCapacity()
