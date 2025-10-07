@@ -1,0 +1,9 @@
+Acquisition
+===========
+
+pyAndorSDK3 Acquisition class
+-----------------------------
+
+.. autoclass:: pyAndorSDK3.andor_acquisition.Acquisition
+   :members:
+   :show-inheritance:

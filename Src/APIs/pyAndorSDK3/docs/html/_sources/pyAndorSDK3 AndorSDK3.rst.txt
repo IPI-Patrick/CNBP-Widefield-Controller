@@ -1,0 +1,9 @@
+AndorSDK3
+=========
+
+pyAndorSDK3 AndorSDK3 class
+---------------------------
+
+.. autoclass:: pyAndorSDK3.andor_sdk3.AndorSDK3
+   :members:
+   :show-inheritance:

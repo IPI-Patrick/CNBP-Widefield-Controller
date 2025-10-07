@@ -8,6 +8,11 @@ all_items = [
     dpg.mvInputText,         
     dpg.mvInputInt,
     dpg.mvInputFloat,   
+    dpg.mvCombo,
+    dpg.mvComboHeight_Large,
+    dpg.mvComboHeight_Small,
+    dpg.mvComboHeight_Regular,
+    dpg.mvComboHeight_Largest
 ]
 
 # Create the selected button theme
@@ -40,6 +45,7 @@ with dpg.theme() as read_only_theme:
         with dpg.theme_component(item):
             dpg.add_theme_color(dpg.mvThemeCol_Text,        [100, 100, 100])
             dpg.add_theme_color(dpg.mvThemeCol_Button,      [30, 30, 30])
+        
 
 with dpg.theme() as disabled_theme:
 

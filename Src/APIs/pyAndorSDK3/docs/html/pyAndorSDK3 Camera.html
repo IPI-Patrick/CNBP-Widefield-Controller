@@ -1,0 +1,655 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.17.1: http://docutils.sourceforge.net/" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Camera &mdash; pyAndorSDK3  documentation</title>
+      <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="_static/css/theme.css" type="text/css" />
+  <!--[if lt IE 9]>
+    <script src="_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js"></script>
+        <script src="_static/jquery.js"></script>
+        <script src="_static/underscore.js"></script>
+        <script src="_static/doctools.js"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Acquisition" href="pyAndorSDK3%20Acquisition.html" />
+    <link rel="prev" title="AndorSDK3" href="pyAndorSDK3%20AndorSDK3.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+            <a href="index.html" class="icon icon-home"> pyAndorSDK3
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="readme.html">Getting Started with pyAndorSDK3</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="modules.html">pyAndorSDK3 Classes</a><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="pyAndorSDK3%20AndorSDK3.html">AndorSDK3</a></li>
+<li class="toctree-l2 current"><a class="current reference internal" href="#">Camera</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#pyandorsdk3-camera-class">pyAndorSDK3 Camera class</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="pyAndorSDK3%20Acquisition.html">Acquisition</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyAndorSDK3%20Exceptions.html">Exceptions</a></li>
+</ul>
+</li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">pyAndorSDK3</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home"></a> &raquo;</li>
+          <li><a href="modules.html">pyAndorSDK3 Classes</a> &raquo;</li>
+      <li>Camera</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/pyAndorSDK3 Camera.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="camera">
+<h1>Camera<a class="headerlink" href="#camera" title="Permalink to this headline"></a></h1>
+<section id="pyandorsdk3-camera-class">
+<h2>pyAndorSDK3 Camera class<a class="headerlink" href="#pyandorsdk3-camera-class" title="Permalink to this headline"></a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="pyAndorSDK3.andor_camera.Camera">
+<em class="property"><span class="pre">class</span> </em><span class="sig-prename descclassname"><span class="pre">pyAndorSDK3.andor_camera.</span></span><span class="sig-name descname"><span class="pre">Camera</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">lib</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">index</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/pyAndorSDK3/andor_camera.html#Camera"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyAndorSDK3.andor_camera.Camera" title="Permalink to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<p>Each <cite>Camera</cite> object represents a single camera.</p>
+<p>In the below Attributes section where “FeatureName” is listed is just a
+reference and real features are to be used its place - consider the
+examples provided.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="pyAndorSDK3.andor_camera.Camera.FeatureName">
+<span class="sig-name descname"><span class="pre">FeatureName</span></span><a class="headerlink" href="#pyAndorSDK3.andor_camera.Camera.FeatureName" title="Permalink to this definition"></a></dt>
+<dd><p>Access to features - used for both setting and getting feature values.</p>
+<p>e.g. cam.CycleMode = “Fixed”</p>
+<p>e.g. img_size = cam.ImageSizeBytes</p>
+<p>Command features MUST be executed like a function.
+e.g. cam.AcquisitionStart()</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type</dt>
+<dd class="field-odd"><p>any</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="pyAndorSDK3.andor_camera.Camera.min_FeatureName">
+<span class="sig-name descname"><span class="pre">min_FeatureName</span></span><a class="headerlink" href="#pyAndorSDK3.andor_camera.Camera.min_FeatureName" title="Permalink to this definition"></a></dt>
+<dd><p>The minimum value this feature can set.</p>
+<p>e.g. cam.ExposureTime = cam.min_ExposureTime</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type</dt>
+<dd class="field-odd"><p>int or float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="pyAndorSDK3.andor_camera.Camera.max_FeatureName">
+<span class="sig-name descname"><span class="pre">max_FeatureName</span></span><a class="headerlink" href="#pyAndorSDK3.andor_camera.Camera.max_FeatureName" title="Permalink to this definition"></a></dt>
+<dd><p>The max value this feature can set.</p>
+<p>e.g. cam.FrameRate = cam.max_FrameRate</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type</dt>
+<dd class="field-odd"><p>int or float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="pyAndorSDK3.andor_camera.Camera.options_FeatureName">
+<span class="sig-name descname"><span class="pre">options_FeatureName</span></span><a class="headerlink" href="#pyAndorSDK3.andor_camera.Camera.options_FeatureName" title="Permalink to this definition"></a></dt>
+<dd><p>List of legal values for a feature - to be used with Enum features.
+Note: although a value may be legal for that feature it may not be
+available to set at that time - use <cite>is_available_</cite> to confirm the
+availability of a value.</p>
+<p>e.g. legal_values = cam.options_PixelEncoding</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type</dt>
+<dd class="field-odd"><p>list of str</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="pyAndorSDK3.andor_camera.Camera.is_available_FeatureName">
+<span class="sig-name descname"><span class="pre">is_available_FeatureName</span></span><a class="headerlink" href="#pyAndorSDK3.andor_camera.Camera.is_available_FeatureName" title="Permalink to this definition"></a></dt>
+<dd><p>Returns the availability of the specified legal value on an Enum
+feature.</p>
+<p>e.g. avail = cam.is_available_PixelEncoding(“Mono16”)</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type</dt>
+<dd class="field-odd"><p>bool</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="pyAndorSDK3.andor_camera.Camera.available_options_FeatureName">
+<span class="sig-name descname"><span class="pre">available_options_FeatureName</span></span><a class="headerlink" href="#pyAndorSDK3.andor_camera.Camera.available_options_FeatureName" title="Permalink to this definition"></a></dt>
+<dd><p>List of legal values for the Feature that are also available.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type</dt>
+<dd class="field-odd"><p>list of str</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="pyAndorSDK3.andor_camera.Camera.type_FeatureName">
+<span class="sig-name descname"><span class="pre">type_FeatureName</span></span><a class="headerlink" href="#pyAndorSDK3.andor_camera.Camera.type_FeatureName" title="Permalink to this definition"></a></dt>
+<dd><p>Returns the feature type as a str - can be “int”, “float”, “bool”,
+“enumerated_string”, “string” or “command”.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type</dt>
+<dd class="field-odd"><p>str</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyAndorSDK3.andor_camera.Camera.AcquisitionStart">
+<span class="sig-name descname"><span class="pre">AcquisitionStart</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/pyAndorSDK3/andor_camera.html#Camera.AcquisitionStart"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyAndorSDK3.andor_camera.Camera.AcquisitionStart" title="Permalink to this definition"></a></dt>
+<dd><p>An override of the feature AcquisitionStart used to
+populate a list of config details used for Acquisitions.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyAndorSDK3.andor_camera.Camera.acquire">
+<span class="sig-name descname"><span class="pre">acquire</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/pyAndorSDK3/andor_camera.html#Camera.acquire"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyAndorSDK3.andor_camera.Camera.acquire" title="Permalink to this definition"></a></dt>
+<dd><p>Perform a single acquisition and return the image as an
+Acquisition object.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>*args</strong> (<em>tuple of</em><em> (</em><em>str</em><em>, </em><em>Union</em><em>[</em><em>int</em><em>, </em><em>str</em><em>, </em><em>float</em><em>, </em><em>bool</em><em>]</em><em>)</em>) – Multiple key (str) and value (int, str, float, bool) tuple values
+can be passed in as features to set before starting acquisition.</p></li>
+<li><p><strong>**kwargs</strong> (<em>any</em>) – </p></li>
+<li><p><strong>Keywords</strong> – <dl class="simple">
+<dt>timeout<span class="classifier">int, optional</span></dt><dd><p>Time in ms that the image is given to return - once
+timeout is exceeded a CameraException is raised.</p>
+</dd>
+<dt>min_buf<span class="classifier">int, default=2</span></dt><dd><p>Minimum number of buffers to queue for the acquisition.</p>
+</dd>
+<dt>pause_after<span class="classifier">float, default=0.0</span></dt><dd><p>Time in seconds to sleep after acquiring.</p>
+</dd>
+</dl>
+</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>An Acquisition object which controls the image data.
+See Acquisition object docs for more information.</p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p>Acquisition object</p>
+</dd>
+<dt class="field-even">Raises</dt>
+<dd class="field-even"><p><a class="reference internal" href="pyAndorSDK3%20Exceptions.html#pyAndorSDK3.andor_sdk3_exceptions.CameraException" title="pyAndorSDK3.andor_sdk3_exceptions.CameraException"><strong>CameraException</strong></a> – Raises an exception with an SDK3 error code if acquisition
+    fails.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyAndorSDK3.andor_camera.Camera.acquire_series">
+<span class="sig-name descname"><span class="pre">acquire_series</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/pyAndorSDK3/andor_camera.html#Camera.acquire_series"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyAndorSDK3.andor_camera.Camera.acquire_series" title="Permalink to this definition"></a></dt>
+<dd><p>Perform a series acquisition and return the images as a list of
+Acquisition objects.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>*args</strong> (<em>tuple of</em><em> (</em><em>str</em><em>, </em><em>Union</em><em>[</em><em>int</em><em>, </em><em>str</em><em>, </em><em>float</em><em>, </em><em>bool</em><em>]</em><em>)</em>) – Multiple key (str) and value (int, str, float, bool) tuple values
+can be passed in as features to set before starting acquisition</p></li>
+<li><p><strong>**kwargs</strong> (<em>any</em>) – </p></li>
+<li><p><strong>Keywords</strong> – <dl class="simple">
+<dt>timeout<span class="classifier">int, optional</span></dt><dd><p>Time in ms that the image is given to return - once
+timeout is exceeded a CameraException is raised.</p>
+</dd>
+<dt>min_buf<span class="classifier">int, default=2</span></dt><dd><p>Minimum number of buffers to queue for the acquisition.</p>
+</dd>
+<dt>max_buf<span class="classifier">int, default=25</span></dt><dd><p>Maximum number of buffers to initially queue for the
+acquisition or the max number of buffers to use when doing a
+circular acquisition</p>
+</dd>
+<dt>circ_buf<span class="classifier">bool, default=false</span></dt><dd><p>flag to use the queued buffers in a circular fashion - if
+enabled once the last buffer has been used the first buffer
+will be used for the next image etc. If not enabled (default)
+once the last buffer has been used it will ignore the max_buf
+value and queue more buffers until frame_count has been reached
+(or will loop forever if frame_count is not set and Continuous
+CycleMode is currently in use.</p>
+</dd>
+<dt>print_frame<span class="classifier">bool, default=false</span></dt><dd><p>Flag to bring each frame after it is retrieved.</p>
+</dd>
+<dt>print_fps<span class="classifier">bool</span><span class="classifier">, default=false</span></dt><dd><p>Flag to print the current achieved framerate.</p>
+</dd>
+<dt>print_fps_interval<span class="classifier">int, default=1</span></dt><dd><p>Used by print_fps to print every x number of frames.</p>
+</dd>
+<dt>pause_after<span class="classifier">float, default=0.0</span></dt><dd><p>Time in seconds to sleep after acquiring.</p>
+</dd>
+<dt>frame_count<span class="classifier">int, optional</span></dt><dd><p>The number of frames to acquire. Uses FrameCount feature value
+when in Fixed CycleMode - is recommended to use this param when
+in Continuous or will loop until manually stopped or an error
+occurs.</p>
+</dd>
+</dl>
+</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>A list of Acquisition objects which controls the image data.
+See Acquisition object docs for more information.</p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p>list of Acquisition objects</p>
+</dd>
+<dt class="field-even">Raises</dt>
+<dd class="field-even"><p><a class="reference internal" href="pyAndorSDK3%20Exceptions.html#pyAndorSDK3.andor_sdk3_exceptions.CameraException" title="pyAndorSDK3.andor_sdk3_exceptions.CameraException"><strong>CameraException</strong></a> – Raises an exception with an SDK3 error code if acquisition
+    fails.</p>
+</dd>
+</dl>
+<p class="rubric">Example</p>
+<p>Below Sets features AOIHeight to 1000, CycleMode to Fixed and
+FrameCount to 10000 - is set to use 10 buffers in a circular fashion
+and will return these 10 images in a list oldest image first.</p>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">acqs</span> <span class="o">=</span> <span class="n">cam</span><span class="o">.</span><span class="n">acquire_series</span><span class="p">(</span>
+<span class="gp">... </span>        <span class="p">(</span><span class="s2">&quot;AOIHeight&quot;</span><span class="p">,</span><span class="mi">1000</span><span class="p">),</span> <span class="p">(</span><span class="s2">&quot;CycleMode&quot;</span><span class="p">,</span> <span class="s2">&quot;Fixed&quot;</span><span class="p">),</span>
+<span class="gp">... </span>        <span class="p">(</span><span class="n">FrameCount</span><span class="p">,</span><span class="mi">10000</span><span class="p">),</span>
+<span class="gp">... </span>        <span class="n">timeout</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">max_buf</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span> <span class="n">circ_buf</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+</pre></div>
+</div>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyAndorSDK3.andor_camera.Camera.camera">
+<span class="sig-name descname"><span class="pre">camera</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/pyAndorSDK3/andor_camera.html#Camera.camera"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyAndorSDK3.andor_camera.Camera.camera" title="Permalink to this definition"></a></dt>
+<dd><p>Returns the current object.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Deprecated - Exists for backwards compatibility.</p>
+</div>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyAndorSDK3.andor_camera.Camera.close">
+<span class="sig-name descname"><span class="pre">close</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/pyAndorSDK3/andor_camera.html#Camera.close"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyAndorSDK3.andor_camera.Camera.close" title="Permalink to this definition"></a></dt>
+<dd><p>Closes the camera associated with this <cite>Camera</cite> object.</p>
+<p>Note: it is not necessary to call this function as in normal operation
+the opening/closing of the camera is handled automatically.</p>
+<p>If you have manually called close(), open() can be called to reopen
+the camera associated with this <cite>Camera</cite> object.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Raises</dt>
+<dd class="field-odd"><p><a class="reference internal" href="pyAndorSDK3%20Exceptions.html#pyAndorSDK3.andor_sdk3_exceptions.ATCoreException" title="pyAndorSDK3.andor_sdk3_exceptions.ATCoreException"><strong>ATCoreException</strong></a> – Raises an exception with an SDK3 error code if close fails.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyAndorSDK3.andor_camera.Camera.flush">
+<span class="sig-name descname"><span class="pre">flush</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/pyAndorSDK3/andor_camera.html#Camera.flush"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyAndorSDK3.andor_camera.Camera.flush" title="Permalink to this definition"></a></dt>
+<dd><p>Flushes and deletes any buffers the <cite>Camera</cite> object has created.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Raises</dt>
+<dd class="field-odd"><p><a class="reference internal" href="pyAndorSDK3%20Exceptions.html#pyAndorSDK3.andor_sdk3_exceptions.CameraException" title="pyAndorSDK3.andor_sdk3_exceptions.CameraException"><strong>CameraException</strong></a> – Raises an exception with an SDK3 error code if flush fails.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyAndorSDK3.andor_camera.Camera.get_previous_acquisition_series">
+<span class="sig-name descname"><span class="pre">get_previous_acquisition_series</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/pyAndorSDK3/andor_camera.html#Camera.get_previous_acquisition_series"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyAndorSDK3.andor_camera.Camera.get_previous_acquisition_series" title="Permalink to this definition"></a></dt>
+<dd><p>Returns the list of images from the most recent acquire_series.
+This is most useful for retrieval of images when acquire_series
+failed with an exception.</p>
+<p class="rubric">Example</p>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="k">try</span><span class="p">:</span>
+<span class="gp">... </span>   <span class="n">acqs</span> <span class="o">=</span> <span class="n">cam</span><span class="o">.</span><span class="n">acquire_series</span><span class="p">((</span><span class="s2">&quot;FrameCount&quot;</span><span class="p">,</span><span class="mi">5</span><span class="p">),</span> <span class="mi">5000</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="k">except</span><span class="p">:</span>
+<span class="gp">... </span>    <span class="n">acqs</span> <span class="o">=</span> <span class="n">cam</span><span class="o">.</span><span class="n">get_previous_acquisition_series</span><span class="p">()</span>
+<span class="gp">... </span>    <span class="n">num_acq</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">acqs</span><span class="p">)</span>
+<span class="gp">... </span>    <span class="n">err</span> <span class="o">=</span> <span class="s2">&quot;Error during acquire_series got </span><span class="si">{}</span><span class="s2"> imgs&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">num_acq</span><span class="p">)</span>
+<span class="gp">... </span>    <span class="nb">print</span><span class="p">(</span><span class="n">err</span><span class="p">)</span>
+</pre></div>
+</div>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyAndorSDK3.andor_camera.Camera.get_updated_features">
+<span class="sig-name descname"><span class="pre">get_updated_features</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/pyAndorSDK3/andor_camera.html#Camera.get_updated_features"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyAndorSDK3.andor_camera.Camera.get_updated_features" title="Permalink to this definition"></a></dt>
+<dd><p>Returns a list of feature names that has updated since the last
+open of the camera.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p>list of str of feature names that have been updated.</p>
+</dd>
+<dt class="field-even">Return type</dt>
+<dd class="field-even"><p>list</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="pyAndorSDK3.andor_camera.Camera.handle">
+<em class="property"><span class="pre">property</span> </em><span class="sig-name descname"><span class="pre">handle</span></span><a class="headerlink" href="#pyAndorSDK3.andor_camera.Camera.handle" title="Permalink to this definition"></a></dt>
+<dd><p>Returns the camera handle.</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="pyAndorSDK3.andor_camera.Camera.index">
+<em class="property"><span class="pre">property</span> </em><span class="sig-name descname"><span class="pre">index</span></span><a class="headerlink" href="#pyAndorSDK3.andor_camera.Camera.index" title="Permalink to this definition"></a></dt>
+<dd><p>Returns the index of the camera.</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="pyAndorSDK3.andor_camera.Camera.lib">
+<em class="property"><span class="pre">property</span> </em><span class="sig-name descname"><span class="pre">lib</span></span><a class="headerlink" href="#pyAndorSDK3.andor_camera.Camera.lib" title="Permalink to this definition"></a></dt>
+<dd><p>Access to the Andor lib functions (listed in andor_sdk3_internals).</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Not recommended to use this to access functions.</p>
+</div>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyAndorSDK3.andor_camera.Camera.open">
+<span class="sig-name descname"><span class="pre">open</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/pyAndorSDK3/andor_camera.html#Camera.open"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyAndorSDK3.andor_camera.Camera.open" title="Permalink to this definition"></a></dt>
+<dd><p>Opens the camera associated with this <cite>Camera</cite> object at the index
+indicated.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>It is not necessary to call this function as in normal operation
+the opening/closing of the camera is handled automatically.</p>
+<p>If you have manually called close(), open() can be called to
+reopen the camera associated with this <cite>Camera</cite> object.</p>
+</div>
+<dl class="field-list simple">
+<dt class="field-odd">Raises</dt>
+<dd class="field-odd"><p><a class="reference internal" href="pyAndorSDK3%20Exceptions.html#pyAndorSDK3.andor_sdk3_exceptions.CameraException" title="pyAndorSDK3.andor_sdk3_exceptions.CameraException"><strong>CameraException</strong></a> – Raises an exception with an SDK3 error code if open fails.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyAndorSDK3.andor_camera.Camera.queue">
+<span class="sig-name descname"><span class="pre">queue</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">buffer</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">buffer_size</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/pyAndorSDK3/andor_camera.html#Camera.queue"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyAndorSDK3.andor_camera.Camera.queue" title="Permalink to this definition"></a></dt>
+<dd><p>Queues the buffer with buffer_size.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>buffer</strong> (<em>ndarray</em>) – A numpy array of ubyte with size buffer_size.</p></li>
+<li><p><strong>buffer_size</strong> (<em>int</em>) – The size of the buffer to queue.</p></li>
+</ul>
+</dd>
+</dl>
+<p class="rubric">Example</p>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">buffer_size</span> <span class="o">=</span> <span class="n">cam</span><span class="o">.</span><span class="n">ImageSizeBytes</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">buf</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">buffer_size</span><span class="p">,),</span> <span class="n">dtype</span><span class="o">=</span><span class="s1">&#39;B&#39;</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">cam</span><span class="o">.</span><span class="n">queue</span><span class="p">(</span><span class="n">buf</span><span class="p">,</span> <span class="n">buffer_size</span><span class="p">)</span>
+</pre></div>
+</div>
+<dl class="field-list simple">
+<dt class="field-odd">Raises</dt>
+<dd class="field-odd"><p><a class="reference internal" href="pyAndorSDK3%20Exceptions.html#pyAndorSDK3.andor_sdk3_exceptions.CameraException" title="pyAndorSDK3.andor_sdk3_exceptions.CameraException"><strong>CameraException</strong></a> – Raises an exception with an SDK3 error code if queue fails.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyAndorSDK3.andor_camera.Camera.queue_buffer">
+<span class="sig-name descname"><span class="pre">queue_buffer</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">buffer_size</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/pyAndorSDK3/andor_camera.html#Camera.queue_buffer"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyAndorSDK3.andor_camera.Camera.queue_buffer" title="Permalink to this definition"></a></dt>
+<dd><p>Creates and Queues an empty buffer of size ‘buffer_size’.</p>
+<p>The <cite>Camera</cite> object can queue buffers, handle and delete any buffers
+it has queued.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>buffer_size</strong> (<em>int</em>) – The size of the buffer to create and queue.</p>
+</dd>
+<dt class="field-even">Raises</dt>
+<dd class="field-even"><p><a class="reference internal" href="pyAndorSDK3%20Exceptions.html#pyAndorSDK3.andor_sdk3_exceptions.CameraException" title="pyAndorSDK3.andor_sdk3_exceptions.CameraException"><strong>CameraException</strong></a> – Raises an exception with an SDK3 error code if queue fails.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyAndorSDK3.andor_camera.Camera.register_feature_callback">
+<span class="sig-name descname"><span class="pre">register_feature_callback</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">feature</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">func</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/pyAndorSDK3/andor_camera.html#Camera.register_feature_callback"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyAndorSDK3.andor_camera.Camera.register_feature_callback" title="Permalink to this definition"></a></dt>
+<dd><p>Register a feature to a callback function when said feature
+receives updates.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>feature</strong> (<em>str</em>) – The feature to register the callback function to.</p></li>
+<li><p><strong>func</strong> (<em>callable</em>) – The callback function to register for execution.</p></li>
+</ul>
+</dd>
+</dl>
+<p class="rubric">Example</p>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="nd">@sdk3</span><span class="o">.</span><span class="n">event_callback</span> <span class="c1">#callbacks need sdk3.event_callback decorator</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="k">def</span> <span class="nf">callback_func</span><span class="p">(</span><span class="n">handle</span><span class="p">,</span> <span class="n">feature</span><span class="p">):</span>
+<span class="gp">... </span>    <span class="nb">print</span><span class="p">(</span>
+<span class="gp">... </span>        <span class="s2">&quot;callback feature:</span><span class="si">{}</span><span class="s2"> value:</span><span class="si">{}</span><span class="s2"> min:</span><span class="si">{}</span><span class="s2"> max:</span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span>
+<span class="gp">... </span>            <span class="n">feature</span><span class="p">,</span>
+<span class="gp">... </span>            <span class="nb">getattr</span><span class="p">(</span><span class="n">cam</span><span class="p">,</span> <span class="n">feature</span><span class="p">),</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">cam</span><span class="p">,</span> <span class="s2">&quot;min_&quot;</span><span class="o">+</span><span class="n">feature</span><span class="p">),</span>
+<span class="gp">... </span>            <span class="nb">getattr</span><span class="p">(</span><span class="n">cam</span><span class="p">,</span> <span class="s2">&quot;max_&quot;</span><span class="o">+</span><span class="n">feature</span><span class="p">)</span>
+<span class="gp">... </span>        <span class="p">)</span>
+<span class="gp">... </span>    <span class="p">)</span>
+<span class="gp">...</span>
+<span class="gp">...</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Registering callback on FrameRate:&quot;</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">cam</span><span class="o">.</span><span class="n">register_feature_callback</span><span class="p">(</span><span class="s2">&quot;FrameRate&quot;</span><span class="p">,</span> <span class="n">callback_func</span><span class="p">)</span>
+</pre></div>
+</div>
+<dl class="field-list simple">
+<dt class="field-odd">Raises</dt>
+<dd class="field-odd"><p><a class="reference internal" href="pyAndorSDK3%20Exceptions.html#pyAndorSDK3.andor_sdk3_exceptions.CameraException" title="pyAndorSDK3.andor_sdk3_exceptions.CameraException"><strong>CameraException</strong></a> – Raises an exception with an SDK3 error code if regsiter fails.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyAndorSDK3.andor_camera.Camera.register_read">
+<span class="sig-name descname"><span class="pre">register_read</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">addr</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">count</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/pyAndorSDK3/andor_camera.html#Camera.register_read"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyAndorSDK3.andor_camera.Camera.register_read" title="Permalink to this definition"></a></dt>
+<dd><p>Reads register(s) at the address specified.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>addr</strong> (<em>int</em>) – The start address of register(s) to read.</p></li>
+<li><p><strong>count</strong> (<em>int</em><em>, </em><em>optional</em>) – The number of registers to read starting from addr</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>The value(s) of the read registers.
+Returns single int if only 1 register is read, otherwise returns
+a list of ints.</p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p>Union[int, list of int]</p>
+</dd>
+<dt class="field-even">Raises</dt>
+<dd class="field-even"><p><a class="reference internal" href="pyAndorSDK3%20Exceptions.html#pyAndorSDK3.andor_sdk3_exceptions.CameraException" title="pyAndorSDK3.andor_sdk3_exceptions.CameraException"><strong>CameraException</strong></a> – Raises an exception with an SDK3 error code if read fails.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyAndorSDK3.andor_camera.Camera.register_write">
+<span class="sig-name descname"><span class="pre">register_write</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">addr</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">payload</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/pyAndorSDK3/andor_camera.html#Camera.register_write"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyAndorSDK3.andor_camera.Camera.register_write" title="Permalink to this definition"></a></dt>
+<dd><p>Writes the payload value(s) to addr</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>For Internal use only</p>
+</div>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>addr</strong> (<em>int</em>) – Start address of register(s) to write.</p></li>
+<li><p><strong>payload</strong> (<em>Union</em><em>[</em><em>int</em><em>, </em><em>list of int</em><em>]</em>) – Can either be a single value or a list of int values to write
+to the address specified.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Raises</dt>
+<dd class="field-even"><p><a class="reference internal" href="pyAndorSDK3%20Exceptions.html#pyAndorSDK3.andor_sdk3_exceptions.CameraException" title="pyAndorSDK3.andor_sdk3_exceptions.CameraException"><strong>CameraException</strong></a> – Raises an exception with an SDK3 error code if write fails.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyAndorSDK3.andor_camera.Camera.restore_registers">
+<span class="sig-name descname"><span class="pre">restore_registers</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/pyAndorSDK3/andor_camera.html#Camera.restore_registers"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyAndorSDK3.andor_camera.Camera.restore_registers" title="Permalink to this definition"></a></dt>
+<dd><p>Restore the original values of registers written by register_write.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>For Internal use only</p>
+</div>
+<dl class="field-list simple">
+<dt class="field-odd">Raises</dt>
+<dd class="field-odd"><p><a class="reference internal" href="pyAndorSDK3%20Exceptions.html#pyAndorSDK3.andor_sdk3_exceptions.CameraException" title="pyAndorSDK3.andor_sdk3_exceptions.CameraException"><strong>CameraException</strong></a> – Raises an exception with an SDK3 error code if write fails.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyAndorSDK3.andor_camera.Camera.unregister_feature_callback">
+<span class="sig-name descname"><span class="pre">unregister_feature_callback</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">feature</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">func</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/pyAndorSDK3/andor_camera.html#Camera.unregister_feature_callback"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyAndorSDK3.andor_camera.Camera.unregister_feature_callback" title="Permalink to this definition"></a></dt>
+<dd><p>Unregister a callback from a feature.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>feature</strong> (<em>str</em>) – The feature to unregister the callback function.</p></li>
+<li><p><strong>func</strong> (<em>callable</em>) – The callback function to unregister.</p></li>
+</ul>
+</dd>
+</dl>
+<p class="rubric">Example</p>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="nd">@sdk3</span><span class="o">.</span><span class="n">event_callback</span> <span class="c1"># give callbacks sdk3.event_callback decorator</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="k">def</span> <span class="nf">callback_func</span><span class="p">(</span><span class="n">handle</span><span class="p">,</span> <span class="n">feature</span><span class="p">):</span>
+<span class="gp">... </span>    <span class="nb">print</span><span class="p">(</span>
+<span class="gp">... </span>        <span class="s2">&quot;callback feature:</span><span class="si">{}</span><span class="s2"> value:</span><span class="si">{}</span><span class="s2"> min:</span><span class="si">{}</span><span class="s2"> max:</span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span>
+<span class="gp">... </span>            <span class="n">feature</span><span class="p">,</span>
+<span class="gp">... </span>            <span class="nb">getattr</span><span class="p">(</span><span class="n">cam</span><span class="p">,</span> <span class="n">feature</span><span class="p">),</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">cam</span><span class="p">,</span> <span class="s2">&quot;min_&quot;</span><span class="o">+</span><span class="n">feature</span><span class="p">),</span>
+<span class="gp">... </span>            <span class="nb">getattr</span><span class="p">(</span><span class="n">cam</span><span class="p">,</span> <span class="s2">&quot;max_&quot;</span><span class="o">+</span><span class="n">feature</span><span class="p">)</span>
+<span class="gp">... </span>        <span class="p">)</span>
+<span class="gp">... </span>    <span class="p">)</span>
+<span class="gp">...</span>
+<span class="gp">...</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Registering callback on FrameRate:&quot;</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">cam</span><span class="o">.</span><span class="n">register_feature_callback</span><span class="p">(</span><span class="s2">&quot;FrameRate&quot;</span><span class="p">,</span> <span class="n">callback_func</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="c1"># other code here</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">cam</span><span class="o">.</span><span class="n">unregister_feature_callback</span><span class="p">(</span><span class="s2">&quot;FrameRate&quot;</span><span class="p">,</span> <span class="n">callback_func</span><span class="p">)</span>
+</pre></div>
+</div>
+<dl class="field-list simple">
+<dt class="field-odd">Raises</dt>
+<dd class="field-odd"><p><a class="reference internal" href="pyAndorSDK3%20Exceptions.html#pyAndorSDK3.andor_sdk3_exceptions.CameraException" title="pyAndorSDK3.andor_sdk3_exceptions.CameraException"><strong>CameraException</strong></a> – Raises an exception with an SDK3 error code if unregister
+    fails.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyAndorSDK3.andor_camera.Camera.wait_buffer">
+<span class="sig-name descname"><span class="pre">wait_buffer</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">timeout</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/pyAndorSDK3/andor_camera.html#Camera.wait_buffer"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyAndorSDK3.andor_camera.Camera.wait_buffer" title="Permalink to this definition"></a></dt>
+<dd><p>Waits for and returns a Acquisition object within the timeout period
+given (in ms)</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>timeout</strong> (<em>int</em>) – Time in ms that the image is given to return - once timeout is
+exceeded a CameraException is raised.</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>An Acquisition object which controls the image data.
+See Acquisition object docs for more information.</p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p>Acquisition object</p>
+</dd>
+<dt class="field-even">Raises</dt>
+<dd class="field-even"><p><a class="reference internal" href="pyAndorSDK3%20Exceptions.html#pyAndorSDK3.andor_sdk3_exceptions.CameraException" title="pyAndorSDK3.andor_sdk3_exceptions.CameraException"><strong>CameraException</strong></a> – Raises an exception with an SDK3 error code if WaitBuffer
+    fails e.g. 13 - AT_ERR_TIMEDOUT if timeout is exceeded.</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="pyAndorSDK3%20AndorSDK3.html" class="btn btn-neutral float-left" title="AndorSDK3" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="pyAndorSDK3%20Acquisition.html" class="btn btn-neutral float-right" title="Acquisition" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2021, Andor Technology.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>  
+
+  <style>
+    /* Sidebar header (and topbar for mobile) */
+    .wy-side-nav-search, .wy-nav-top {
+      background: #262969;
+    }
+    /* Sidebar */
+    .wy-nav-side {
+      background: #343131;
+    }
+  </style>
+
+
+</body>
+</html>

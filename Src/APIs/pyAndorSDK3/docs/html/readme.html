@@ -1,0 +1,721 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.17.1: http://docutils.sourceforge.net/" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Getting Started with pyAndorSDK3 &mdash; pyAndorSDK3  documentation</title>
+      <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="_static/css/theme.css" type="text/css" />
+  <!--[if lt IE 9]>
+    <script src="_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js"></script>
+        <script src="_static/jquery.js"></script>
+        <script src="_static/underscore.js"></script>
+        <script src="_static/doctools.js"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="pyAndorSDK3 Classes" href="modules.html" />
+    <link rel="prev" title="Welcome to pyAndorSDK3’s documentation!" href="index.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+            <a href="index.html" class="icon icon-home"> pyAndorSDK3
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Getting Started with pyAndorSDK3</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#information">Information</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#installation">Installation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#libraries">Libraries</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#example-initialise-and-open">Example Initialise and Open</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#pyandorsdk3-class-methods">pyAndorSDK3 Class Methods</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#camera-object-usage">Camera Object Usage</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#feature-usage">Feature Usage</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#camera-class-methods">Camera Class Methods</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#acquire-and-acquire-series">acquire() and acquire_series()</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#acquisition-object">Acquisition Object</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#image-metadata">Image Metadata</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#timestamp-metadata">TimeStamp Metadata</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#frame-info-metadata">Frame Info Metadata</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#irig-metadata">IRIG Metadata</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#callbacks">Callbacks</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#examples">Examples</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="modules.html">pyAndorSDK3 Classes</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">pyAndorSDK3</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home"></a> &raquo;</li>
+      <li>Getting Started with pyAndorSDK3</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/readme.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="getting-started-with-pyandorsdk3">
+<h1>Getting Started with pyAndorSDK3<a class="headerlink" href="#getting-started-with-pyandorsdk3" title="Permalink to this headline"></a></h1>
+<section id="information">
+<h2>Information<a class="headerlink" href="#information" title="Permalink to this headline"></a></h2>
+<div class="line-block">
+<div class="line">Python Wrapper for Andor SDK3</div>
+<div class="line">Contains wrapper interface and SDK3 libraries</div>
+<div class="line">Supported platforms: Python3.5.1 +</div>
+</div>
+<div class="line-block">
+<div class="line"><br /></div>
+</div>
+</section>
+<section id="installation">
+<h2>Installation<a class="headerlink" href="#installation" title="Permalink to this headline"></a></h2>
+<p>Installation depending on your python installation:</p>
+<p>Open command console within the same directory as the setup.py:
+NOTE: Using pip to install is preferred</p>
+<ul class="simple">
+<li><p>python3 –m pip install .</p></li>
+</ul>
+<p>or</p>
+<ul class="simple">
+<li><p>python3 setup.py install</p></li>
+</ul>
+<p>Extra functionality to save images as fits files can be included by installing the extra package “save”:</p>
+<ul class="simple">
+<li><p>python3 -m pip install .[save]</p></li>
+</ul>
+<p>Extra functionality to display images can be included by installing the extra package “show”:</p>
+<ul class="simple">
+<li><p>python3 -m pip install .[show]</p></li>
+</ul>
+<p>Also:</p>
+<ul class="simple">
+<li><p>pip3 install .</p></li>
+<li><p>pip3 list</p></li>
+<li><p>pip3 uninstall pyAndorSDK3</p></li>
+</ul>
+<p>‘sudo’ as necessary for Linux</p>
+<p>Any errors or suggestions, please report.</p>
+<div class="line-block">
+<div class="line"><br /></div>
+</div>
+</section>
+<section id="libraries">
+<h2>Libraries<a class="headerlink" href="#libraries" title="Permalink to this headline"></a></h2>
+<p>Windows:</p>
+<p>During installation the appropriate libraries (64/32 bit) are copied into the site-packages folder of your python installation.</p>
+<p>When the pyAndorSDK3 module is imported the site-packages folder containing the libs is added to the systems PATH variable.
+To manually specify a location to search for libraries use:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">pyAndorSDK3</span> <span class="kn">import</span> <span class="n">utils</span>
+
+<span class="n">utils</span><span class="o">.</span><span class="n">add_library_path</span><span class="p">(</span><span class="sa">r</span><span class="s1">&#39;path\to\directory\containing\libraries&#39;</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Linux:</p>
+<p>The pyAndorSDK3 for Linux assumes the user has installed AndorSDK3 for Linux on their system. This will have correctly configured LD_LIBRARY_PATH as well as configuring the correct symbolic links.</p>
+<p>The environment variable LD_LIBRARY_PATH controls the behaviour of the dynamic loader used to find and load the shared libraries needed by a program and so utils.add_library_path() is not used in Linux and will raise NotImplementedError.</p>
+<div class="line-block">
+<div class="line"><br /></div>
+</div>
+</section>
+<section id="example-initialise-and-open">
+<h2>Example Initialise and Open<a class="headerlink" href="#example-initialise-and-open" title="Permalink to this headline"></a></h2>
+<p>Include and initialise AndorSDK3:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">pyAndorSDK3</span> <span class="n">include</span> <span class="n">AndorSDK3</span>
+<span class="n">sdk3</span> <span class="o">=</span> <span class="n">pyAndorSDK3</span><span class="p">()</span>
+</pre></div>
+</div>
+<p>There are three ways to retrieve cameras:</p>
+<p>1 - Open and retrieve specific camera by index (e.g. for camera at index zero):</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">cam</span> <span class="o">=</span> <span class="n">sdk3</span><span class="o">.</span><span class="n">GetCamera</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>2 - Open and retrieve a list of all cameras on the system:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">cameras</span> <span class="o">=</span> <span class="n">sdk3</span><span class="o">.</span><span class="n">cameras</span>
+<span class="n">cam1</span> <span class="o">=</span> <span class="n">cameras</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+<span class="n">cam2</span> <span class="o">=</span> <span class="n">cameras</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+</pre></div>
+</div>
+<p>3 - Using the ‘with’ keyword:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">with</span> <span class="n">sdk3</span><span class="o">.</span><span class="n">GetCamera</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span> <span class="k">as</span> <span class="n">cam</span><span class="p">:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="n">cam</span><span class="o">.</span><span class="n">SerialNumber</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>For all above it is important to know it is not necessary to manually call open or close methods.
+The camera object is automatically opened with GetCamera and is automatically closed when it goes out of scope.</p>
+<div class="line-block">
+<div class="line"><br /></div>
+</div>
+</section>
+<section id="pyandorsdk3-class-methods">
+<h2>pyAndorSDK3 Class Methods<a class="headerlink" href="#pyandorsdk3-class-methods" title="Permalink to this headline"></a></h2>
+<p>The pyAndorSDK3() object has a few methods and properties that are of use as described in the table below:</p>
+<table class="colwidths-given docutils align-default">
+<colgroup>
+<col style="width: 53%" />
+<col style="width: 47%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Example Code</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>sdk3 = pyAndorSDK3()</p></td>
+<td><p>Initialising the pyAndorSDK3 object and the SDK3 library (analogous to AT_Initialise() SDK3 function)</p></td>
+</tr>
+<tr class="row-odd"><td><p>sdk3.Reinitialise()</p></td>
+<td><p>Finalises and Reinitialises the SDK3 Library</p></td>
+</tr>
+<tr class="row-even"><td><p>sdk3.cameras</p></td>
+<td><p>(Property) a list of cameras opened and available for use</p></td>
+</tr>
+<tr class="row-odd"><td><p>sdk3.DeviceCount</p></td>
+<td><p>(Property) the number of cameras available</p></td>
+</tr>
+<tr class="row-even"><td><p>sdk3.SoftwareVersion</p></td>
+<td><p>(Property) the SDK3 Software Version</p></td>
+</tr>
+<tr class="row-odd"><td><p>sdk3.GetCamera(camera_index)</p></td>
+<td><p>Retrieves the camera at the user indicated index (if available)</p></td>
+</tr>
+<tr class="row-even"><td><p>sdk3.event_callback(cb_func)</p></td>
+<td><div class="line-block">
+<div class="line">Creates an event callback function to be used with callback registering.</div>
+<div class="line">Best used as a decorator (see Callbacks section for more info)</div>
+</div>
+</td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="camera-object-usage">
+<h2>Camera Object Usage<a class="headerlink" href="#camera-object-usage" title="Permalink to this headline"></a></h2>
+<section id="feature-usage">
+<h3>Feature Usage<a class="headerlink" href="#feature-usage" title="Permalink to this headline"></a></h3>
+<p>Using pyAndorSDK3 it is not necessary to call specific typed methods and the knowlegde of the type is figured and handled by the wrapper.
+It is very simple to set and get features.</p>
+<table class="colwidths-given docutils align-default">
+<colgroup>
+<col style="width: 53%" />
+<col style="width: 47%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Example Code</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>val = cam.FeatureName</p></td>
+<td><p>Gets the value of FeatureName (use the SDK3 Feature Matrix for Feature Names)</p></td>
+</tr>
+<tr class="row-odd"><td><p>cam.FeatureName = val</p></td>
+<td><p>Sets the FeatureName to the value held by the “val” variable</p></td>
+</tr>
+<tr class="row-even"><td><p>val = cam.CmdFeatureName()</p></td>
+<td><p>Executes the Command Feature with the name CmdFeatureName</p></td>
+</tr>
+<tr class="row-odd"><td><p>val = cam.max_FeatureName</p></td>
+<td><p>Gets the maximum value of FeatureName</p></td>
+</tr>
+<tr class="row-even"><td><p>val = cam.min_FeatureName</p></td>
+<td><p>Gets the minimum value of FeatureName</p></td>
+</tr>
+<tr class="row-odd"><td><p>opts = cam.options_EnumFeatureName</p></td>
+<td><p>Gets the list of legal options for the EnumFeatureName feature</p></td>
+</tr>
+<tr class="row-even"><td><p>avail = cam.is_available_EnumFeatureName(“EnumEntry”)</p></td>
+<td><p>Gets the availablity of a given EnumEntry for an EnumFeature (an EnumEntry maybe legal but unavailable at certain times)</p></td>
+</tr>
+<tr class="row-odd"><td><p>avail_opts = cam.available_options_EnumFeatureName</p></td>
+<td><p>Gets the list of available options for the EnumFeatureName feature</p></td>
+</tr>
+<tr class="row-even"><td><p>feat_type = cam.type_FeatureName</p></td>
+<td><p>Gets the feature type of FeatureName as a string</p></td>
+</tr>
+</tbody>
+</table>
+<div class="line-block">
+<div class="line"><br /></div>
+</div>
+</section>
+<section id="camera-class-methods">
+<h3>Camera Class Methods<a class="headerlink" href="#camera-class-methods" title="Permalink to this headline"></a></h3>
+<p>Below are the methods available for use with the Camera class.
+Most of the available functions revolve around setting up and acquiring images.</p>
+<table class="colwidths-given docutils align-default">
+<colgroup>
+<col style="width: 49%" />
+<col style="width: 51%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Example Code</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>cam.open()</p></td>
+<td><div class="line-block">
+<div class="line">Opens the camera.</div>
+<div class="line">NOTE it is not required to call this as the camera is opened automatically</div>
+<div class="line">If you have manually called close you can call this to reopen the camera associated with this object</div>
+</div>
+</td>
+</tr>
+<tr class="row-odd"><td><p>cam.close()</p></td>
+<td><div class="line-block">
+<div class="line">Closes the camera instance.</div>
+<div class="line">NOTE: it is not required to call this method - close is called automaticaly when the object goes out of scope</div>
+</div>
+</td>
+</tr>
+<tr class="row-even"><td><p>cam.queue(buffer, buffer_size)</p></td>
+<td><p>Calls AT_QueueBuffer with a user created buffer</p></td>
+</tr>
+<tr class="row-odd"><td><p>cam.queue_buffer(buffer_size)</p></td>
+<td><p>Creates and queues an empty buffer of ‘buffer_size’</p></td>
+</tr>
+<tr class="row-even"><td><p>img = cam.wait_buffer(timeout_ms)</p></td>
+<td><p>Calls the AT_WaitBuffer command and waits for and returns the next available image within the timout period given</p></td>
+</tr>
+<tr class="row-odd"><td><p>cam.flush()</p></td>
+<td><p>Calls the AT_Flush command and cleans any existing queued buffers</p></td>
+</tr>
+<tr class="row-even"><td><p>updated_list = cam.get_updated_features()</p></td>
+<td><p>Returns a list of strings with the names of features that have been updated</p></td>
+</tr>
+<tr class="row-odd"><td><p>cam.register_feature_callback(feature, func)</p></td>
+<td><p>Register a callback function to a feature (see Callbacks section for more information)</p></td>
+</tr>
+<tr class="row-even"><td><p>cam.unregister_feature_callback(feature, func)</p></td>
+<td><p>Unregister a feature callback function (see Callbacks section for more information)</p></td>
+</tr>
+<tr class="row-odd"><td><p>img = cam.acquire()</p></td>
+<td><p>Acquires a single image - returns an Acquisition object (see Acquisition Object section for more information)</p></td>
+</tr>
+<tr class="row-even"><td><p>imgs = cam.acquire_series()</p></td>
+<td><p>Acquires &lt;FrameCount&gt; images and returns a list of Acquisition objects - it is recommended to read the docs for this function below</p></td>
+</tr>
+<tr class="row-odd"><td><p>imgs = cam.get_previous_acquisition_series()</p></td>
+<td><p>Returns the list of images from the previous acquire_series (useful for retrieval of images when acquire_series failed with an exception)</p></td>
+</tr>
+<tr class="row-even"><td><p>lib = cam.lib</p></td>
+<td><p>(Property) Returns an instance of the andor_internals object (still recommended to use the camera through its own interface)</p></td>
+</tr>
+<tr class="row-odd"><td><p>hndl = cam.handle</p></td>
+<td><p>(Property) The handle of the camera this object owns</p></td>
+</tr>
+<tr class="row-even"><td><p>index = cam.index</p></td>
+<td><p>(Property) The index of the camera this object owns</p></td>
+</tr>
+</tbody>
+</table>
+<div class="line-block">
+<div class="line"><br /></div>
+</div>
+<section id="acquire-and-acquire-series">
+<h4>acquire() and acquire_series()<a class="headerlink" href="#acquire-and-acquire-series" title="Permalink to this headline"></a></h4>
+<p>With both the acquire and acquire_series it is possible to pass in features and values you wish to assign for the acquisition(s), and other keyword values for the acquisition. E.g.:</p>
+<ul class="simple">
+<li><p>img = cam.acquire((“ElectronicShutteringMode”,”Rolling”), timeout=1000)</p></li>
+<li><p>imgs = cam.acquire_series((“CycleMode”,”Fixed”),(“FrameCount”,100),timeout=5000, max_buf=10, circ_buf=True)</p></li>
+</ul>
+<p>Optional keyword parameters for acquire_series:</p>
+<table class="colwidths-given docutils align-default">
+<colgroup>
+<col style="width: 21%" />
+<col style="width: 9%" />
+<col style="width: 18%" />
+<col style="width: 53%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Keyword</p></th>
+<th class="head"><p>Type</p></th>
+<th class="head"><p>Default</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>timeout</p></td>
+<td><p>int</p></td>
+<td><p>max(5000, ceil(5000 / cam.FrameRate))</p></td>
+<td><p>Sets the timeout of each image</p></td>
+</tr>
+<tr class="row-odd"><td><p>min_buf</p></td>
+<td><p>int</p></td>
+<td><p>2</p></td>
+<td><p>Sets the minimum num buffers to be queued</p></td>
+</tr>
+<tr class="row-even"><td><p>max_buf</p></td>
+<td><p>int</p></td>
+<td><p>25</p></td>
+<td><p>The maximum number of buffers to be assigned before acquisition begins (this is also the muber of buffers used when circular buffer is enabled)</p></td>
+</tr>
+<tr class="row-odd"><td><p>circ_buf</p></td>
+<td><p>bool</p></td>
+<td><p>False</p></td>
+<td><p>Use the assigned buffers in a circular fashion (normal running will create a new buffer for each new acquisition)</p></td>
+</tr>
+<tr class="row-even"><td><p>frame_count</p></td>
+<td><p>int</p></td>
+<td><p>FrameCount feature or 0</p></td>
+<td><div class="line-block">
+<div class="line">The number of frames you want to acquire.</div>
+<div class="line">Sets FrameCount Feature when in Fixed mode.</div>
+<div class="line">When this value is not explicitly passed in it uses the FrameCount Feature value as default value when in Fixed CycleMode and 0 as default when using Continuous so will acquire forever - it is advised to use this parameter when using Continuous or use a threaded stop</div>
+</div>
+</td>
+</tr>
+<tr class="row-odd"><td><p>print_frame</p></td>
+<td><p>bool</p></td>
+<td><p>False</p></td>
+<td><p>Print the data in the acquired frames as they are acquired</p></td>
+</tr>
+<tr class="row-even"><td><p>print_fps</p></td>
+<td><p>bool</p></td>
+<td><p>False</p></td>
+<td><p>Enable to print Effective FrameRate during the acquisition series</p></td>
+</tr>
+<tr class="row-odd"><td><p>print_fps_interval</p></td>
+<td><p>int</p></td>
+<td><p>1</p></td>
+<td><p>The number of frames to acquire before printing Effective FrameRate</p></td>
+</tr>
+<tr class="row-even"><td><p>pause_after</p></td>
+<td><p>float</p></td>
+<td><p>0.0</p></td>
+<td><p>Pause for the specified num seconds after all acquisitions are acquirired</p></td>
+</tr>
+</tbody>
+</table>
+<p>The acquire and acquire_series methods can used as a basis to create custom acquisition functions and routines along with the examples custom_acquisition.py and custom_acquisition_circular_buffer.py</p>
+<div class="line-block">
+<div class="line"><br /></div>
+</div>
+</section>
+</section>
+</section>
+<section id="acquisition-object">
+<h2>Acquisition Object<a class="headerlink" href="#acquisition-object" title="Permalink to this headline"></a></h2>
+<p>The Acquisition objects can be interected with in the following ways:</p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 36%" />
+<col style="width: 64%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Example Code</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>img.image</p></td>
+<td><p>Returns a numpy array of the image data acquired</p></td>
+</tr>
+<tr class="row-odd"><td><p>img.raw_data</p></td>
+<td><p>Returns a copy of the raw image data acquired</p></td>
+</tr>
+<tr class="row-even"><td><p>imgs[2].save(“/path/to/file/filename”, overwrite_if_exist=True)</p></td>
+<td><div class="line-block">
+<div class="line">Saves the second image in a series to path ‘/path/to/file’ and file name “filename.fits”</div>
+<div class="line">Set optional param ‘overwrite_if_exist’ to True to force overwrite files)</div>
+</div>
+</td>
+</tr>
+<tr class="row-odd"><td><p>img.show(cmap=”Greys_r”, image_name=None)</p></td>
+<td><div class="line-block">
+<div class="line">Displays the image using matplotlib</div>
+<div class="line">First optional parameter for matplotlib cmap (defaults to Greys_r see matplotlib colormap doc for other options)</div>
+<div class="line">Second optional parameter for titling the image</div>
+</div>
+</td>
+</tr>
+</tbody>
+</table>
+<div class="line-block">
+<div class="line"><br /></div>
+</div>
+<div class="line-block">
+<div class="line"><br /></div>
+</div>
+<section id="image-metadata">
+<h3>Image Metadata<a class="headerlink" href="#image-metadata" title="Permalink to this headline"></a></h3>
+<section id="timestamp-metadata">
+<h4>TimeStamp Metadata<a class="headerlink" href="#timestamp-metadata" title="Permalink to this headline"></a></h4>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 43%" />
+<col style="width: 57%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>MetdataTimeStamp Options</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>val = img.metadata.timestamp</p></td>
+<td><p>Returns the value of MetadataTimestamp</p></td>
+</tr>
+</tbody>
+</table>
+<div class="line-block">
+<div class="line"><br /></div>
+</div>
+</section>
+<section id="frame-info-metadata">
+<h4>Frame Info Metadata<a class="headerlink" href="#frame-info-metadata" title="Permalink to this headline"></a></h4>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 38%" />
+<col style="width: 62%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>MetatadaFrameInfo Options</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>val = img.metadata.width</p></td>
+<td><p>Returns value of width from MetadataFrameInfo</p></td>
+</tr>
+<tr class="row-odd"><td><p>val = img.metadata.height</p></td>
+<td><p>Returns value of height from MetadataFrameInfo</p></td>
+</tr>
+<tr class="row-even"><td><p>val = img.metadata.stride</p></td>
+<td><p>Returns value of stride from MetadataFrameInfo</p></td>
+</tr>
+<tr class="row-odd"><td><p>val = img.metadata.pixelencoding</p></td>
+<td><p>Returns value of pixelencoding from MetadataFrameInfo</p></td>
+</tr>
+</tbody>
+</table>
+<div class="line-block">
+<div class="line"><br /></div>
+</div>
+</section>
+<section id="irig-metadata">
+<h4>IRIG Metadata<a class="headerlink" href="#irig-metadata" title="Permalink to this headline"></a></h4>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 43%" />
+<col style="width: 57%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>MetatadaIRIGB Options</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>val = img.metadata.irig_nanoseconds</p></td>
+<td><p>Returns value of nanoseconds from MetadataIRIGB</p></td>
+</tr>
+<tr class="row-odd"><td><p>val = img.metadata.irig_seconds</p></td>
+<td><p>Returns value of seconds from MetadataIRIGB</p></td>
+</tr>
+<tr class="row-even"><td><p>val = img.metadata.irig_minutes</p></td>
+<td><p>Returns value of minutes from MetadataIRIGB</p></td>
+</tr>
+<tr class="row-odd"><td><p>val = img.metadata.irig_hours</p></td>
+<td><p>Returns value of hours from MetadataIRIGB</p></td>
+</tr>
+<tr class="row-even"><td><p>val = img.metadata.irig_days</p></td>
+<td><p>Returns value of days from MetadataIRIGB</p></td>
+</tr>
+<tr class="row-odd"><td><p>val = img.metadata.irig_years</p></td>
+<td><p>Returns value of years from MetadataIRIGB</p></td>
+</tr>
+</tbody>
+</table>
+<div class="line-block">
+<div class="line"><br /></div>
+</div>
+<div class="line-block">
+<div class="line"><br /></div>
+</div>
+</section>
+</section>
+</section>
+<section id="callbacks">
+<h2>Callbacks<a class="headerlink" href="#callbacks" title="Permalink to this headline"></a></h2>
+<blockquote>
+<div><p>Callbacks allow the application to receive notification when a feature has indirect change occur, a callback function can be created and attached to a feature.
+Whenever the feature changes in any way, this callback will be triggered, allowing the application to carry out any actions required to respond to the change.</p>
+<p>A callback should complete any work required in the minimal amount of time as it holds up the thread that caused the callback.
+If possible the application should delegate any work to a separate application thread if the action will take a significant amount of time.
+The callback function should not attempt to modify the value of any feature as this can cause lockup</p>
+</div></blockquote>
+<p>Registering callbacks for feature updates is a simple process with 2 main steps.
+First is creating the callback function.
+The second is registering that function to a feature.
+On successfully registering a callback to a feature the callback function will execute once.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="nd">@sdk3</span><span class="o">.</span><span class="n">event_callback</span>    <span class="c1"># notice using sdk.event_callback method as a decorator</span>
+<span class="k">def</span> <span class="nf">func</span><span class="p">(</span><span class="n">handle</span><span class="p">,</span> <span class="n">feature</span><span class="p">):</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;callback handle: </span><span class="si">{}</span><span class="s2">  feature: </span><span class="si">{}</span><span class="s2">  value: </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">handle</span><span class="p">,</span> <span class="n">feature</span><span class="p">,</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">cam</span><span class="p">,</span> <span class="n">feature</span><span class="p">)))</span>
+
+<span class="n">cam</span><span class="o">.</span><span class="n">register_feature_callback</span><span class="p">(</span><span class="s2">&quot;ExposureTime&quot;</span><span class="p">,</span> <span class="n">func</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>It is not necessary to manually unregister feature callbacks as it is done automatically when the camera object goes out of scope.
+But this can be done as below:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">cam</span><span class="o">.</span><span class="n">unregister_feature_callback</span><span class="p">(</span><span class="s2">&quot;ExposureTime&quot;</span><span class="p">,</span> <span class="n">func</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>For a fully executable example see the example callback.py.</p>
+<div class="line-block">
+<div class="line"><br /></div>
+</div>
+</section>
+<section id="examples">
+<h2>Examples<a class="headerlink" href="#examples" title="Permalink to this headline"></a></h2>
+<p>Below is the list of examples available and a small description:</p>
+<table class="colwidths-given docutils align-default">
+<colgroup>
+<col style="width: 40%" />
+<col style="width: 60%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Example Name</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>get_serial_number.py</p></td>
+<td><p>Simply showing how to open the camera and retrieve the camera’s SerialNumber.</p></td>
+</tr>
+<tr class="row-odd"><td><p>get_image_data.py</p></td>
+<td><p>Demonstrating the use of cam.acquire() and cam.acquire_series() methods and showing how the frame_count keyword interacts with the CycleMode.</p></td>
+</tr>
+<tr class="row-even"><td><p>get_image_data_circular_buffer.py</p></td>
+<td><p>Using cam.acquire_series() with the circ_buf keyword.</p></td>
+</tr>
+<tr class="row-odd"><td><p>custom_single_acquisition.py</p></td>
+<td><p>Starting acquisition and acquiring a single image. This is the most basic acquisition example showing the minimum requirement for acquiring.</p></td>
+</tr>
+<tr class="row-even"><td><p>custom_acquisition.py</p></td>
+<td><p>An example acquisition for acquiring a series of images.</p></td>
+</tr>
+<tr class="row-odd"><td><p>custom_acquisition_circular_buffer.py</p></td>
+<td><p>An example acquisition for acquiring a series of images and requeuing buffers in a circular fashion.</p></td>
+</tr>
+<tr class="row-even"><td><p>get_metadata.py</p></td>
+<td><p>Shows how to retrieve metadata from Acquisition objects.</p></td>
+</tr>
+<tr class="row-odd"><td><p>callbacks.py</p></td>
+<td><p>The creation and registering of callback functions to features.</p></td>
+</tr>
+<tr class="row-even"><td><p>using_with_statement.py</p></td>
+<td><p>Showing opening and using the camera using a with statement.</p></td>
+</tr>
+<tr class="row-odd"><td><p>error_handling.py</p></td>
+<td><p>Contains various examples of catching CameraExceptions thrown by pyAndorSDK3 and using the ErrorCodes enum to handle.</p></td>
+</tr>
+<tr class="row-even"><td><p>multi_camera.py</p></td>
+<td><p>Demonstrating how to open and control multiple cameras at once.</p></td>
+</tr>
+<tr class="row-odd"><td><p>framerate_max.py</p></td>
+<td><p>Example of how the framerate by the camera can produce data faster than the interface can trnasfer and how to handle this situation.</p></td>
+</tr>
+<tr class="row-even"><td><p>sensor_cooling.py</p></td>
+<td><p>Setting a camera sensor target temperature and waiting for temperature to stabilise.</p></td>
+</tr>
+<tr class="row-odd"><td><p>accumulation.py</p></td>
+<td><p>An couple of examples to show how to use Image Accumulation.</p></td>
+</tr>
+<tr class="row-even"><td><p>save_images.py</p></td>
+<td><p>Examples for saving image data using acq.save() and astropy.</p></td>
+</tr>
+<tr class="row-odd"><td><p>show_image.py</p></td>
+<td><p>Example for using the acq.show() method.</p></td>
+</tr>
+</tbody>
+</table>
+<div class="line-block">
+<div class="line"><br /></div>
+</div>
+<hr class="docutils" />
+<p>For SDK3 usage or feature specific information please refer to the manual Andor Software Development Kit 3.pdf</p>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="index.html" class="btn btn-neutral float-left" title="Welcome to pyAndorSDK3’s documentation!" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="modules.html" class="btn btn-neutral float-right" title="pyAndorSDK3 Classes" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2021, Andor Technology.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>  
+
+  <style>
+    /* Sidebar header (and topbar for mobile) */
+    .wy-side-nav-search, .wy-nav-top {
+      background: #262969;
+    }
+    /* Sidebar */
+    .wy-nav-side {
+      background: #343131;
+    }
+  </style>
+
+
+</body>
+</html>

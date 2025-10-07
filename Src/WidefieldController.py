@@ -1,6 +1,7 @@
 import os
 from dearpygui import dearpygui as dpg
 import importlib.util
+from Utils.shared_state import class_objects
 from Utils.utils import load_window_classes
 
 WINDOWS_FOLDER = os.path.join(os.path.dirname(__file__), "Windows")
@@ -8,7 +9,18 @@ WINDOWS_FOLDER = os.path.join(os.path.dirname(__file__), "Windows")
 def setup():
     # Create the window
     dpg.create_context()
-    dpg.create_viewport(title='Widefield Controller', width=1600, height=1080, x_pos=0, y_pos=0, always_on_top=True)
+    dpg.create_viewport(
+        title='Widefield Controller', 
+        width=1650, 
+        height=1080, 
+        x_pos=0, 
+        y_pos=0, 
+        always_on_top=True, 
+        decorated=True,
+        resizable=False, 
+        clear_color=[0, 0, 0, 255]
+    )
+
     dpg.setup_dearpygui()
     
     # Create the disabled theme 
@@ -38,7 +50,6 @@ def setup():
 
     # Dynamically load and instantiate window classes
     window_classes = load_window_classes(WINDOWS_FOLDER)
-    class_objects  = []
     for cls in window_classes:
             class_objects.append(cls())  # Each class should create its window in __init__
             # print(f"Failed to initialize window {cls.__name__}: {e}")

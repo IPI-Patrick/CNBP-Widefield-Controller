@@ -1,0 +1,149 @@
+1.22.0 - 16/03/22
+----
+- Fixing CaseSensitiveDict contains override to properly lower the item case
+
+1.21.0 - 21/10/21
+----
+- Updating setup.py to allow for using "setup.py install" command as well as "pip install"
+- Updating README to indicate setup.py install is an option but pip install is preferred
+
+1.20.0 - 02/08/21
+----
+- Updating setup.py to inlcude platform fields
+- Adding Andor branding to html docs
+- Updating andor_camera to use set attr with FrameCount
+- Updating andor_sdk3_exceptions to include ATUtility Error Codes and an ATUtilityExcetion
+- Addng docstring to util.py add_library_path function
+
+1.19.0 - 27/07/21
+----
+- Another documentation overhaul
+- Added sphinx generation of HTML documentation in the docs folder (end user outputs will be found in docs/HTML folder)
+- Updating README Callback section with more information
+- Added a few new examples
+    - using accumulation (accumulation.py)
+    - handling exceptions raised by pyAndorSDK3 (error_handling.py)
+    - understanding the max framerate of the camera vs max framerate the interface is capable of doing (framerate_max.py)
+    - using multiple cameras concurrently (multi_camera.py)
+    - cooling the sensor and waiting for colling to stabilise (sensor_cooling.py)
+- Updated some existing examples with some better examples and/or better documentation
+- Added better error handling to check exceptions thrown by pyAndorSDK3 to check for specific error codes and strings (see examples/error_handling.py for more info)
+- Fixed various docstrngs and expanded others across various files
+- Adding Andor Licence to LICENCE.txt
+- Updating and adding various files to allow for building and uploading to PyPI if desired
+
+1.18.0 - 31/05/21
+----
+- Added lib, handle and index properties for public use in Camera object
+- Updating private single underscore to be double underscore where appropriate
+- Updating to have docstrings where appropriate
+- Updating all classes to conform to PEP8
+
+1.17.0 - 08/04/21
+----
+- Adding flush, queue_buffer and wait_buffer public functions to use rather than the private functions
+- Adding AcquisitionStart function to override AcquisitionStart feature to call _populate_config so users no longer have to call configure
+- Updated existing examples use public functions instead of private (and some minor tidying)
+- Removed dependancy on PyFits and replaced with astropy
+- Matplotlib and astropy are now optional dependancies and and only need to be installed if displaying and/or saving images (see README for further details)
+- Added image_name parameter to acq.show() to allow for naming the image that is shown
+- Updated event_callback to have option to use call backs with either one or two parameters (one will be featurename and two will be handle and featurename)
+- Fixed exception thrown when using 'type_' feature function
+- Fixed acq.show() method to actually show the image
+- Added examples:
+    - for demonstrating the minimum method calls and feature sets required for acquiring a single image
+    - two new examples to demonstrate circular buffers
+    - for using the 'with' keyword
+    - for using callbacks
+    - for saving images (both showing acq.save and astropy fits.writeto)
+    - for displaying images with acq.show
+- Updated documentation to 
+    - document other camera methods
+    - include missing frame_count param from acquire_series table
+    - add info on optional dependancies
+    - add callback information and example usage
+    - add a table of existing examples with descriptions
+
+1.16.0 - 03/12/20
+----
+- Added function to utils to specify a location to search for libraries. This is a Windows only feature as doing this in Linux is a non-trivial thing and is best left alone.
+- Updated README with information on Libraries
+- Updated get_metadata example to only get irig if implemented
+- Added wheel to required modules - needed for newer versions of python
+
+1.15.0 - 12/10/20
+----
+- Update to fix crash when metadataIRIG is unavailable in certain cameras
+
+1.14.0 - 06/11/19
+----
+- Adding function to reinitialise the sdk. 
+
+1.13.0 - 30/10/19
+----
+- Updating acquire_series to check for AccumulateCount availability before attempting to use - this will allow the use of older verions of SDK3 which do not have AccumulateCount available to be used
+
+1.12.0 - 04/07/19
+----
+- Updating to remove cameracontext - Camera object now handles its own context
+- Updating to add cameras list as a property to AndorSDK3 which will retrieve camera list on request rather than on init of AndorSDK3
+- Fixed issue with garbage collecting objects out of order in some circumstances
+- Updating README to include initialising the wrapper and opening cameras
+
+1.11.0 - 27/06/19
+----
+- Lib open didn't raise a CameraException when an ATCoreException was raised.
+
+1.10.0 - 20/06/19
+----
+- Updating acquire_series print_fps to start timer after acquisition start so it does not include acqstart in its rates
+- Also changing print_fps_internal to match docs
+
+1.9.0 - 14/06/19
+----
+- Adding print_fps, print_fps_interval to acquire_series
+- Adding get_previous_acquisition_series to enable retrieval of acquisition series from a failed acquisition
+- Updating documentation README and adding a pdf version
+
+1.8.0 - 28/05/19
+----
+- Fixing initialise of the pixelEncodingSize in andor_utility - was causing a double-free on linux
+
+1.7.0 - 27/05/19
+----
+- Adding Metadata functionality. Making ATUtility functionality more pythonic
+
+1.6.0 - 02/05/19
+----
+- Fixing issue with certain feature functions not working as intended
+
+1.5.0 - 29/04/19
+----
+- Adding feature function option "available_options_" (e.g. cam.available_options_PixelEncoding will return all the available legal options for the feature "PixelEncoding")
+- Updating README on usage for "available_options_"
+- Updating to prevent creating feature access functions every time a feature is accessed for both sets and gets
+- Updating to prevent a set when using feature functions
+
+1.4.0 - 18/04/19
+----
+- Updating acq_series to use queue for series for more efficient circ_buf (will still return a list)
+- Updating andor_acquisition to accept config dict again due to issues where it the feature requests were causing overflow errors on very high framerates
+- Adding custom_acquisition.py example
+
+1.3.0 - 05/03/19
+----
+- Updated andor_camera to remove need for andor_strings - now will only get features as needed and store types in a dict
+- Removed andor_strings
+- Updated andor_acquisition to just check a small set of features for image config now the entire config list is gone
+- Updated setup.py and andor_acquisition to now depend on astropy for fits rather than the deprecated pyfits
+
+1.2.0 - 01/03/19
+----
+- Updating andor_strings.py to be generated internally to create a customer and internal versions of the pyAndorSDK3
+- Updating README to with more up-to-date information
+
+1.1.0 - 26/02/19
+----
+- Adding changelog.txt
+- Updating andor_strings.py to disable query for config info for QCFileBuffer and CameraInfoFileBuffer
+- Updating _version.py to indicate meanings of versions and how to update

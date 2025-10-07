@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>pyAndorSDK3.andor_sdk3_exceptions &mdash; pyAndorSDK3  documentation</title>
+      <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="../../_static/css/theme.css" type="text/css" />
+  <!--[if lt IE 9]>
+    <script src="../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script data-url_root="../../" id="documentation_options" src="../../_static/documentation_options.js"></script>
+        <script src="../../_static/jquery.js"></script>
+        <script src="../../_static/underscore.js"></script>
+        <script src="../../_static/doctools.js"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+            <a href="../../index.html" class="icon icon-home"> pyAndorSDK3
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../readme.html">Getting Started with pyAndorSDK3</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../modules.html">pyAndorSDK3 Classes</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">pyAndorSDK3</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home"></a> &raquo;</li>
+          <li><a href="../index.html">Module code</a> &raquo;</li>
+      <li>pyAndorSDK3.andor_sdk3_exceptions</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for pyAndorSDK3.andor_sdk3_exceptions</h1><div class="highlight"><pre>
+<span></span><span class="kn">from</span> <span class="nn">enum</span> <span class="kn">import</span> <span class="n">IntEnum</span><span class="p">,</span> <span class="n">unique</span>
+
+
+<div class="viewcode-block" id="ErrorCodes"><a class="viewcode-back" href="../../pyAndorSDK3%20Exceptions.html#pyAndorSDK3.andor_sdk3_exceptions.ErrorCodes">[docs]</a><span class="nd">@unique</span>
+<span class="k">class</span> <span class="nc">ErrorCodes</span><span class="p">(</span><span class="n">IntEnum</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;SDK3 AT Error Codes&quot;&quot;&quot;</span>
+
+    <span class="c1"># ATCore Codes</span>
+    <span class="n">AT_SUCCESS</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="n">AT_ERR_NOTINITIALISED</span> <span class="o">=</span> <span class="mi">1</span>
+    <span class="n">AT_ERR_NOTIMPLEMENTED</span> <span class="o">=</span> <span class="mi">2</span>
+    <span class="n">AT_ERR_READONLY</span> <span class="o">=</span> <span class="mi">3</span>
+    <span class="n">AT_ERR_NOTREADABLE</span> <span class="o">=</span> <span class="mi">4</span>
+    <span class="n">AT_ERR_NOTWRITABLE</span> <span class="o">=</span> <span class="mi">5</span>
+    <span class="n">AT_ERR_OUTOFRANGE</span> <span class="o">=</span> <span class="mi">6</span>
+    <span class="n">AT_ERR_INDEXNOTAVAILABLE</span> <span class="o">=</span> <span class="mi">7</span>
+    <span class="n">AT_ERR_INDEXNOTIMPLEMENTED</span> <span class="o">=</span> <span class="mi">8</span>
+    <span class="n">AT_ERR_EXCEEDEDMAXSTRINGLENGTH</span> <span class="o">=</span> <span class="mi">9</span>
+    <span class="n">AT_ERR_CONNECTION</span> <span class="o">=</span> <span class="mi">10</span>
+    <span class="n">AT_ERR_NODATA</span> <span class="o">=</span> <span class="mi">11</span>
+    <span class="n">AT_ERR_INVALIDHANDLE</span> <span class="o">=</span> <span class="mi">12</span>
+    <span class="n">AT_ERR_TIMEDOUT</span> <span class="o">=</span> <span class="mi">13</span>
+    <span class="n">AT_ERR_BUFFERFULL</span> <span class="o">=</span> <span class="mi">14</span>
+    <span class="n">AT_ERR_INVALIDSIZE</span> <span class="o">=</span> <span class="mi">15</span>
+    <span class="n">AT_ERR_INVALIDALIGNMENT</span> <span class="o">=</span> <span class="mi">16</span>
+    <span class="n">AT_ERR_COMM</span> <span class="o">=</span> <span class="mi">17</span>
+    <span class="n">AT_ERR_STRINGNOTAVAILABLE</span> <span class="o">=</span> <span class="mi">18</span>
+    <span class="n">AT_ERR_STRINGNOTIMPLEMENTED</span> <span class="o">=</span> <span class="mi">19</span>
+    <span class="n">AT_ERR_NULL_FEATURE</span> <span class="o">=</span> <span class="mi">20</span>
+    <span class="n">AT_ERR_NULL_HANDLE</span> <span class="o">=</span> <span class="mi">21</span>
+    <span class="n">AT_ERR_NULL_IMPLEMENTED_VAR</span> <span class="o">=</span> <span class="mi">22</span>
+    <span class="n">AT_ERR_NULL_READABLE_VAR</span> <span class="o">=</span> <span class="mi">23</span>
+    <span class="n">AT_ERR_NULL_READONLY_VAR</span> <span class="o">=</span> <span class="mi">24</span>
+    <span class="n">AT_ERR_NULL_WRITABLE_VAR</span> <span class="o">=</span> <span class="mi">25</span>
+    <span class="n">AT_ERR_NULL_MINVALUE</span> <span class="o">=</span> <span class="mi">26</span>
+    <span class="n">AT_ERR_NULL_MAXVALUE</span> <span class="o">=</span> <span class="mi">27</span>
+    <span class="n">AT_ERR_NULL_VALUE</span> <span class="o">=</span> <span class="mi">28</span>
+    <span class="n">AT_ERR_NULL_STRING</span> <span class="o">=</span> <span class="mi">29</span>
+    <span class="n">AT_ERR_NULL_COUNT_VAR</span> <span class="o">=</span> <span class="mi">30</span>
+    <span class="n">AT_ERR_NULL_ISAVAILABLE_VAR</span> <span class="o">=</span> <span class="mi">31</span>
+    <span class="n">AT_ERR_NULL_MAXSTRINGLENGTH</span> <span class="o">=</span> <span class="mi">32</span>
+    <span class="n">AT_ERR_NULL_EVCALLBACK</span> <span class="o">=</span> <span class="mi">33</span>
+    <span class="n">AT_ERR_NULL_QUEUE_PTR</span> <span class="o">=</span> <span class="mi">34</span>
+    <span class="n">AT_ERR_NULL_WAIT_PTR</span> <span class="o">=</span> <span class="mi">35</span>
+    <span class="n">AT_ERR_NULL_PTRSIZE</span> <span class="o">=</span> <span class="mi">36</span>
+    <span class="n">AT_ERR_NOMEMORY</span> <span class="o">=</span> <span class="mi">37</span>
+    <span class="n">AT_ERR_DEVICEINUSE</span> <span class="o">=</span> <span class="mi">38</span>
+    <span class="n">AT_ERR_HARDWARE_OVERFLOW</span> <span class="o">=</span> <span class="mi">100</span>
+
+    <span class="c1">#AT_Utility Codes</span>
+    <span class="n">AT_ERR_INVALIDOUTPUTPIXELENCODING</span> <span class="o">=</span> <span class="mi">1002</span>
+    <span class="n">AT_ERR_INVALIDINPUTPIXELENCODING</span> <span class="o">=</span> <span class="mi">1003</span>
+    <span class="n">AT_ERR_INVALIDMETADATAINFO</span> <span class="o">=</span> <span class="mi">1004</span>
+    <span class="n">AT_ERR_CORRUPTEDMETADATA</span> <span class="o">=</span> <span class="mi">1005</span>
+    <span class="n">AT_ERR_METADATANOTFOUND</span> <span class="o">=</span> <span class="mi">1006</span>
+    <span class="n">AT_ERR_INVALIDFORMAT</span> <span class="o">=</span> <span class="mi">1008</span>
+    <span class="n">AT_ERR_INVALIDPATH</span> <span class="o">=</span> <span class="mi">1009</span>
+    <span class="n">AT_ERR_NO_NEW_DATA</span> <span class="o">=</span> <span class="mi">1010</span>
+    <span class="n">AT_ERR_SPOOLING_NOT_CONFIGURED</span> <span class="o">=</span> <span class="mi">1011</span></div>
+
+
+<div class="viewcode-block" id="ATException"><a class="viewcode-back" href="../../pyAndorSDK3%20Exceptions.html#pyAndorSDK3.andor_sdk3_exceptions.ATException">[docs]</a><span class="k">class</span> <span class="nc">ATException</span><span class="p">(</span><span class="ne">Exception</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;AT base Exception class</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    err_code : int</span>
+<span class="sd">        The AT error code returned</span>
+
+<span class="sd">        Can ErrorCodes enum to handle specific Exceptions</span>
+<span class="sd">        See error_handling.py example</span>
+<span class="sd">    err_str : str</span>
+<span class="sd">        The error string corrosponding to the error code</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">err_code</span><span class="p">,</span> <span class="n">message</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">):</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">err_code</span> <span class="o">=</span> <span class="n">ErrorCodes</span><span class="p">(</span><span class="n">err_code</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">err_str</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">err_code</span><span class="o">.</span><span class="n">name</span>
+        <span class="k">except</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">err_code</span> <span class="o">=</span> <span class="n">err_code</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">err_str</span> <span class="o">=</span> <span class="s2">&quot;Unknown Error&quot;</span>
+            
+        <span class="n">msg</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="si">{}</span><span class="s2"> (</span><span class="si">{}</span><span class="s2">)&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">err_code</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">err_str</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">message</span> <span class="o">!=</span> <span class="s2">&quot;&quot;</span><span class="p">:</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="si">{}</span><span class="s2"> - </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">message</span><span class="p">,</span> <span class="n">msg</span><span class="p">)</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_get_message</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="nb">str</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="ATCoreException"><a class="viewcode-back" href="../../pyAndorSDK3%20Exceptions.html#pyAndorSDK3.andor_sdk3_exceptions.ATCoreException">[docs]</a><span class="k">class</span> <span class="nc">ATCoreException</span><span class="p">(</span><span class="n">ATException</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Typically thrown by andor_sdk3_internals</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    err_code : int</span>
+<span class="sd">        The AT error code returned</span>
+
+<span class="sd">        Can ErrorCodes enum to handle specific Exceptions</span>
+<span class="sd">        See error_handling.py example</span>
+<span class="sd">    err_str : str</span>
+<span class="sd">        The error string corrosponding to the error code</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">err_code</span><span class="p">,</span> <span class="n">message</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">err_code</span><span class="p">,</span> <span class="n">message</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="CameraException"><a class="viewcode-back" href="../../pyAndorSDK3%20Exceptions.html#pyAndorSDK3.andor_sdk3_exceptions.CameraException">[docs]</a><span class="k">class</span> <span class="nc">CameraException</span><span class="p">(</span><span class="n">ATCoreException</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Exception raised by Camera class</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    err_code : int</span>
+<span class="sd">        The AT error code returned</span>
+
+<span class="sd">        Can use ErrorCodes enum to handle specific Exceptions.</span>
+<span class="sd">        See error_handling.py example.</span>
+<span class="sd">    err_str : str</span>
+<span class="sd">        The error string corrosponding to the error code&quot;&quot;&quot;</span>
+    <span class="k">pass</span></div>
+
+
+<div class="viewcode-block" id="ATUtilityException"><a class="viewcode-back" href="../../pyAndorSDK3%20Exceptions.html#pyAndorSDK3.andor_sdk3_exceptions.ATUtilityException">[docs]</a><span class="k">class</span> <span class="nc">ATUtilityException</span><span class="p">(</span><span class="n">ATException</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Exception raised by ATUtility class</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    err_code : int</span>
+<span class="sd">        The AT error code returned</span>
+
+<span class="sd">        Can use ErrorCodes enum to handle specific Exceptions.</span>
+<span class="sd">        See error_handling.py example.</span>
+<span class="sd">    err_str : str</span>
+<span class="sd">        The error string corrosponding to the error code&quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">err_code</span><span class="p">,</span> <span class="n">message</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">err_code</span><span class="p">,</span> <span class="n">message</span><span class="p">)</span></div>
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2021, Andor Technology.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>  
+
+  <style>
+    /* Sidebar header (and topbar for mobile) */
+    .wy-side-nav-search, .wy-nav-top {
+      background: #262969;
+    }
+    /* Sidebar */
+    .wy-nav-side {
+      background: #343131;
+    }
+  </style>
+
+
+</body>
+</html>

@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.17.1: http://docutils.sourceforge.net/" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AndorSDK3 &mdash; pyAndorSDK3  documentation</title>
+      <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="_static/css/theme.css" type="text/css" />
+  <!--[if lt IE 9]>
+    <script src="_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js"></script>
+        <script src="_static/jquery.js"></script>
+        <script src="_static/underscore.js"></script>
+        <script src="_static/doctools.js"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Camera" href="pyAndorSDK3%20Camera.html" />
+    <link rel="prev" title="pyAndorSDK3 Classes" href="modules.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+            <a href="index.html" class="icon icon-home"> pyAndorSDK3
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="readme.html">Getting Started with pyAndorSDK3</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="modules.html">pyAndorSDK3 Classes</a><ul class="current">
+<li class="toctree-l2 current"><a class="current reference internal" href="#">AndorSDK3</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#pyandorsdk3-andorsdk3-class">pyAndorSDK3 AndorSDK3 class</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="pyAndorSDK3%20Camera.html">Camera</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyAndorSDK3%20Acquisition.html">Acquisition</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyAndorSDK3%20Exceptions.html">Exceptions</a></li>
+</ul>
+</li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">pyAndorSDK3</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home"></a> &raquo;</li>
+          <li><a href="modules.html">pyAndorSDK3 Classes</a> &raquo;</li>
+      <li>AndorSDK3</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/pyAndorSDK3 AndorSDK3.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="andorsdk3">
+<h1>AndorSDK3<a class="headerlink" href="#andorsdk3" title="Permalink to this headline"></a></h1>
+<section id="pyandorsdk3-andorsdk3-class">
+<h2>pyAndorSDK3 AndorSDK3 class<a class="headerlink" href="#pyandorsdk3-andorsdk3-class" title="Permalink to this headline"></a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="pyAndorSDK3.andor_sdk3.AndorSDK3">
+<em class="property"><span class="pre">class</span> </em><span class="sig-prename descclassname"><span class="pre">pyAndorSDK3.andor_sdk3.</span></span><span class="sig-name descname"><span class="pre">AndorSDK3</span></span><a class="reference internal" href="_modules/pyAndorSDK3/andor_sdk3.html#AndorSDK3"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyAndorSDK3.andor_sdk3.AndorSDK3" title="Permalink to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<p>Object to represent SDK3 itself
+Use this to get access to Cameras</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="pyAndorSDK3.andor_sdk3.AndorSDK3.cameras">
+<span class="sig-name descname"><span class="pre">cameras</span></span><a class="headerlink" href="#pyAndorSDK3.andor_sdk3.AndorSDK3.cameras" title="Permalink to this definition"></a></dt>
+<dd><p>A list of camera objects found by pyAndorSDK3</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type</dt>
+<dd class="field-odd"><p>list of Camera objects</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="pyAndorSDK3.andor_sdk3.AndorSDK3.DeviceCount">
+<span class="sig-name descname"><span class="pre">DeviceCount</span></span><a class="headerlink" href="#pyAndorSDK3.andor_sdk3.AndorSDK3.DeviceCount" title="Permalink to this definition"></a></dt>
+<dd><p>Number of cameras found by SDK3</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type</dt>
+<dd class="field-odd"><p>int</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="pyAndorSDK3.andor_sdk3.AndorSDK3.SoftwareVersion">
+<span class="sig-name descname"><span class="pre">SoftwareVersion</span></span><a class="headerlink" href="#pyAndorSDK3.andor_sdk3.AndorSDK3.SoftwareVersion" title="Permalink to this definition"></a></dt>
+<dd><p>The Software Version of SDK3</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyAndorSDK3.andor_sdk3.AndorSDK3.GetCamera">
+<span class="sig-name descname"><span class="pre">GetCamera</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">i</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/pyAndorSDK3/andor_sdk3.html#AndorSDK3.GetCamera"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyAndorSDK3.andor_sdk3.AndorSDK3.GetCamera" title="Permalink to this definition"></a></dt>
+<dd><p>Returns a Camera object for the camera at the index provided</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyAndorSDK3.andor_sdk3.AndorSDK3.Reinitialise">
+<span class="sig-name descname"><span class="pre">Reinitialise</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/pyAndorSDK3/andor_sdk3.html#AndorSDK3.Reinitialise"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyAndorSDK3.andor_sdk3.AndorSDK3.Reinitialise" title="Permalink to this definition"></a></dt>
+<dd><p>Reinitialise SDK3 by calling the finalise and initalise commands</p>
+<dl class="field-list simple">
+<dt class="field-odd">Raises</dt>
+<dd class="field-odd"><p><a class="reference internal" href="pyAndorSDK3%20Exceptions.html#pyAndorSDK3.andor_sdk3_exceptions.ATCoreException" title="pyAndorSDK3.andor_sdk3_exceptions.ATCoreException"><strong>ATCoreException</strong></a> – Raised if an error occurs</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyAndorSDK3.andor_sdk3.AndorSDK3.event_callback">
+<span class="sig-name descname"><span class="pre">event_callback</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">func</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/pyAndorSDK3/andor_sdk3.html#AndorSDK3.event_callback"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyAndorSDK3.andor_sdk3.AndorSDK3.event_callback" title="Permalink to this definition"></a></dt>
+<dd><p>Creates an event callback function to be used with callback
+registering. Best used as a decorator</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>func</strong> (<em>callable</em>) – The callback function to execute.
+Func must be created to accept two parameters. (One parameter is
+deprecated).
+The first parameter will be the handle of the camera and the second
+the FeatureName.</p>
+</dd>
+</dl>
+<p class="rubric">Example</p>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="nd">@sdk3</span><span class="o">.</span><span class="n">event_callback</span>  <span class="c1">#  used as a decorator</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="k">def</span> <span class="nf">callback_func</span><span class="p">(</span><span class="n">handle</span><span class="p">,</span> <span class="n">feature</span><span class="p">):</span>
+<span class="gp">... </span>    <span class="n">val</span> <span class="o">=</span> <span class="s2">&quot;callback handle: </span><span class="si">{}</span><span class="s2">  feature: </span><span class="si">{}</span><span class="s2">  value: </span><span class="si">{}</span><span class="s2">&quot;</span>
+<span class="gp">... </span>    <span class="nb">print</span><span class="p">(</span><span class="n">val</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">handle</span><span class="p">,</span> <span class="n">feature</span><span class="p">,</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">cam</span><span class="p">,</span> <span class="n">feature</span><span class="p">)))</span>
+<span class="gp">...</span>
+<span class="gp">...</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">cam</span><span class="o">.</span><span class="n">register_feature_callback</span><span class="p">(</span><span class="s2">&quot;ExposureTime&quot;</span><span class="p">,</span> <span class="n">callback_func</span><span class="p">)</span>
+</pre></div>
+</div>
+</dd></dl>
+
+</dd></dl>
+
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="modules.html" class="btn btn-neutral float-left" title="pyAndorSDK3 Classes" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="pyAndorSDK3%20Camera.html" class="btn btn-neutral float-right" title="Camera" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2021, Andor Technology.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>  
+
+  <style>
+    /* Sidebar header (and topbar for mobile) */
+    .wy-side-nav-search, .wy-nav-top {
+      background: #262969;
+    }
+    /* Sidebar */
+    .wy-nav-side {
+      background: #343131;
+    }
+  </style>
+
+
+</body>
+</html>

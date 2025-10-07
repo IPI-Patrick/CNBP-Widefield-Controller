@@ -1,0 +1,10 @@
+Exceptions
+==========
+
+pyAndorSDK3 Exceptions
+----------------------
+
+.. automodule:: pyAndorSDK3.andor_sdk3_exceptions
+   :members:
+   :show-inheritance:
+   :undoc-members:

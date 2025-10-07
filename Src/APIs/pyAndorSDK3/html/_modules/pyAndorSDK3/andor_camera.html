@@ -1,0 +1,951 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>pyAndorSDK3.andor_camera &mdash; pyAndorSDK3  documentation</title>
+      <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="../../_static/css/theme.css" type="text/css" />
+  <!--[if lt IE 9]>
+    <script src="../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script data-url_root="../../" id="documentation_options" src="../../_static/documentation_options.js"></script>
+        <script src="../../_static/jquery.js"></script>
+        <script src="../../_static/underscore.js"></script>
+        <script src="../../_static/doctools.js"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+            <a href="../../index.html" class="icon icon-home"> pyAndorSDK3
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../readme.html">Getting Started with pyAndorSDK3</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../modules.html">pyAndorSDK3 Classes</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">pyAndorSDK3</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home"></a> &raquo;</li>
+          <li><a href="../index.html">Module code</a> &raquo;</li>
+      <li>pyAndorSDK3.andor_camera</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for pyAndorSDK3.andor_camera</h1><div class="highlight"><pre>
+<span></span><span class="kn">from</span> <span class="nn">functools</span> <span class="kn">import</span> <span class="n">wraps</span>
+<span class="kn">from</span> <span class="nn">queue</span> <span class="kn">import</span> <span class="n">Queue</span>
+<span class="kn">import</span> <span class="nn">time</span>
+<span class="kn">from</span> <span class="nn">math</span> <span class="kn">import</span> <span class="n">ceil</span>
+
+<span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="kn">from</span> <span class="nn">collections</span> <span class="kn">import</span> <span class="n">deque</span>
+
+<span class="kn">from</span> <span class="nn">.utils</span> <span class="kn">import</span> <span class="n">CaseInsensitiveDict</span>
+<span class="kn">from</span> <span class="nn">.andor_acquisition</span> <span class="kn">import</span> <span class="n">Acquisition</span>
+<span class="kn">from</span> <span class="nn">.andor_sdk3_exceptions</span> <span class="kn">import</span> <span class="n">ATCoreException</span><span class="p">,</span> <span class="n">CameraException</span>
+
+
+<span class="k">class</span> <span class="nc">Feature</span><span class="p">:</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">func</span><span class="p">,</span> <span class="n">execute</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">func</span> <span class="o">=</span> <span class="n">func</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">execute</span> <span class="o">=</span> <span class="n">execute</span>
+
+
+<div class="viewcode-block" id="Camera"><a class="viewcode-back" href="../../pyAndorSDK3%20Camera.html#pyAndorSDK3.andor_camera.Camera">[docs]</a><span class="k">class</span> <span class="nc">Camera</span><span class="p">:</span>
+    <span class="sd">&quot;&quot;&quot;Each `Camera` object represents a single camera.</span>
+
+<span class="sd">    In the below Attributes section where &quot;FeatureName&quot; is listed is just a</span>
+<span class="sd">    reference and real features are to be used its place - consider the</span>
+<span class="sd">    examples provided.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    FeatureName : any</span>
+<span class="sd">        Access to features - used for both setting and getting feature values.</span>
+
+<span class="sd">        e.g. cam.CycleMode = &quot;Fixed&quot;</span>
+
+<span class="sd">        e.g. img_size = cam.ImageSizeBytes</span>
+
+<span class="sd">        Command features MUST be executed like a function.</span>
+<span class="sd">        e.g. cam.AcquisitionStart()</span>
+<span class="sd">    min_FeatureName : int or float</span>
+<span class="sd">        The minimum value this feature can set.</span>
+
+<span class="sd">        e.g. cam.ExposureTime = cam.min_ExposureTime</span>
+<span class="sd">    max_FeatureName : int or float</span>
+<span class="sd">        The max value this feature can set.</span>
+
+<span class="sd">        e.g. cam.FrameRate = cam.max_FrameRate</span>
+<span class="sd">    options_FeatureName : list of str</span>
+<span class="sd">        List of legal values for a feature - to be used with Enum features.</span>
+<span class="sd">        Note: although a value may be legal for that feature it may not be</span>
+<span class="sd">        available to set at that time - use `is_available_` to confirm the</span>
+<span class="sd">        availability of a value.</span>
+
+<span class="sd">        e.g. legal_values = cam.options_PixelEncoding</span>
+<span class="sd">    is_available_FeatureName : bool</span>
+<span class="sd">        Returns the availability of the specified legal value on an Enum</span>
+<span class="sd">        feature.</span>
+
+<span class="sd">        e.g. avail = cam.is_available_PixelEncoding(&quot;Mono16&quot;)</span>
+<span class="sd">    available_options_FeatureName : list of str</span>
+<span class="sd">        List of legal values for the Feature that are also available.</span>
+<span class="sd">    type_FeatureName : str</span>
+<span class="sd">        Returns the feature type as a str - can be &quot;int&quot;, &quot;float&quot;, &quot;bool&quot;,</span>
+<span class="sd">        &quot;enumerated_string&quot;, &quot;string&quot; or &quot;command&quot;.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">__feature_funcs</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;min_&quot;</span><span class="p">,</span> <span class="s2">&quot;max_&quot;</span><span class="p">,</span> <span class="s2">&quot;options_&quot;</span><span class="p">,</span> <span class="s2">&quot;is_available_&quot;</span><span class="p">,</span> <span class="s2">&quot;type_&quot;</span><span class="p">,</span>
+                       <span class="s2">&quot;available_options_&quot;</span><span class="p">]</span>
+    <span class="n">__types_to_check</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;int&quot;</span><span class="p">,</span> <span class="s2">&quot;float&quot;</span><span class="p">,</span> <span class="s2">&quot;bool&quot;</span><span class="p">,</span> <span class="s2">&quot;enumerated_string&quot;</span><span class="p">,</span> <span class="s2">&quot;string&quot;</span><span class="p">]</span>
+    <span class="n">__func_map</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;min_&quot;</span><span class="p">:</span> <span class="s2">&quot;_min&quot;</span><span class="p">,</span> <span class="s2">&quot;max_&quot;</span><span class="p">:</span> <span class="s2">&quot;_max&quot;</span><span class="p">,</span> <span class="s2">&quot;options_&quot;</span><span class="p">:</span> <span class="s2">&quot;_options&quot;</span><span class="p">}</span>
+
+    <span class="n">__registered_callbacks</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">__orig_reg_vals</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">__features_type</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">__queued_buffers</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">__current_config</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">__prev_acq</span> <span class="o">=</span> <span class="kc">None</span>
+
+    <span class="n">_lib</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">_index</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">_handle</span> <span class="o">=</span> <span class="mi">0</span>
+
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">lib</span><span class="p">,</span> <span class="n">index</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">__registered_callbacks</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">__orig_reg_vals</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">__features_type</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">__queued_buffers</span> <span class="o">=</span> <span class="n">Queue</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">__current_config</span> <span class="o">=</span> <span class="n">CaseInsensitiveDict</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">__prev_acq</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_lib</span> <span class="o">=</span> <span class="n">lib</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_index</span> <span class="o">=</span> <span class="n">index</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_handle</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">open</span><span class="p">()</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_lib</span><span class="o">.</span><span class="n">get_bool</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_handle</span><span class="p">,</span> <span class="s2">&quot;CameraAcquiring&quot;</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">AcquisitionStop</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">flush</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">__populate_config</span><span class="p">()</span>
+
+<div class="viewcode-block" id="Camera.camera"><a class="viewcode-back" href="../../pyAndorSDK3%20Camera.html#pyAndorSDK3.andor_camera.Camera.camera">[docs]</a>    <span class="k">def</span> <span class="nf">camera</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Returns the current object.</span>
+
+<span class="sd">        Note</span>
+<span class="sd">        ----</span>
+<span class="sd">        Deprecated - Exists for backwards compatibility.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="k">return</span> <span class="bp">self</span></div>
+
+    <span class="k">def</span> <span class="nf">__destroy_cam</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="fm">__del__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">__destroy_cam</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="fm">__enter__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span>
+
+    <span class="k">def</span> <span class="fm">__exit__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">a</span><span class="p">,</span> <span class="n">b</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">__registered_callbacks</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">unregister_feature_callback</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">__registered_callbacks</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">__destroy_cam</span><span class="p">()</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">lib</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Access to the Andor lib functions (listed in andor_sdk3_internals).</span>
+
+<span class="sd">        Note</span>
+<span class="sd">        ----</span>
+<span class="sd">        Not recommended to use this to access functions.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_lib</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">handle</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Returns the camera handle.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_handle</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">index</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Returns the index of the camera.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_index</span>
+
+<div class="viewcode-block" id="Camera.open"><a class="viewcode-back" href="../../pyAndorSDK3%20Camera.html#pyAndorSDK3.andor_camera.Camera.open">[docs]</a>    <span class="k">def</span> <span class="nf">open</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Opens the camera associated with this `Camera` object at the index</span>
+<span class="sd">        indicated.</span>
+
+<span class="sd">        Note</span>
+<span class="sd">        ----</span>
+<span class="sd">        It is not necessary to call this function as in normal operation</span>
+<span class="sd">        the opening/closing of the camera is handled automatically.</span>
+
+<span class="sd">        If you have manually called close(), open() can be called to</span>
+<span class="sd">        reopen the camera associated with this `Camera` object.</span>
+
+<span class="sd">        Raises</span>
+<span class="sd">        ------</span>
+<span class="sd">        CameraException</span>
+<span class="sd">            Raises an exception with an SDK3 error code if open fails.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_handle</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_handle</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_lib</span><span class="o">.</span><span class="n">open</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_index</span><span class="p">)</span>
+            <span class="k">except</span> <span class="n">ATCoreException</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+                <span class="n">err_str</span> <span class="o">=</span> <span class="s2">&quot;Error Opening Camera Index </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_index</span><span class="p">)</span>
+                <span class="k">raise</span> <span class="n">CameraException</span><span class="p">(</span><span class="n">e</span><span class="o">.</span><span class="n">err_code</span><span class="p">,</span> <span class="n">err_str</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="Camera.close"><a class="viewcode-back" href="../../pyAndorSDK3%20Camera.html#pyAndorSDK3.andor_camera.Camera.close">[docs]</a>    <span class="k">def</span> <span class="nf">close</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Closes the camera associated with this `Camera` object.</span>
+
+<span class="sd">        Note: it is not necessary to call this function as in normal operation</span>
+<span class="sd">        the opening/closing of the camera is handled automatically.</span>
+
+<span class="sd">        If you have manually called close(), open() can be called to reopen</span>
+<span class="sd">        the camera associated with this `Camera` object.</span>
+
+<span class="sd">        Raises</span>
+<span class="sd">        ------</span>
+<span class="sd">        ATCoreException</span>
+<span class="sd">            Raises an exception with an SDK3 error code if close fails.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_handle</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_lib</span><span class="o">.</span><span class="n">close</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_handle</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_handle</span> <span class="o">=</span> <span class="mi">0</span></div>
+
+    <span class="k">def</span> <span class="nf">__raise_attribute_error</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">feature_name</span><span class="p">):</span>
+        <span class="n">err_str</span> <span class="o">=</span> <span class="s2">&quot;Camera has no Feature &#39;</span><span class="si">{}</span><span class="s2">&#39;&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">feature_name</span><span class="p">)</span>
+        <span class="k">raise</span> <span class="ne">AttributeError</span><span class="p">(</span><span class="n">err_str</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">__create_func</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">command</span><span class="p">,</span> <span class="n">feature_name</span><span class="p">):</span>
+        <span class="nd">@wraps</span><span class="p">(</span><span class="n">command</span><span class="p">)</span>
+        <span class="k">def</span> <span class="nf">f</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">command</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_handle</span><span class="p">,</span> <span class="n">feature_name</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+            <span class="k">except</span> <span class="n">ATCoreException</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+                <span class="n">err_str</span> <span class="o">=</span> <span class="n">feature_name</span> <span class="o">+</span> <span class="p">(</span><span class="s2">&quot;</span><span class="si">%s</span><span class="s2">&quot;</span> <span class="o">%</span> <span class="nb">str</span><span class="p">(</span><span class="n">args</span><span class="p">))</span>
+                <span class="k">raise</span> <span class="n">CameraException</span><span class="p">(</span><span class="n">e</span><span class="o">.</span><span class="n">err_code</span><span class="p">,</span> <span class="n">err_str</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">f</span>
+
+    <span class="k">def</span> <span class="nf">__setup_feature_type</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">feature_name</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">feature_name</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">__features_type</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_lib</span><span class="o">.</span><span class="n">is_implemented</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_handle</span><span class="p">,</span> <span class="n">feature_name</span><span class="p">):</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">__raise_attribute_error</span><span class="p">(</span><span class="n">feature_name</span><span class="p">)</span>
+
+            <span class="k">for</span> <span class="n">feature_type</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">__types_to_check</span><span class="p">:</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="n">get_func</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_lib</span><span class="p">,</span> <span class="s2">&quot;get_&quot;</span><span class="o">+</span><span class="n">feature_type</span><span class="p">)</span>
+                    <span class="n">get_func</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_handle</span><span class="p">,</span> <span class="n">feature_name</span><span class="p">)</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">__features_type</span><span class="p">[</span><span class="n">feature_name</span><span class="p">]</span> <span class="o">=</span> <span class="n">feature_type</span>
+                    <span class="k">return</span>
+                <span class="k">except</span> <span class="n">ATCoreException</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+                    <span class="k">if</span> <span class="p">(</span><span class="s2">&quot;AT_ERR_NOTIMPLEMENTED&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">)):</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">__features_type</span><span class="p">[</span><span class="n">feature_name</span><span class="p">]</span> <span class="o">=</span> <span class="n">feature_type</span>
+                        <span class="k">return</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">__features_type</span><span class="p">[</span><span class="n">feature_name</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;command&quot;</span>
+
+    <span class="k">def</span> <span class="nf">__get_feature_available_options</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">handle</span><span class="p">,</span> <span class="n">feature_name</span><span class="p">):</span>
+        <span class="n">option_list</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">option</span> <span class="ow">in</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">&quot;options_&quot;</span><span class="o">+</span><span class="n">feature_name</span><span class="p">):</span>
+            <span class="k">if</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">&quot;is_available_&quot;</span><span class="o">+</span><span class="n">feature_name</span><span class="p">)(</span><span class="n">option</span><span class="p">):</span>
+                <span class="n">option_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">option</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">option_list</span>
+
+    <span class="k">def</span> <span class="nf">__create_feature_func</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">begin_text</span><span class="p">,</span> <span class="n">feature_name</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">__setup_feature_type</span><span class="p">(</span><span class="n">feature_name</span><span class="p">)</span>
+        <span class="n">feat_type</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">__features_type</span><span class="p">[</span><span class="n">feature_name</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">begin_text</span> <span class="o">==</span> <span class="s2">&quot;type_&quot;</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">Feature</span><span class="p">(</span><span class="n">feat_type</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">exe</span> <span class="o">=</span> <span class="kc">True</span>
+                <span class="k">if</span> <span class="n">begin_text</span> <span class="o">==</span> <span class="s2">&quot;is_available_&quot;</span><span class="p">:</span>
+                    <span class="n">lib_func</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_lib</span><span class="o">.</span><span class="n">is_enumerated_string_available</span>
+                    <span class="n">exe</span> <span class="o">=</span> <span class="kc">False</span>
+                <span class="k">elif</span> <span class="n">begin_text</span> <span class="o">==</span> <span class="s2">&quot;available_options_&quot;</span><span class="p">:</span>
+                    <span class="n">lib_func</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">__get_feature_available_options</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">func_name</span> <span class="o">=</span> <span class="s2">&quot;get_&quot;</span><span class="o">+</span><span class="n">feat_type</span><span class="o">+</span><span class="bp">self</span><span class="o">.</span><span class="n">__func_map</span><span class="p">[</span><span class="n">begin_text</span><span class="p">]</span>
+                    <span class="n">lib_func</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_lib</span><span class="p">,</span> <span class="n">func_name</span><span class="p">)</span>
+                <span class="n">feat_func</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">__create_func</span><span class="p">(</span><span class="n">lib_func</span><span class="p">,</span> <span class="n">feature_name</span><span class="p">)</span>
+                <span class="k">return</span> <span class="n">Feature</span><span class="p">(</span><span class="n">feat_func</span><span class="p">,</span> <span class="n">exe</span><span class="p">)</span>
+            <span class="k">except</span> <span class="ne">AttributeError</span><span class="p">:</span>
+                <span class="n">feat_type</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">__features_type</span><span class="p">[</span><span class="n">feature_name</span><span class="p">]</span>
+                <span class="n">err_str</span> <span class="o">=</span> <span class="p">(</span><span class="s2">&quot;Cannot use the &#39;</span><span class="si">{}</span><span class="s2">&#39; function &quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">begin_text</span><span class="p">)</span> <span class="o">+</span>
+                           <span class="s2">&quot;for feature &#39;</span><span class="si">{}</span><span class="s2">&#39; &quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">feature_name</span><span class="p">)</span> <span class="o">+</span>
+                           <span class="s2">&quot;with type &#39;</span><span class="si">{}</span><span class="s2">&#39;&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">feat_type</span><span class="p">))</span>
+                <span class="k">raise</span> <span class="ne">AttributeError</span><span class="p">(</span><span class="n">err_str</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="fm">__getattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">feature_name</span><span class="p">):</span>
+        <span class="n">split_feat_name</span> <span class="o">=</span> <span class="n">feature_name</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;_&quot;</span><span class="p">)</span>
+        <span class="n">begin_text</span> <span class="o">=</span> <span class="s2">&quot;_&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">split_feat_name</span><span class="p">[</span><span class="mi">0</span><span class="p">:</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span><span class="o">+</span><span class="s2">&quot;_&quot;</span>
+        <span class="k">if</span> <span class="n">begin_text</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">__feature_funcs</span><span class="p">:</span>
+            <span class="n">feat</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">__create_feature_func</span><span class="p">(</span><span class="n">begin_text</span><span class="p">,</span> <span class="n">split_feat_name</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">__setup_feature_type</span><span class="p">(</span><span class="n">feature_name</span><span class="p">)</span>
+            <span class="n">lib_func_name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">__features_type</span><span class="p">[</span><span class="n">feature_name</span><span class="p">]</span>
+            <span class="k">if</span> <span class="n">lib_func_name</span> <span class="o">!=</span> <span class="s2">&quot;command&quot;</span><span class="p">:</span>
+                <span class="n">lib_func_name</span> <span class="o">=</span> <span class="s2">&quot;get_&quot;</span> <span class="o">+</span> <span class="n">lib_func_name</span>
+            <span class="n">lib_func</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_lib</span><span class="p">,</span> <span class="n">lib_func_name</span><span class="p">)</span>
+            <span class="n">get_func</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">__create_func</span><span class="p">(</span><span class="n">lib_func</span><span class="p">,</span> <span class="n">feature_name</span><span class="p">)</span>
+            <span class="n">feat</span> <span class="o">=</span> <span class="n">Feature</span><span class="p">(</span><span class="n">get_func</span><span class="p">,</span> <span class="n">lib_func_name</span> <span class="o">!=</span> <span class="s2">&quot;command&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">feat</span><span class="o">.</span><span class="n">func</span><span class="p">()</span> <span class="k">if</span> <span class="n">feat</span><span class="o">.</span><span class="n">execute</span> <span class="k">else</span> <span class="n">feat</span><span class="o">.</span><span class="n">func</span>
+
+    <span class="k">def</span> <span class="fm">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">feature_name</span><span class="p">,</span> <span class="n">value</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">feature_name</span> <span class="ow">in</span> <span class="nb">dir</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>  <span class="c1"># is a method not a feature</span>
+            <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span><span class="n">feature_name</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span>
+            <span class="k">return</span>
+
+        <span class="n">text</span> <span class="o">=</span> <span class="n">feature_name</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;_&quot;</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">text</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">__feature_funcs</span><span class="p">:</span>
+            <span class="n">err_str</span> <span class="o">=</span> <span class="s2">&quot;Cannot use set on Feature Function </span><span class="si">{}</span><span class="s2"> &quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="ne">AttributeError</span><span class="p">(</span><span class="n">err_str</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">__setup_feature_type</span><span class="p">(</span><span class="n">feature_name</span><span class="p">)</span>
+        <span class="n">func</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_lib</span><span class="p">,</span> <span class="s2">&quot;set_&quot;</span><span class="o">+</span><span class="bp">self</span><span class="o">.</span><span class="n">__features_type</span><span class="p">[</span><span class="n">feature_name</span><span class="p">])</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">__create_func</span><span class="p">(</span><span class="n">func</span><span class="p">,</span> <span class="n">feature_name</span><span class="p">)(</span><span class="n">value</span><span class="p">)</span>
+
+<div class="viewcode-block" id="Camera.queue_buffer"><a class="viewcode-back" href="../../pyAndorSDK3%20Camera.html#pyAndorSDK3.andor_camera.Camera.queue_buffer">[docs]</a>    <span class="k">def</span> <span class="nf">queue_buffer</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">buffer_size</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Creates and Queues an empty buffer of size &#39;buffer_size&#39;.</span>
+
+<span class="sd">        The `Camera` object can queue buffers, handle and delete any buffers</span>
+<span class="sd">        it has queued.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        buffer_size : int</span>
+<span class="sd">            The size of the buffer to create and queue.</span>
+
+<span class="sd">        Raises</span>
+<span class="sd">        ------</span>
+<span class="sd">        CameraException</span>
+<span class="sd">            Raises an exception with an SDK3 error code if queue fails.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">__queue_buffer</span><span class="p">(</span><span class="n">buffer_size</span><span class="p">)</span></div>
+
+    <span class="k">def</span> <span class="nf">__queue_buffer</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">buffer_size</span><span class="p">):</span>
+        <span class="n">buf</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">buffer_size</span><span class="p">,),</span> <span class="n">dtype</span><span class="o">=</span><span class="s1">&#39;B&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">queue</span><span class="p">(</span><span class="n">buf</span><span class="p">,</span> <span class="n">buffer_size</span><span class="p">)</span>
+
+<div class="viewcode-block" id="Camera.flush"><a class="viewcode-back" href="../../pyAndorSDK3%20Camera.html#pyAndorSDK3.andor_camera.Camera.flush">[docs]</a>    <span class="k">def</span> <span class="nf">flush</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Flushes and deletes any buffers the `Camera` object has created.</span>
+
+<span class="sd">        Raises</span>
+<span class="sd">        ------</span>
+<span class="sd">        CameraException</span>
+<span class="sd">            Raises an exception with an SDK3 error code if flush fails.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">__flush</span><span class="p">()</span></div>
+
+    <span class="k">def</span> <span class="nf">__flush</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_lib</span><span class="o">.</span><span class="n">flush</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_handle</span><span class="p">)</span>
+        <span class="k">except</span> <span class="n">ATCoreException</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">CameraException</span><span class="p">(</span><span class="n">e</span><span class="o">.</span><span class="n">err_code</span><span class="p">,</span> <span class="s2">&quot;Error Flushing&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">__queued_buffers</span> <span class="o">=</span> <span class="n">Queue</span><span class="p">()</span>
+
+<div class="viewcode-block" id="Camera.wait_buffer"><a class="viewcode-back" href="../../pyAndorSDK3%20Camera.html#pyAndorSDK3.andor_camera.Camera.wait_buffer">[docs]</a>    <span class="k">def</span> <span class="nf">wait_buffer</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">timeout</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Waits for and returns a Acquisition object within the timeout period</span>
+<span class="sd">        given (in ms)</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        timeout : int</span>
+<span class="sd">            Time in ms that the image is given to return - once timeout is</span>
+<span class="sd">            exceeded a CameraException is raised.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        Acquisition object</span>
+<span class="sd">            An Acquisition object which controls the image data.</span>
+<span class="sd">            See Acquisition object docs for more information.</span>
+
+<span class="sd">        Raises</span>
+<span class="sd">        ------</span>
+<span class="sd">        CameraException</span>
+<span class="sd">            Raises an exception with an SDK3 error code if WaitBuffer</span>
+<span class="sd">            fails e.g. 13 - AT_ERR_TIMEDOUT if timeout is exceeded.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">__acquire</span><span class="p">(</span><span class="n">timeout</span><span class="p">)</span></div>
+
+    <span class="k">def</span> <span class="nf">__acquire</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">timeout</span><span class="p">):</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="p">(</span><span class="n">buf_ptr</span><span class="p">,</span> <span class="n">buffer_size</span><span class="p">)</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_lib</span><span class="o">.</span><span class="n">wait_buffer</span><span class="p">(</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_handle</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="nb">int</span><span class="p">(</span><span class="n">timeout</span><span class="p">))</span>
+        <span class="k">except</span> <span class="n">ATCoreException</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">CameraException</span><span class="p">(</span><span class="n">e</span><span class="o">.</span><span class="n">err_code</span><span class="p">,</span> <span class="s2">&quot;Error waiting for frame&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">Acquisition</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">__queued_buffers</span><span class="o">.</span><span class="n">get</span><span class="p">(),</span> <span class="bp">self</span><span class="o">.</span><span class="n">__current_config</span><span class="p">)</span>
+
+<div class="viewcode-block" id="Camera.AcquisitionStart"><a class="viewcode-back" href="../../pyAndorSDK3%20Camera.html#pyAndorSDK3.andor_camera.Camera.AcquisitionStart">[docs]</a>    <span class="k">def</span> <span class="nf">AcquisitionStart</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;An override of the feature AcquisitionStart used to</span>
+<span class="sd">        populate a list of config details used for Acquisitions.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">__populate_config</span><span class="p">()</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_lib</span><span class="o">.</span><span class="n">command</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_handle</span><span class="p">,</span> <span class="s2">&quot;AcquisitionStart&quot;</span><span class="p">)</span>
+        <span class="k">except</span> <span class="n">ATCoreException</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="n">err_str</span> <span class="o">=</span> <span class="s2">&quot;Error executing AcquisitionStart&quot;</span>
+            <span class="k">raise</span> <span class="n">CameraException</span><span class="p">(</span><span class="n">e</span><span class="o">.</span><span class="n">err_code</span><span class="p">,</span> <span class="n">err_str</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="Camera.queue"><a class="viewcode-back" href="../../pyAndorSDK3%20Camera.html#pyAndorSDK3.andor_camera.Camera.queue">[docs]</a>    <span class="k">def</span> <span class="nf">queue</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">buffer</span><span class="p">,</span> <span class="n">buffer_size</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Queues the buffer with buffer_size.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        buffer : ndarray</span>
+<span class="sd">            A numpy array of ubyte with size buffer_size.</span>
+<span class="sd">        buffer_size : int</span>
+<span class="sd">            The size of the buffer to queue.</span>
+
+<span class="sd">        Example</span>
+<span class="sd">        -------</span>
+<span class="sd">        &gt;&gt;&gt; buffer_size = cam.ImageSizeBytes</span>
+<span class="sd">        &gt;&gt;&gt; buf = np.empty((buffer_size,), dtype=&#39;B&#39;)</span>
+<span class="sd">        &gt;&gt;&gt; cam.queue(buf, buffer_size)</span>
+
+<span class="sd">        Raises</span>
+<span class="sd">        ------</span>
+<span class="sd">        CameraException</span>
+<span class="sd">            Raises an exception with an SDK3 error code if queue fails.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">__queued_buffers</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="n">buffer</span><span class="p">)</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_lib</span><span class="o">.</span><span class="n">queue_buffer</span><span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_handle</span><span class="p">,</span> <span class="n">buffer</span><span class="o">.</span><span class="n">ctypes</span><span class="o">.</span><span class="n">data</span><span class="p">,</span> <span class="n">buffer_size</span><span class="p">)</span>
+        <span class="k">except</span> <span class="n">ATCoreException</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">CameraException</span><span class="p">(</span><span class="n">e</span><span class="o">.</span><span class="n">err_code</span><span class="p">,</span> <span class="s2">&quot;Error queuing buffer&quot;</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="Camera.get_previous_acquisition_series"><a class="viewcode-back" href="../../pyAndorSDK3%20Camera.html#pyAndorSDK3.andor_camera.Camera.get_previous_acquisition_series">[docs]</a>    <span class="k">def</span> <span class="nf">get_previous_acquisition_series</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Returns the list of images from the most recent acquire_series.</span>
+<span class="sd">        This is most useful for retrieval of images when acquire_series</span>
+<span class="sd">        failed with an exception.</span>
+
+<span class="sd">        Example</span>
+<span class="sd">        -------</span>
+<span class="sd">        &gt;&gt;&gt; try:</span>
+<span class="sd">        ...    acqs = cam.acquire_series((&quot;FrameCount&quot;,5), 5000)</span>
+<span class="sd">        &gt;&gt;&gt; except:</span>
+<span class="sd">        ...     acqs = cam.get_previous_acquisition_series()</span>
+<span class="sd">        ...     num_acq = len(acqs)</span>
+<span class="sd">        ...     err = &quot;Error during acquire_series got {} imgs&quot;.format(num_acq)</span>
+<span class="sd">        ...     print(err)</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">__prev_acq</span></div>
+
+    <span class="k">def</span> <span class="nf">__acq_series_err</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">print_fps</span><span class="p">,</span> <span class="n">frame</span><span class="p">,</span> <span class="n">time_start</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">print_fps</span><span class="p">:</span>
+            <span class="n">fps</span> <span class="o">=</span> <span class="n">frame</span> <span class="o">/</span> <span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span> <span class="o">-</span> <span class="n">time_start</span> <span class="o">+</span> <span class="mf">0.00001</span><span class="p">)</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Effective FPS of Failed Series : </span><span class="si">{}</span><span class="s2"> fps&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">fps</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">AcquisitionStop</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">flush</span><span class="p">()</span>
+        <span class="k">return</span> <span class="s2">&quot;Error on frame </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">frame</span><span class="p">)</span>
+
+<div class="viewcode-block" id="Camera.acquire_series"><a class="viewcode-back" href="../../pyAndorSDK3%20Camera.html#pyAndorSDK3.andor_camera.Camera.acquire_series">[docs]</a>    <span class="k">def</span> <span class="nf">acquire_series</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Perform a series acquisition and return the images as a list of</span>
+<span class="sd">        Acquisition objects.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        *args : tuple of (str, Union[int, str, float, bool])</span>
+<span class="sd">            Multiple key (str) and value (int, str, float, bool) tuple values</span>
+<span class="sd">            can be passed in as features to set before starting acquisition</span>
+<span class="sd">        **kwargs : any</span>
+<span class="sd">        Keywords</span>
+<span class="sd">            timeout : int, optional</span>
+<span class="sd">                Time in ms that the image is given to return - once</span>
+<span class="sd">                timeout is exceeded a CameraException is raised.</span>
+<span class="sd">            min_buf : int, default=2</span>
+<span class="sd">                Minimum number of buffers to queue for the acquisition.</span>
+<span class="sd">            max_buf : int, default=25</span>
+<span class="sd">                Maximum number of buffers to initially queue for the</span>
+<span class="sd">                acquisition or the max number of buffers to use when doing a</span>
+<span class="sd">                circular acquisition</span>
+<span class="sd">            circ_buf : bool, default=false</span>
+<span class="sd">                flag to use the queued buffers in a circular fashion - if</span>
+<span class="sd">                enabled once the last buffer has been used the first buffer</span>
+<span class="sd">                will be used for the next image etc. If not enabled (default)</span>
+<span class="sd">                once the last buffer has been used it will ignore the max_buf</span>
+<span class="sd">                value and queue more buffers until frame_count has been reached</span>
+<span class="sd">                (or will loop forever if frame_count is not set and Continuous</span>
+<span class="sd">                CycleMode is currently in use.</span>
+<span class="sd">            print_frame : bool, default=false</span>
+<span class="sd">                Flag to bring each frame after it is retrieved.</span>
+<span class="sd">            print_fps : bool : , default=false</span>
+<span class="sd">                Flag to print the current achieved framerate.</span>
+<span class="sd">            print_fps_interval : int, default=1</span>
+<span class="sd">                Used by print_fps to print every x number of frames.</span>
+<span class="sd">            pause_after : float, default=0.0</span>
+<span class="sd">                Time in seconds to sleep after acquiring.</span>
+<span class="sd">            frame_count : int, optional</span>
+<span class="sd">                The number of frames to acquire. Uses FrameCount feature value</span>
+<span class="sd">                when in Fixed CycleMode - is recommended to use this param when</span>
+<span class="sd">                in Continuous or will loop until manually stopped or an error</span>
+<span class="sd">                occurs.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        list of Acquisition objects</span>
+<span class="sd">            A list of Acquisition objects which controls the image data.</span>
+<span class="sd">            See Acquisition object docs for more information.</span>
+
+<span class="sd">        Raises</span>
+<span class="sd">        ------</span>
+<span class="sd">        CameraException</span>
+<span class="sd">            Raises an exception with an SDK3 error code if acquisition</span>
+<span class="sd">            fails.</span>
+
+<span class="sd">        Example</span>
+<span class="sd">        -------</span>
+<span class="sd">        Below Sets features AOIHeight to 1000, CycleMode to Fixed and</span>
+<span class="sd">        FrameCount to 10000 - is set to use 10 buffers in a circular fashion</span>
+<span class="sd">        and will return these 10 images in a list oldest image first.</span>
+
+<span class="sd">        &gt;&gt;&gt; acqs = cam.acquire_series(</span>
+<span class="sd">        ...         (&quot;AOIHeight&quot;,1000), (&quot;CycleMode&quot;, &quot;Fixed&quot;),</span>
+<span class="sd">        ...         (FrameCount,10000),</span>
+<span class="sd">        ...         timeout=1000, max_buf=10, circ_buf=True)</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">__configure</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">)</span>
+        <span class="n">timeout</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s1">&#39;timeout&#39;</span><span class="p">,</span> <span class="nb">max</span><span class="p">(</span><span class="mi">5000</span><span class="p">,</span> <span class="n">ceil</span><span class="p">(</span><span class="mi">5000</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">FrameRate</span><span class="p">)))</span>
+        <span class="n">min_buf</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s1">&#39;min_buf&#39;</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
+        <span class="n">max_buf</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s1">&#39;max_buf&#39;</span><span class="p">,</span> <span class="mi">25</span><span class="p">)</span>
+        <span class="n">circ_buf</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s1">&#39;circ_buf&#39;</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>
+        <span class="n">print_frame</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s1">&#39;print_frame&#39;</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>
+        <span class="n">print_fps</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s1">&#39;print_fps&#39;</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>
+        <span class="n">print_fps_interval</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s1">&#39;print_fps_interval&#39;</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="n">pause_after</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s1">&#39;pause_after&#39;</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)</span>
+        <span class="n">sw_trigger</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">TriggerMode</span> <span class="o">==</span> <span class="s2">&quot;Software&quot;</span>
+
+        <span class="n">accumulate_available</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">acc</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">AccumulateCount</span>
+        <span class="k">except</span> <span class="ne">AttributeError</span><span class="p">:</span>
+            <span class="n">accumulate_available</span> <span class="o">=</span> <span class="kc">False</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">CycleMode</span> <span class="o">==</span> <span class="s2">&quot;Fixed&quot;</span><span class="p">:</span>
+            <span class="n">frame_count</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s1">&#39;frame_count&#39;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">FrameCount</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">accumulate_available</span> <span class="ow">and</span> <span class="n">acc</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+                <span class="c1"># if using accumulation then num_images that will be returned</span>
+                <span class="c1"># is equal to framecount/accumulatecount</span>
+                <span class="n">frame_count</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">frame_count</span> <span class="o">/</span> <span class="n">acc</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="nb">setattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">&quot;FrameCount&quot;</span><span class="p">,</span> <span class="n">frame_count</span><span class="p">)</span>
+            <span class="n">buf_count</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="nb">min</span><span class="p">(</span><span class="n">max_buf</span><span class="p">,</span> <span class="n">frame_count</span><span class="p">),</span> <span class="n">min_buf</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1"># if frame_count isn&#39;t specified while in continuous mode </span>
+            <span class="c1"># frame_count will default to 0 and acquire_series will acquire</span>
+            <span class="c1"># forever</span>
+            <span class="n">frame_count</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s1">&#39;frame_count&#39;</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">frame_count</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="n">buf_count</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="nb">min</span><span class="p">(</span><span class="n">max_buf</span><span class="p">,</span> <span class="n">frame_count</span><span class="p">),</span> <span class="n">min_buf</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">buf_count</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">max_buf</span><span class="p">,</span> <span class="n">min_buf</span><span class="p">)</span>
+        <span class="n">imgsize</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">ImageSizeBytes</span>
+        <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">buf_count</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">queue_buffer</span><span class="p">(</span><span class="n">imgsize</span><span class="p">)</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">AcquisitionStart</span><span class="p">()</span>
+        <span class="k">except</span> <span class="n">ATCoreException</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">AcquisitionStop</span><span class="p">()</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">flush</span><span class="p">()</span>
+            <span class="k">raise</span> <span class="n">CameraException</span><span class="p">(</span><span class="n">e</span><span class="o">.</span><span class="n">err_code</span><span class="p">,</span> <span class="s2">&quot;Error during AcquisitionStart&quot;</span><span class="p">)</span>
+
+        <span class="n">frame</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="n">series</span> <span class="o">=</span> <span class="n">deque</span><span class="p">()</span>
+        <span class="n">update_count</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="n">time_start</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+        <span class="n">prev_time</span> <span class="o">=</span> <span class="n">time_start</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">while</span><span class="p">(</span><span class="kc">True</span><span class="p">):</span>
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">__queued_buffers</span><span class="o">.</span><span class="n">qsize</span><span class="p">()</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                    <span class="k">if</span> <span class="n">circ_buf</span><span class="p">:</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">queue</span><span class="p">(</span><span class="n">series</span><span class="o">.</span><span class="n">popleft</span><span class="p">()</span><span class="o">.</span><span class="n">_np_data</span><span class="p">,</span> <span class="n">imgsize</span><span class="p">)</span>
+                    <span class="k">else</span><span class="p">:</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">queue_buffer</span><span class="p">(</span><span class="n">imgsize</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">sw_trigger</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">SoftwareTrigger</span><span class="p">()</span>
+                <span class="n">acq</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">wait_buffer</span><span class="p">(</span><span class="n">timeout</span><span class="p">)</span>
+                <span class="n">series</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">acq</span><span class="p">)</span>
+
+                <span class="k">if</span> <span class="n">print_frame</span><span class="p">:</span>
+                    <span class="nb">print</span><span class="p">(</span><span class="n">acq</span><span class="o">.</span><span class="n">image</span><span class="p">)</span>
+                <span class="n">frame</span> <span class="o">+=</span> <span class="mi">1</span>
+                <span class="k">if</span> <span class="n">frame_count</span> <span class="o">!=</span> <span class="mi">0</span> <span class="ow">and</span> <span class="n">frame</span> <span class="o">==</span> <span class="n">frame_count</span><span class="p">:</span>
+                    <span class="k">break</span>
+                <span class="k">if</span> <span class="n">print_fps</span><span class="p">:</span>
+                    <span class="n">update_count</span> <span class="o">+=</span> <span class="mi">1</span>
+                    <span class="k">if</span> <span class="n">update_count</span> <span class="o">&gt;=</span> <span class="n">print_fps_interval</span><span class="p">:</span>
+                        <span class="n">prev_time</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+                        <span class="n">fps</span> <span class="o">=</span> <span class="n">frame</span> <span class="o">/</span> <span class="p">(</span><span class="n">prev_time</span> <span class="o">-</span> <span class="n">time_start</span> <span class="o">+</span> <span class="mf">0.00001</span><span class="p">)</span>
+                        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Effective FPS : </span><span class="si">{}</span><span class="s2"> fps&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">fps</span><span class="p">))</span>
+                        <span class="n">update_count</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="k">except</span> <span class="n">ATCoreException</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="n">err_str</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">__acq_series_err</span><span class="p">(</span><span class="n">print_fps</span><span class="p">,</span> <span class="n">frame</span><span class="p">,</span> <span class="n">time_start</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="n">CameraException</span><span class="p">(</span><span class="n">e</span><span class="o">.</span><span class="n">err_code</span><span class="p">,</span> <span class="n">err_str</span><span class="p">)</span>
+        <span class="k">except</span> <span class="n">CameraException</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="n">err_str</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">__acq_series_err</span><span class="p">(</span><span class="n">print_fps</span><span class="p">,</span> <span class="n">frame</span><span class="p">,</span> <span class="n">time_start</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="n">CameraException</span><span class="p">(</span><span class="n">e</span><span class="o">.</span><span class="n">err_code</span><span class="p">,</span> <span class="n">err_str</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="n">err_str</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">__acq_series_err</span><span class="p">(</span><span class="n">print_fps</span><span class="p">,</span> <span class="n">frame</span><span class="p">,</span> <span class="n">time_start</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="ne">Exception</span><span class="p">(</span><span class="n">err_str</span><span class="o">+</span><span class="s2">&quot; : &quot;</span><span class="o">+</span><span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">))</span>
+        <span class="k">finally</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">__prev_acq</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">series</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">print_fps</span><span class="p">:</span>
+            <span class="n">fps</span> <span class="o">=</span> <span class="n">frame</span> <span class="o">/</span> <span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span> <span class="o">-</span> <span class="n">time_start</span> <span class="o">+</span> <span class="mf">0.00001</span><span class="p">)</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Effective FPS of Completed Series : </span><span class="si">{}</span><span class="s2"> fps&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">fps</span><span class="p">))</span>
+        <span class="k">if</span><span class="p">(</span><span class="n">pause_after</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">):</span>
+            <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="n">pause_after</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">AcquisitionStop</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">flush</span><span class="p">()</span>
+        <span class="k">return</span> <span class="nb">list</span><span class="p">(</span><span class="n">series</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="Camera.acquire"><a class="viewcode-back" href="../../pyAndorSDK3%20Camera.html#pyAndorSDK3.andor_camera.Camera.acquire">[docs]</a>    <span class="k">def</span> <span class="nf">acquire</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Perform a single acquisition and return the image as an</span>
+<span class="sd">        Acquisition object.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        *args : tuple of (str, Union[int, str, float, bool])</span>
+<span class="sd">            Multiple key (str) and value (int, str, float, bool) tuple values</span>
+<span class="sd">            can be passed in as features to set before starting acquisition.</span>
+<span class="sd">        **kwargs : any</span>
+<span class="sd">        Keywords</span>
+<span class="sd">            timeout : int, optional</span>
+<span class="sd">                Time in ms that the image is given to return - once</span>
+<span class="sd">                timeout is exceeded a CameraException is raised.</span>
+<span class="sd">            min_buf : int, default=2</span>
+<span class="sd">                Minimum number of buffers to queue for the acquisition.</span>
+<span class="sd">            pause_after : float, default=0.0</span>
+<span class="sd">                Time in seconds to sleep after acquiring.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        Acquisition object</span>
+<span class="sd">            An Acquisition object which controls the image data.</span>
+<span class="sd">            See Acquisition object docs for more information.</span>
+
+<span class="sd">        Raises</span>
+<span class="sd">        ------</span>
+<span class="sd">        CameraException</span>
+<span class="sd">            Raises an exception with an SDK3 error code if acquisition</span>
+<span class="sd">            fails.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">__configure</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">)</span>
+        <span class="n">timeout</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s1">&#39;timeout&#39;</span><span class="p">,</span> <span class="nb">max</span><span class="p">(</span><span class="mi">5000</span><span class="p">,</span> <span class="n">ceil</span><span class="p">(</span><span class="mi">5000</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">FrameRate</span><span class="p">)))</span>
+        <span class="n">min_buf</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s1">&#39;min_buf&#39;</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
+        <span class="n">pause_after</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s1">&#39;pause_after&#39;</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)</span>
+        <span class="n">sw_trigger</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">TriggerMode</span> <span class="o">==</span> <span class="s2">&quot;SoftwareTrigger&quot;</span>
+        <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">min_buf</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">queue_buffer</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ImageSizeBytes</span><span class="p">)</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">AcquisitionStart</span><span class="p">()</span>
+        <span class="k">except</span> <span class="n">ATCoreException</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">AcquisitionStop</span><span class="p">()</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">flush</span><span class="p">()</span>
+            <span class="k">raise</span> <span class="n">CameraException</span><span class="p">(</span><span class="n">e</span><span class="o">.</span><span class="n">err_code</span><span class="p">,</span> <span class="s2">&quot;Error during AcquisitionStart&quot;</span><span class="p">)</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">sw_trigger</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">SoftwareTrigger</span><span class="p">()</span>
+            <span class="n">acq</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">wait_buffer</span><span class="p">(</span><span class="n">timeout</span><span class="p">)</span>
+        <span class="k">except</span> <span class="n">ATCoreException</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">AcquisitionStop</span><span class="p">()</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">flush</span><span class="p">()</span>
+            <span class="k">raise</span> <span class="n">CameraException</span><span class="p">(</span><span class="n">e</span><span class="o">.</span><span class="n">err_code</span><span class="p">,</span> <span class="s2">&quot;Error acquiring&quot;</span><span class="p">)</span>
+        <span class="k">if</span><span class="p">(</span><span class="n">pause_after</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">):</span>
+            <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="n">pause_after</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">AcquisitionStop</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">flush</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">acq</span></div>
+
+    <span class="k">def</span> <span class="nf">__configure</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">):</span>
+        <span class="k">for</span> <span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="n">v</span><span class="p">)</span> <span class="ow">in</span> <span class="n">args</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="nb">setattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span><span class="p">)</span>
+            <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+                <span class="n">str_err</span> <span class="o">=</span> <span class="s2">&quot;Error configuring feature </span><span class="si">{}</span><span class="s2"> : &quot;</span><span class="o">+</span><span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">)</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="n">str_err</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">__populate_config</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">force</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="p">[</span><span class="s2">&quot;AOIHeight&quot;</span><span class="p">,</span> <span class="s2">&quot;AOIWidth&quot;</span><span class="p">,</span> <span class="s2">&quot;AOIStride&quot;</span><span class="p">,</span>
+                  <span class="s2">&quot;PixelEncoding&quot;</span><span class="p">,</span> <span class="s2">&quot;ImageSizeBytes&quot;</span><span class="p">,</span> <span class="s2">&quot;MetadataEnable&quot;</span><span class="p">]:</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_lib</span><span class="o">.</span><span class="n">is_readable</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_handle</span><span class="p">,</span> <span class="n">k</span><span class="p">):</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">__current_config</span><span class="p">[</span><span class="n">k</span><span class="p">]</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">k</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">__current_config</span><span class="p">[</span><span class="s2">&quot;MetadataEnable&quot;</span><span class="p">]:</span>
+            <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="p">[</span><span class="s2">&quot;MetadataTimestamp&quot;</span><span class="p">,</span> <span class="s2">&quot;MetadataIRIG&quot;</span><span class="p">,</span>
+                      <span class="s2">&quot;MetadataFrameInfo&quot;</span><span class="p">,</span> <span class="s2">&quot;IRIGClockFrequency&quot;</span><span class="p">]:</span>
+                <span class="n">has_k</span> <span class="o">=</span> <span class="nb">hasattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">k</span><span class="p">)</span>
+                <span class="k">if</span> <span class="p">(</span><span class="n">has_k</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_lib</span><span class="o">.</span><span class="n">is_readable</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_handle</span><span class="p">,</span> <span class="n">k</span><span class="p">)):</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">__current_config</span><span class="p">[</span><span class="n">k</span><span class="p">]</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">k</span><span class="p">)</span>
+
+<div class="viewcode-block" id="Camera.register_feature_callback"><a class="viewcode-back" href="../../pyAndorSDK3%20Camera.html#pyAndorSDK3.andor_camera.Camera.register_feature_callback">[docs]</a>    <span class="k">def</span> <span class="nf">register_feature_callback</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">feature</span><span class="p">,</span> <span class="n">func</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Register a feature to a callback function when said feature</span>
+<span class="sd">        receives updates.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        feature : str</span>
+<span class="sd">            The feature to register the callback function to.</span>
+<span class="sd">        func : callable</span>
+<span class="sd">            The callback function to register for execution.</span>
+
+<span class="sd">        Example</span>
+<span class="sd">        -------</span>
+<span class="sd">        &gt;&gt;&gt; @sdk3.event_callback #callbacks need sdk3.event_callback decorator</span>
+<span class="sd">        &gt;&gt;&gt; def callback_func(handle, feature):</span>
+<span class="sd">        ...     print(</span>
+<span class="sd">        ...         &quot;callback feature:{} value:{} min:{} max:{}&quot;.format(</span>
+<span class="sd">        ...             feature,</span>
+<span class="sd">        ...             getattr(cam, feature), getattr(cam, &quot;min_&quot;+feature),</span>
+<span class="sd">        ...             getattr(cam, &quot;max_&quot;+feature)</span>
+<span class="sd">        ...         )</span>
+<span class="sd">        ...     )</span>
+<span class="sd">        ...</span>
+<span class="sd">        ...</span>
+<span class="sd">        &gt;&gt;&gt; print(&quot;Registering callback on FrameRate:&quot;)</span>
+<span class="sd">        &gt;&gt;&gt; cam.register_feature_callback(&quot;FrameRate&quot;, callback_func)</span>
+
+<span class="sd">        Raises</span>
+<span class="sd">        ------</span>
+<span class="sd">        CameraException</span>
+<span class="sd">            Raises an exception with an SDK3 error code if regsiter fails.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_lib</span><span class="o">.</span><span class="n">register_feature_callback</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_handle</span><span class="p">,</span> <span class="n">feature</span><span class="p">,</span> <span class="n">func</span><span class="p">)</span>
+        <span class="k">except</span> <span class="n">ATCoreException</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="n">err_str</span> <span class="o">=</span> <span class="s2">&quot;Error registering </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">feature</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="n">CameraException</span><span class="p">(</span><span class="n">e</span><span class="o">.</span><span class="n">err_code</span><span class="p">,</span> <span class="n">err_str</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">__registered_callbacks</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">feature</span><span class="p">,</span> <span class="n">func</span><span class="p">))</span></div>
+
+<div class="viewcode-block" id="Camera.unregister_feature_callback"><a class="viewcode-back" href="../../pyAndorSDK3%20Camera.html#pyAndorSDK3.andor_camera.Camera.unregister_feature_callback">[docs]</a>    <span class="k">def</span> <span class="nf">unregister_feature_callback</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">feature</span><span class="p">,</span> <span class="n">func</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Unregister a callback from a feature.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        feature : str</span>
+<span class="sd">            The feature to unregister the callback function.</span>
+<span class="sd">        func : callable</span>
+<span class="sd">            The callback function to unregister.</span>
+
+<span class="sd">        Example</span>
+<span class="sd">        -------</span>
+<span class="sd">        &gt;&gt;&gt; @sdk3.event_callback # give callbacks sdk3.event_callback decorator</span>
+<span class="sd">        &gt;&gt;&gt; def callback_func(handle, feature):</span>
+<span class="sd">        ...     print(</span>
+<span class="sd">        ...         &quot;callback feature:{} value:{} min:{} max:{}&quot;.format(</span>
+<span class="sd">        ...             feature,</span>
+<span class="sd">        ...             getattr(cam, feature), getattr(cam, &quot;min_&quot;+feature),</span>
+<span class="sd">        ...             getattr(cam, &quot;max_&quot;+feature)</span>
+<span class="sd">        ...         )</span>
+<span class="sd">        ...     )</span>
+<span class="sd">        ...</span>
+<span class="sd">        ...</span>
+<span class="sd">        &gt;&gt;&gt; print(&quot;Registering callback on FrameRate:&quot;)</span>
+<span class="sd">        &gt;&gt;&gt; cam.register_feature_callback(&quot;FrameRate&quot;, callback_func)</span>
+<span class="sd">        &gt;&gt;&gt; # other code here</span>
+<span class="sd">        &gt;&gt;&gt; cam.unregister_feature_callback(&quot;FrameRate&quot;, callback_func)</span>
+
+<span class="sd">        Raises</span>
+<span class="sd">        ------</span>
+<span class="sd">        CameraException</span>
+<span class="sd">            Raises an exception with an SDK3 error code if unregister</span>
+<span class="sd">            fails.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_lib</span><span class="o">.</span><span class="n">unregister_feature_callback</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_handle</span><span class="p">,</span> <span class="n">feature</span><span class="p">,</span> <span class="n">func</span><span class="p">)</span>
+        <span class="k">except</span> <span class="n">ATCoreException</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="n">err_str</span> <span class="o">=</span> <span class="s2">&quot;Error unregistering </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">feature</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="n">CameraException</span><span class="p">(</span><span class="n">e</span><span class="o">.</span><span class="n">err_code</span><span class="p">,</span> <span class="n">err_str</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">__registered_callbacks</span><span class="o">.</span><span class="n">remove</span><span class="p">((</span><span class="n">feature</span><span class="p">,</span> <span class="n">func</span><span class="p">))</span></div>
+
+<div class="viewcode-block" id="Camera.register_write"><a class="viewcode-back" href="../../pyAndorSDK3%20Camera.html#pyAndorSDK3.andor_camera.Camera.register_write">[docs]</a>    <span class="k">def</span> <span class="nf">register_write</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">addr</span><span class="p">,</span> <span class="n">payload</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Writes the payload value(s) to addr</span>
+
+<span class="sd">        Note</span>
+<span class="sd">        ----</span>
+<span class="sd">        For Internal use only</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        addr : int</span>
+<span class="sd">            Start address of register(s) to write.</span>
+<span class="sd">        payload : Union[int, list of int]</span>
+<span class="sd">            Can either be a single value or a list of int values to write</span>
+<span class="sd">            to the address specified.</span>
+
+<span class="sd">        Raises</span>
+<span class="sd">        ------</span>
+<span class="sd">        CameraException</span>
+<span class="sd">            Raises an exception with an SDK3 error code if write fails.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="k">if</span> <span class="p">(</span><span class="nb">hasattr</span><span class="p">(</span><span class="n">payload</span><span class="p">,</span> <span class="s2">&quot;__iter__&quot;</span><span class="p">)</span> <span class="ow">is</span> <span class="kc">False</span><span class="p">):</span>
+            <span class="n">payload</span> <span class="o">=</span> <span class="p">[</span><span class="n">payload</span><span class="p">,</span> <span class="p">]</span>
+        <span class="k">if</span> <span class="n">addr</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">__orig_reg_vals</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">__orig_reg_vals</span><span class="p">[</span><span class="n">addr</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">register_read</span><span class="p">(</span><span class="n">addr</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">payload</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">__register_write</span><span class="p">(</span><span class="n">addr</span><span class="p">,</span> <span class="n">payload</span><span class="p">)</span></div>
+
+    <span class="k">def</span> <span class="nf">__register_write</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">addr</span><span class="p">,</span> <span class="n">payload</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">RegisterAddress</span> <span class="o">=</span> <span class="n">addr</span>
+        <span class="k">if</span> <span class="p">(</span><span class="nb">hasattr</span><span class="p">(</span><span class="n">payload</span><span class="p">,</span> <span class="s2">&quot;__iter__&quot;</span><span class="p">)</span> <span class="ow">is</span> <span class="kc">False</span><span class="p">):</span>
+            <span class="n">payload</span> <span class="o">=</span> <span class="p">[</span><span class="n">payload</span><span class="p">,</span> <span class="p">]</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">RegisterCount</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">payload</span><span class="p">)</span>
+
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">payload</span><span class="p">)):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">RegisterIndex</span> <span class="o">=</span> <span class="n">i</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">RegisterValue</span> <span class="o">=</span> <span class="n">payload</span><span class="p">[</span><span class="n">i</span><span class="p">]</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">RegisterWrite</span><span class="p">()</span>
+
+<div class="viewcode-block" id="Camera.restore_registers"><a class="viewcode-back" href="../../pyAndorSDK3%20Camera.html#pyAndorSDK3.andor_camera.Camera.restore_registers">[docs]</a>    <span class="k">def</span> <span class="nf">restore_registers</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Restore the original values of registers written by register_write.</span>
+
+<span class="sd">        Note</span>
+<span class="sd">        ----</span>
+<span class="sd">        For Internal use only</span>
+
+<span class="sd">        Raises</span>
+<span class="sd">        ------</span>
+<span class="sd">        CameraException</span>
+<span class="sd">            Raises an exception with an SDK3 error code if write fails.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="k">for</span> <span class="n">addr</span><span class="p">,</span> <span class="n">payload</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">__orig_reg_vals</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">__register_write</span><span class="p">(</span><span class="n">addr</span><span class="p">,</span> <span class="n">payload</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">__orig_reg_vals</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span></div>
+
+<div class="viewcode-block" id="Camera.register_read"><a class="viewcode-back" href="../../pyAndorSDK3%20Camera.html#pyAndorSDK3.andor_camera.Camera.register_read">[docs]</a>    <span class="k">def</span> <span class="nf">register_read</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">addr</span><span class="p">,</span> <span class="n">count</span><span class="o">=</span><span class="mi">1</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Reads register(s) at the address specified.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        addr : int</span>
+<span class="sd">            The start address of register(s) to read.</span>
+<span class="sd">        count : int, optional</span>
+<span class="sd">            The number of registers to read starting from addr</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        Union[int, list of int]</span>
+<span class="sd">            The value(s) of the read registers.</span>
+<span class="sd">            Returns single int if only 1 register is read, otherwise returns</span>
+<span class="sd">            a list of ints.</span>
+
+<span class="sd">        Raises</span>
+<span class="sd">        ------</span>
+<span class="sd">        CameraException</span>
+<span class="sd">            Raises an exception with an SDK3 error code if read fails.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">RegisterAddress</span> <span class="o">=</span> <span class="n">addr</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">RegisterCount</span> <span class="o">=</span> <span class="n">count</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">RegisterRead</span><span class="p">()</span>
+        <span class="n">acc</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">count</span><span class="p">,),</span> <span class="n">dtype</span><span class="o">=</span><span class="s1">&#39;I&#39;</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">count</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">RegisterIndex</span> <span class="o">=</span> <span class="n">i</span>
+            <span class="n">acc</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">RegisterValue</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">acc</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">acc</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">acc</span></div>
+
+<div class="viewcode-block" id="Camera.get_updated_features"><a class="viewcode-back" href="../../pyAndorSDK3%20Camera.html#pyAndorSDK3.andor_camera.Camera.get_updated_features">[docs]</a>    <span class="k">def</span> <span class="nf">get_updated_features</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Returns a list of feature names that has updated since the last</span>
+<span class="sd">        open of the camera.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        list</span>
+<span class="sd">            list of str of feature names that have been updated.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_lib</span><span class="o">.</span><span class="n">get_updated_features</span><span class="p">()</span></div></div>
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2021, Andor Technology.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>  
+
+  <style>
+    /* Sidebar header (and topbar for mobile) */
+    .wy-side-nav-search, .wy-nav-top {
+      background: #262969;
+    }
+    /* Sidebar */
+    .wy-nav-side {
+      background: #343131;
+    }
+  </style>
+
+
+</body>
+</html>

@@ -1,0 +1,3574 @@
+%PDF-1.4
+%“Œ‹ž ReportLab Generated PDF document http://www.reportlab.com
+1 0 obj
+<<
+/F1 2 0 R /F2 3 0 R /F3 4 0 R /F4 5 0 R /F5 9 0 R /F6 12 0 R
+>>
+endobj
+2 0 obj
+<<
+/BaseFont /Helvetica /Encoding /WinAnsiEncoding /Name /F1 /Subtype /Type1 /Type /Font
+>>
+endobj
+3 0 obj
+<<
+/BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding /Name /F2 /Subtype /Type1 /Type /Font
+>>
+endobj
+4 0 obj
+<<
+/BaseFont /Courier-Bold /Encoding /WinAnsiEncoding /Name /F3 /Subtype /Type1 /Type /Font
+>>
+endobj
+5 0 obj
+<<
+/BaseFont /Courier /Encoding /WinAnsiEncoding /Name /F4 /Subtype /Type1 /Type /Font
+>>
+endobj
+6 0 obj
+<<
+/Contents 35 0 R /MediaBox [ 0 0 595.2756 841.8898 ] /Parent 34 0 R /Resources <<
+/Font 1 0 R /ProcSet [ /PDF /Text /ImageB /ImageC /ImageI ]
+>> /Rotate 0 /Trans <<
+
+>> 
+  /Type /Page
+>>
+endobj
+7 0 obj
+<<
+/Contents 36 0 R /MediaBox [ 0 0 595.2756 841.8898 ] /Parent 34 0 R /Resources <<
+/Font 1 0 R /ProcSet [ /PDF /Text /ImageB /ImageC /ImageI ]
+>> /Rotate 0 /Trans <<
+
+>> 
+  /Type /Page
+>>
+endobj
+8 0 obj
+<<
+/Contents 37 0 R /MediaBox [ 0 0 595.2756 841.8898 ] /Parent 34 0 R /Resources <<
+/Font 1 0 R /ProcSet [ /PDF /Text /ImageB /ImageC /ImageI ]
+>> /Rotate 0 /Trans <<
+
+>> 
+  /Type /Page
+>>
+endobj
+9 0 obj
+<<
+/BaseFont /Helvetica-BoldOblique /Encoding /WinAnsiEncoding /Name /F5 /Subtype /Type1 /Type /Font
+>>
+endobj
+10 0 obj
+<<
+/Contents 38 0 R /MediaBox [ 0 0 595.2756 841.8898 ] /Parent 34 0 R /Resources <<
+/Font 1 0 R /ProcSet [ /PDF /Text /ImageB /ImageC /ImageI ]
+>> /Rotate 0 /Trans <<
+
+>> 
+  /Type /Page
+>>
+endobj
+11 0 obj
+<<
+/Contents 39 0 R /MediaBox [ 0 0 595.2756 841.8898 ] /Parent 34 0 R /Resources <<
+/Font 1 0 R /ProcSet [ /PDF /Text /ImageB /ImageC /ImageI ]
+>> /Rotate 0 /Trans <<
+
+>> 
+  /Type /Page
+>>
+endobj
+12 0 obj
+<<
+/BaseFont /Courier-Oblique /Encoding /WinAnsiEncoding /Name /F6 /Subtype /Type1 /Type /Font
+>>
+endobj
+13 0 obj
+<<
+/Contents 40 0 R /MediaBox [ 0 0 595.2756 841.8898 ] /Parent 34 0 R /Resources <<
+/Font 1 0 R /ProcSet [ /PDF /Text /ImageB /ImageC /ImageI ]
+>> /Rotate 0 /Trans <<
+
+>> 
+  /Type /Page
+>>
+endobj
+14 0 obj
+<<
+/Contents 41 0 R /MediaBox [ 0 0 595.2756 841.8898 ] /Parent 34 0 R /Resources <<
+/Font 1 0 R /ProcSet [ /PDF /Text /ImageB /ImageC /ImageI ]
+>> /Rotate 0 /Trans <<
+
+>> 
+  /Type /Page
+>>
+endobj
+15 0 obj
+<<
+/Outlines 17 0 R /PageLabels 42 0 R /PageMode /UseNone /Pages 34 0 R /Type /Catalog
+>>
+endobj
+16 0 obj
+<<
+/Author () /CreationDate (D:20211021104301+00'00') /Creator (\(unspecified\)) /Keywords () /ModDate (D:20211021104301+00'00') /Producer (ReportLab PDF Library - www.reportlab.com) 
+  /Subject (\(unspecified\)) /Title (Getting Started with pyAndorSDK3) /Trapped /False
+>>
+endobj
+17 0 obj
+<<
+/Count 20 /First 18 0 R /Last 33 0 R /Type /Outlines
+>>
+endobj
+18 0 obj
+<<
+/Dest [ 6 0 R /XYZ 62.69291 729.0236 0 ] /Next 19 0 R /Parent 17 0 R /Title (Information)
+>>
+endobj
+19 0 obj
+<<
+/Dest [ 6 0 R /XYZ 62.69291 630.0236 0 ] /Next 20 0 R /Parent 17 0 R /Prev 18 0 R /Title (Installation)
+>>
+endobj
+20 0 obj
+<<
+/Dest [ 6 0 R /XYZ 62.69291 309.0236 0 ] /Next 21 0 R /Parent 17 0 R /Prev 19 0 R /Title (Libraries)
+>>
+endobj
+21 0 obj
+<<
+/Dest [ 7 0 R /XYZ 62.69291 699.0236 0 ] /Next 22 0 R /Parent 17 0 R /Prev 20 0 R /Title (Example Initialise and Open)
+>>
+endobj
+22 0 obj
+<<
+/Dest [ 7 0 R /XYZ 62.69291 327.2236 0 ] /Next 23 0 R /Parent 17 0 R /Prev 21 0 R /Title (pyAndorSDK3 Class Methods)
+>>
+endobj
+23 0 obj
+<<
+/Count 3 /Dest [ 8 0 R /XYZ 62.69291 693.0236 0 ] /First 24 0 R /Last 25 0 R /Next 27 0 R /Parent 17 0 R 
+  /Prev 22 0 R /Title (Camera Object Usage)
+>>
+endobj
+24 0 obj
+<<
+/Dest [ 8 0 R /XYZ 62.69291 660.0236 0 ] /Next 25 0 R /Parent 23 0 R /Title (Feature Usage)
+>>
+endobj
+25 0 obj
+<<
+/Count 1 /Dest [ 8 0 R /XYZ 62.69291 300.0236 0 ] /First 26 0 R /Last 26 0 R /Parent 23 0 R /Prev 24 0 R 
+  /Title (Camera Class Methods)
+>>
+endobj
+26 0 obj
+<<
+/Dest [ 10 0 R /XYZ 62.69291 339.0236 0 ] /Parent 25 0 R /Title (acquire\(\) and acquire_series\(\))
+>>
+endobj
+27 0 obj
+<<
+/Count 4 /Dest [ 11 0 R /XYZ 62.69291 435.0236 0 ] /First 28 0 R /Last 28 0 R /Next 32 0 R /Parent 17 0 R 
+  /Prev 23 0 R /Title (Acquisition Object)
+>>
+endobj
+28 0 obj
+<<
+/Count 3 /Dest [ 11 0 R /XYZ 62.69291 168.0236 0 ] /First 29 0 R /Last 31 0 R /Parent 27 0 R /Title (Image Metadata)
+>>
+endobj
+29 0 obj
+<<
+/Dest [ 11 0 R /XYZ 62.69291 138.0236 0 ] /Next 30 0 R /Parent 28 0 R /Title (TimeStamp Metadata)
+>>
+endobj
+30 0 obj
+<<
+/Dest [ 13 0 R /XYZ 62.69291 717.0236 0 ] /Next 31 0 R /Parent 28 0 R /Prev 29 0 R /Title (Frame Info Metadata)
+>>
+endobj
+31 0 obj
+<<
+/Dest [ 13 0 R /XYZ 62.69291 570.0236 0 ] /Parent 28 0 R /Prev 30 0 R /Title (IRIG Metadata)
+>>
+endobj
+32 0 obj
+<<
+/Dest [ 13 0 R /XYZ 62.69291 369.0236 0 ] /Next 33 0 R /Parent 17 0 R /Prev 27 0 R /Title (Callbacks)
+>>
+endobj
+33 0 obj
+<<
+/Dest [ 14 0 R /XYZ 62.69291 689.8236 0 ] /Parent 17 0 R /Prev 32 0 R /Title (Examples)
+>>
+endobj
+34 0 obj
+<<
+/Count 7 /Kids [ 6 0 R 7 0 R 8 0 R 10 0 R 11 0 R 13 0 R 14 0 R ] /Type /Pages
+>>
+endobj
+35 0 obj
+<<
+/Length 7152
+>>
+stream
+1 0 0 1 0 0 cm  BT /F1 12 Tf 14.4 TL ET
+q
+1 0 0 1 62.69291 741.0236 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 4 Tm /F2 20 Tf 24 TL 69.37488 0 Td (Getting Started with pyAndorSDK3) Tj T* -69.37488 0 Td ET
+Q
+Q
+q
+1 0 0 1 62.69291 708.0236 cm
+q
+BT 1 0 0 1 0 3.5 Tm 21 TL /F2 17.5 Tf 0 0 0 rg (Information) Tj T* ET
+Q
+Q
+q
+1 0 0 1 62.69291 696.0236 cm
+Q
+q
+1 0 0 1 62.69291 684.0236 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (Python Wrapper for Andor SDK3) Tj T* ET
+Q
+Q
+q
+1 0 0 1 62.69291 672.0236 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (Contains wrapper interface and SDK3 libraries) Tj T* ET
+Q
+Q
+q
+1 0 0 1 62.69291 660.0236 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (Supported platforms: Python3.5.1 +) Tj T* ET
+Q
+Q
+q
+1 0 0 1 62.69291 660.0236 cm
+Q
+q
+1 0 0 1 62.69291 654.0236 cm
+Q
+q
+1 0 0 1 62.69291 642.0236 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL ( ) Tj T* ET
+Q
+Q
+q
+1 0 0 1 62.69291 642.0236 cm
+Q
+q
+1 0 0 1 62.69291 609.0236 cm
+q
+BT 1 0 0 1 0 3.5 Tm 21 TL /F2 17.5 Tf 0 0 0 rg (Installation) Tj T* ET
+Q
+Q
+q
+1 0 0 1 62.69291 591.0236 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (Installation depending on your python installation:) Tj T* ET
+Q
+Q
+q
+1 0 0 1 62.69291 573.0236 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (Open command console within the same directory as the setup.py: NOTE: Using pip to install is preferred) Tj T* ET
+Q
+Q
+q
+1 0 0 1 62.69291 567.0236 cm
+Q
+q
+1 0 0 1 62.69291 567.0236 cm
+Q
+q
+1 0 0 1 62.69291 555.0236 cm
+q
+0 0 0 rg
+BT /F1 10 Tf 12 TL ET
+q
+1 0 0 1 6 -3 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL 10.5 0 Td (\177) Tj T* -10.5 0 Td ET
+Q
+Q
+q
+1 0 0 1 23 -3 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (python3 \226m pip install .) Tj T* ET
+Q
+Q
+q
+Q
+Q
+Q
+q
+1 0 0 1 62.69291 555.0236 cm
+Q
+q
+1 0 0 1 62.69291 537.0236 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (or) Tj T* ET
+Q
+Q
+q
+1 0 0 1 62.69291 531.0236 cm
+Q
+q
+1 0 0 1 62.69291 531.0236 cm
+Q
+q
+1 0 0 1 62.69291 519.0236 cm
+q
+0 0 0 rg
+BT /F1 10 Tf 12 TL ET
+q
+1 0 0 1 6 -3 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL 10.5 0 Td (\177) Tj T* -10.5 0 Td ET
+Q
+Q
+q
+1 0 0 1 23 -3 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (python3 setup.py install) Tj T* ET
+Q
+Q
+q
+Q
+Q
+Q
+q
+1 0 0 1 62.69291 519.0236 cm
+Q
+q
+1 0 0 1 62.69291 501.0236 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (Extra functionality to save images as fits files can be included by installing the extra package "save":) Tj T* ET
+Q
+Q
+q
+1 0 0 1 62.69291 495.0236 cm
+Q
+q
+1 0 0 1 62.69291 495.0236 cm
+Q
+q
+1 0 0 1 62.69291 483.0236 cm
+q
+0 0 0 rg
+BT /F1 10 Tf 12 TL ET
+q
+1 0 0 1 6 -3 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL 10.5 0 Td (\177) Tj T* -10.5 0 Td ET
+Q
+Q
+q
+1 0 0 1 23 -3 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (python3 -m pip install .[save]) Tj T* ET
+Q
+Q
+q
+Q
+Q
+Q
+q
+1 0 0 1 62.69291 483.0236 cm
+Q
+q
+1 0 0 1 62.69291 465.0236 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (Extra functionality to display images can be included by installing the extra package "show":) Tj T* ET
+Q
+Q
+q
+1 0 0 1 62.69291 459.0236 cm
+Q
+q
+1 0 0 1 62.69291 459.0236 cm
+Q
+q
+1 0 0 1 62.69291 447.0236 cm
+q
+0 0 0 rg
+BT /F1 10 Tf 12 TL ET
+q
+1 0 0 1 6 -3 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL 10.5 0 Td (\177) Tj T* -10.5 0 Td ET
+Q
+Q
+q
+1 0 0 1 23 -3 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (python3 -m pip install .[show]) Tj T* ET
+Q
+Q
+q
+Q
+Q
+Q
+q
+1 0 0 1 62.69291 447.0236 cm
+Q
+q
+1 0 0 1 62.69291 429.0236 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (Also:) Tj T* ET
+Q
+Q
+q
+1 0 0 1 62.69291 423.0236 cm
+Q
+q
+1 0 0 1 62.69291 423.0236 cm
+Q
+q
+1 0 0 1 62.69291 411.0236 cm
+q
+0 0 0 rg
+BT /F1 10 Tf 12 TL ET
+q
+1 0 0 1 6 -3 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL 10.5 0 Td (\177) Tj T* -10.5 0 Td ET
+Q
+Q
+q
+1 0 0 1 23 -3 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (pip3 install .) Tj T* ET
+Q
+Q
+q
+Q
+Q
+Q
+q
+1 0 0 1 62.69291 405.0236 cm
+Q
+q
+1 0 0 1 62.69291 393.0236 cm
+q
+0 0 0 rg
+BT /F1 10 Tf 12 TL ET
+q
+1 0 0 1 6 -3 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL 10.5 0 Td (\177) Tj T* -10.5 0 Td ET
+Q
+Q
+q
+1 0 0 1 23 -3 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (pip3 list) Tj T* ET
+Q
+Q
+q
+Q
+Q
+Q
+q
+1 0 0 1 62.69291 387.0236 cm
+Q
+q
+1 0 0 1 62.69291 375.0236 cm
+q
+0 0 0 rg
+BT /F1 10 Tf 12 TL ET
+q
+1 0 0 1 6 -3 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL 10.5 0 Td (\177) Tj T* -10.5 0 Td ET
+Q
+Q
+q
+1 0 0 1 23 -3 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (pip3 uninstall pyAndorSDK3) Tj T* ET
+Q
+Q
+q
+Q
+Q
+Q
+q
+1 0 0 1 62.69291 375.0236 cm
+Q
+q
+1 0 0 1 62.69291 357.0236 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL ('sudo' as necessary for Linux) Tj T* ET
+Q
+Q
+q
+1 0 0 1 62.69291 339.0236 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (Any errors or suggestions, please report.) Tj T* ET
+Q
+Q
+q
+1 0 0 1 62.69291 333.0236 cm
+Q
+q
+1 0 0 1 62.69291 321.0236 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL ( ) Tj T* ET
+Q
+Q
+q
+1 0 0 1 62.69291 321.0236 cm
+Q
+q
+1 0 0 1 62.69291 288.0236 cm
+q
+BT 1 0 0 1 0 3.5 Tm 21 TL /F2 17.5 Tf 0 0 0 rg (Libraries) Tj T* ET
+Q
+Q
+q
+1 0 0 1 62.69291 270.0236 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (Windows:) Tj T* ET
+Q
+Q
+q
+1 0 0 1 62.69291 240.0236 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 14 Tm /F1 10 Tf 12 TL 1.724269 Tw (During installation the appropriate libraries \(64/32 bit\) are copied into the site-packages folder of your) Tj T* 0 Tw (python installation.) Tj T* ET
+Q
+Q
+q
+1 0 0 1 62.69291 210.0236 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 14 Tm /F1 10 Tf 12 TL .903984 Tw (When the pyAndorSDK3 module is imported the site-packages folder containing the libs is added to the) Tj T* 0 Tw (systems PATH variable. To manually specify a location to search for libraries use:) Tj T* ET
+Q
+Q
+q
+1 0 0 1 62.69291 152.8236 cm
+q
+q
+1 0 0 1 0 0 cm
+q
+1 0 0 1 6.6 6.6 cm
+q
+.662745 .662745 .662745 RG
+.5 w
+.960784 .960784 .862745 rg
+n -6 -6 468.6898 48 re B*
+Q
+q
+.960784 .960784 .862745 rg
+n 0 24 24 12 re f*
+.960784 .960784 .862745 rg
+n 30 24 66 12 re f*
+.960784 .960784 .862745 rg
+n 102 24 36 12 re f*
+.960784 .960784 .862745 rg
+n 144 24 30 12 re f*
+.960784 .960784 .862745 rg
+n 0 0 30 12 re f*
+.960784 .960784 .862745 rg
+n 30 0 6 12 re f*
+.960784 .960784 .862745 rg
+n 36 0 96 12 re f*
+.960784 .960784 .862745 rg
+n 132 0 6 12 re f*
+.960784 .960784 .862745 rg
+n 138 0 6 12 re f*
+.960784 .960784 .862745 rg
+n 144 0 240 12 re f*
+.960784 .960784 .862745 rg
+n 384 0 6 12 re f*
+BT 1 0 0 1 0 26 Tm 12 TL /F3 10 Tf 0 .501961 0 rg (from) Tj /F4 10 Tf 0 0 0 rg ( ) Tj /F3 10 Tf 0 0 1 rg (pyAndorSDK3) Tj /F4 10 Tf 0 0 0 rg ( ) Tj /F3 10 Tf 0 .501961 0 rg (import) Tj /F4 10 Tf 0 0 0 rg ( ) Tj 0 0 0 rg (utils) Tj 0 0 0 rg  T*  T* 0 0 0 rg (utils) Tj .4 .4 .4 rg (.) Tj 0 0 0 rg (add_library_path) Tj 0 0 0 rg (\() Tj 0 0 0 rg (r) Tj .729412 .129412 .129412 rg ('path\\to\\directory\\containing\\libraries') Tj 0 0 0 rg (\)) Tj T* ET
+Q
+Q
+Q
+Q
+Q
+q
+1 0 0 1 62.69291 132.8236 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (Linux:) Tj T* ET
+Q
+Q
+q
+1 0 0 1 62.69291 102.8236 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 14 Tm /F1 10 Tf 12 TL .905984 Tw (The pyAndorSDK3 for Linux assumes the user has installed AndorSDK3 for Linux on their system. This) Tj T* 0 Tw (will have correctly configured LD_LIBRARY_PATH as well as configuring the correct symbolic links.) Tj T* ET
+Q
+Q
+ 
+endstream
+endobj
+36 0 obj
+<<
+/Length 9365
+>>
+stream
+1 0 0 1 0 0 cm  BT /F1 12 Tf 14.4 TL ET
+q
+1 0 0 1 62.69291 729.0236 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 26 Tm /F1 10 Tf 12 TL .53152 Tw (The environment variable LD_LIBRARY_PATH controls the behaviour of the dynamic loader used to find) Tj T* 0 Tw .04528 Tw (and load the shared libraries needed by a program and so utils.add_library_path\(\) is not used in Linux and) Tj T* 0 Tw (will raise NotImplementedError.) Tj T* ET
+Q
+Q
+q
+1 0 0 1 62.69291 723.0236 cm
+Q
+q
+1 0 0 1 62.69291 711.0236 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL ( ) Tj T* ET
+Q
+Q
+q
+1 0 0 1 62.69291 711.0236 cm
+Q
+q
+1 0 0 1 62.69291 678.0236 cm
+q
+BT 1 0 0 1 0 3.5 Tm 21 TL /F2 17.5 Tf 0 0 0 rg (Example Initialise and Open) Tj T* ET
+Q
+Q
+q
+1 0 0 1 62.69291 660.0236 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (Include and initialise AndorSDK3:) Tj T* ET
+Q
+Q
+q
+1 0 0 1 62.69291 614.8236 cm
+q
+q
+1 0 0 1 0 0 cm
+q
+1 0 0 1 6.6 6.6 cm
+q
+.662745 .662745 .662745 RG
+.5 w
+.960784 .960784 .862745 rg
+n -6 -6 468.6898 36 re B*
+Q
+q
+.960784 .960784 .862745 rg
+n 0 12 24 12 re f*
+.960784 .960784 .862745 rg
+n 30 12 66 12 re f*
+.960784 .960784 .862745 rg
+n 102 12 42 12 re f*
+.960784 .960784 .862745 rg
+n 150 12 54 12 re f*
+.960784 .960784 .862745 rg
+n 0 0 24 12 re f*
+.960784 .960784 .862745 rg
+n 30 0 6 12 re f*
+.960784 .960784 .862745 rg
+n 42 0 66 12 re f*
+.960784 .960784 .862745 rg
+n 108 0 12 12 re f*
+BT 1 0 0 1 0 14 Tm 12 TL /F3 10 Tf 0 .501961 0 rg (from) Tj /F4 10 Tf 0 0 0 rg ( ) Tj /F3 10 Tf 0 0 1 rg (pyAndorSDK3) Tj /F4 10 Tf 0 0 0 rg ( ) Tj 0 0 0 rg (include) Tj 0 0 0 rg ( ) Tj 0 0 0 rg (AndorSDK3) Tj 0 0 0 rg  T* 0 0 0 rg (sdk3) Tj 0 0 0 rg ( ) Tj .4 .4 .4 rg (=) Tj 0 0 0 rg ( ) Tj 0 0 0 rg (pyAndorSDK3) Tj 0 0 0 rg (\(\)) Tj T* ET
+Q
+Q
+Q
+Q
+Q
+q
+1 0 0 1 62.69291 594.8236 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (There are three ways to retrieve cameras:) Tj T* ET
+Q
+Q
+q
+1 0 0 1 62.69291 576.8236 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (1 - Open and retrieve specific camera by index \(e.g. for camera at index zero\):) Tj T* ET
+Q
+Q
+q
+1 0 0 1 62.69291 543.6236 cm
+q
+q
+1 0 0 1 0 0 cm
+q
+1 0 0 1 6.6 6.6 cm
+q
+.662745 .662745 .662745 RG
+.5 w
+.960784 .960784 .862745 rg
+n -6 -6 468.6898 24 re B*
+Q
+q
+.960784 .960784 .862745 rg
+n 0 0 18 12 re f*
+.960784 .960784 .862745 rg
+n 24 0 6 12 re f*
+.960784 .960784 .862745 rg
+n 36 0 24 12 re f*
+.960784 .960784 .862745 rg
+n 60 0 6 12 re f*
+.960784 .960784 .862745 rg
+n 66 0 54 12 re f*
+.960784 .960784 .862745 rg
+n 120 0 6 12 re f*
+.960784 .960784 .862745 rg
+n 126 0 6 12 re f*
+.960784 .960784 .862745 rg
+n 132 0 6 12 re f*
+BT 1 0 0 1 0 2 Tm 12 TL /F4 10 Tf 0 0 0 rg (cam) Tj 0 0 0 rg ( ) Tj .4 .4 .4 rg (=) Tj 0 0 0 rg ( ) Tj 0 0 0 rg (sdk3) Tj .4 .4 .4 rg (.) Tj 0 0 0 rg (GetCamera) Tj 0 0 0 rg (\() Tj .4 .4 .4 rg (0) Tj 0 0 0 rg (\)) Tj T* ET
+Q
+Q
+Q
+Q
+Q
+q
+1 0 0 1 62.69291 523.6236 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (2 - Open and retrieve a list of all cameras on the system:) Tj T* ET
+Q
+Q
+q
+1 0 0 1 62.69291 466.4236 cm
+q
+q
+1 0 0 1 0 0 cm
+q
+1 0 0 1 6.6 6.6 cm
+q
+.662745 .662745 .662745 RG
+.5 w
+.960784 .960784 .862745 rg
+n -6 -6 468.6898 48 re B*
+Q
+q
+.960784 .960784 .862745 rg
+n 0 24 42 12 re f*
+.960784 .960784 .862745 rg
+n 48 24 6 12 re f*
+.960784 .960784 .862745 rg
+n 60 24 24 12 re f*
+.960784 .960784 .862745 rg
+n 84 24 6 12 re f*
+.960784 .960784 .862745 rg
+n 90 24 42 12 re f*
+.960784 .960784 .862745 rg
+n 0 12 24 12 re f*
+.960784 .960784 .862745 rg
+n 30 12 6 12 re f*
+.960784 .960784 .862745 rg
+n 42 12 42 12 re f*
+.960784 .960784 .862745 rg
+n 84 12 6 12 re f*
+.960784 .960784 .862745 rg
+n 90 12 6 12 re f*
+.960784 .960784 .862745 rg
+n 96 12 6 12 re f*
+.960784 .960784 .862745 rg
+n 0 0 24 12 re f*
+.960784 .960784 .862745 rg
+n 30 0 6 12 re f*
+.960784 .960784 .862745 rg
+n 42 0 42 12 re f*
+.960784 .960784 .862745 rg
+n 84 0 6 12 re f*
+.960784 .960784 .862745 rg
+n 90 0 6 12 re f*
+.960784 .960784 .862745 rg
+n 96 0 6 12 re f*
+BT 1 0 0 1 0 26 Tm 12 TL /F4 10 Tf 0 0 0 rg (cameras) Tj 0 0 0 rg ( ) Tj .4 .4 .4 rg (=) Tj 0 0 0 rg ( ) Tj 0 0 0 rg (sdk3) Tj .4 .4 .4 rg (.) Tj 0 0 0 rg (cameras) Tj 0 0 0 rg  T* 0 0 0 rg (cam1) Tj 0 0 0 rg ( ) Tj .4 .4 .4 rg (=) Tj 0 0 0 rg ( ) Tj 0 0 0 rg (cameras) Tj 0 0 0 rg ([) Tj .4 .4 .4 rg (0) Tj 0 0 0 rg (]) Tj 0 0 0 rg  T* 0 0 0 rg (cam2) Tj 0 0 0 rg ( ) Tj .4 .4 .4 rg (=) Tj 0 0 0 rg ( ) Tj 0 0 0 rg (cameras) Tj 0 0 0 rg ([) Tj .4 .4 .4 rg (1) Tj 0 0 0 rg (]) Tj T* ET
+Q
+Q
+Q
+Q
+Q
+q
+1 0 0 1 62.69291 446.4236 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (3 - Using the 'with' keyword:) Tj T* ET
+Q
+Q
+q
+1 0 0 1 62.69291 401.2236 cm
+q
+q
+1 0 0 1 0 0 cm
+q
+1 0 0 1 6.6 6.6 cm
+q
+.662745 .662745 .662745 RG
+.5 w
+.960784 .960784 .862745 rg
+n -6 -6 468.6898 36 re B*
+Q
+q
+.960784 .960784 .862745 rg
+n 0 12 24 12 re f*
+.960784 .960784 .862745 rg
+n 30 12 24 12 re f*
+.960784 .960784 .862745 rg
+n 54 12 6 12 re f*
+.960784 .960784 .862745 rg
+n 60 12 54 12 re f*
+.960784 .960784 .862745 rg
+n 114 12 6 12 re f*
+.960784 .960784 .862745 rg
+n 120 12 6 12 re f*
+.960784 .960784 .862745 rg
+n 126 12 6 12 re f*
+.960784 .960784 .862745 rg
+n 138 12 12 12 re f*
+.960784 .960784 .862745 rg
+n 156 12 18 12 re f*
+.960784 .960784 .862745 rg
+n 174 12 6 12 re f*
+.960784 .960784 .862745 rg
+n 24 0 30 12 re f*
+.960784 .960784 .862745 rg
+n 54 0 6 12 re f*
+.960784 .960784 .862745 rg
+n 60 0 18 12 re f*
+.960784 .960784 .862745 rg
+n 78 0 6 12 re f*
+.960784 .960784 .862745 rg
+n 84 0 72 12 re f*
+.960784 .960784 .862745 rg
+n 156 0 6 12 re f*
+BT 1 0 0 1 0 14 Tm 12 TL /F3 10 Tf 0 .501961 0 rg (with) Tj /F4 10 Tf 0 0 0 rg ( ) Tj 0 0 0 rg (sdk3) Tj .4 .4 .4 rg (.) Tj 0 0 0 rg (GetCamera) Tj 0 0 0 rg (\() Tj .4 .4 .4 rg (0) Tj 0 0 0 rg (\)) Tj 0 0 0 rg ( ) Tj /F3 10 Tf 0 .501961 0 rg (as) Tj /F4 10 Tf 0 0 0 rg ( ) Tj 0 0 0 rg (cam) Tj 0 0 0 rg (:) Tj 0 0 0 rg  T* (    ) Tj 0 .501961 0 rg (print) Tj 0 0 0 rg (\() Tj 0 0 0 rg (cam) Tj .4 .4 .4 rg (.) Tj 0 0 0 rg (SerialNumber) Tj 0 0 0 rg (\)) Tj T* ET
+Q
+Q
+Q
+Q
+Q
+q
+1 0 0 1 62.69291 357.2236 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 26 Tm /F1 10 Tf 12 TL 1.651567 Tw (For all above it is important to know it is not necessary to manually call open or close methods. The) Tj T* 0 Tw 1.053984 Tw (camera object is automatically opened with GetCamera and is automatically closed when it goes out of) Tj T* 0 Tw (scope.) Tj T* ET
+Q
+Q
+q
+1 0 0 1 62.69291 351.2236 cm
+Q
+q
+1 0 0 1 62.69291 339.2236 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL ( ) Tj T* ET
+Q
+Q
+q
+1 0 0 1 62.69291 339.2236 cm
+Q
+q
+1 0 0 1 62.69291 306.2236 cm
+q
+BT 1 0 0 1 0 3.5 Tm 21 TL /F2 17.5 Tf 0 0 0 rg (pyAndorSDK3 Class Methods) Tj T* ET
+Q
+Q
+q
+1 0 0 1 62.69291 276.2236 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 14 Tm /F1 10 Tf 12 TL 1.124104 Tw (The pyAndorSDK3\(\) object has a few methods and properties that are of use as described in the table) Tj T* 0 Tw (below:) Tj T* ET
+Q
+Q
+q
+1 0 0 1 62.69291 270.2236 cm
+Q
+q
+1 0 0 1 62.69291 96.22362 cm
+q
+1 1 1 rg
+n 0 174 469.8898 -18 re f*
+.878431 .878431 .878431 rg
+n 0 156 469.8898 -42 re f*
+1 1 1 rg
+n 0 114 469.8898 -18 re f*
+.878431 .878431 .878431 rg
+n 0 96 469.8898 -30 re f*
+1 1 1 rg
+n 0 66 469.8898 -18 re f*
+.878431 .878431 .878431 rg
+n 0 48 469.8898 -18 re f*
+1 1 1 rg
+n 0 30 469.8898 -30 re f*
+.960784 .960784 .862745 rg
+n 0 174 469.8898 -18 re f*
+0 0 0 rg
+BT /F1 10 Tf 12 TL ET
+q
+1 0 0 1 6 159 cm
+q
+.960784 .960784 .862745 rg
+n 0 0 236.7652 12 re f*
+Q
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL 85.59258 0 Td (Example Code) Tj T* -85.59258 0 Td ET
+Q
+Q
+q
+1 0 0 1 254.7652 159 cm
+q
+.960784 .960784 .862745 rg
+n 0 0 209.1246 12 re f*
+Q
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL 79.5573 0 Td (Description) Tj T* -79.5573 0 Td ET
+Q
+Q
+0 0 0 rg
+q
+1 0 0 1 6 141 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (sdk3 = pyAndorSDK3\(\)) Tj T* ET
+Q
+Q
+q
+1 0 0 1 254.7652 117 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 26 Tm /F1 10 Tf 12 TL (Initialising the pyAndorSDK3 object and the) Tj T* (SDK3 library \(analogous to AT_Initialise\(\)) Tj T* (SDK3 function\)) Tj T* ET
+Q
+Q
+q
+1 0 0 1 6 99 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (sdk3.Reinitialise\(\)) Tj T* ET
+Q
+Q
+q
+1 0 0 1 254.7652 99 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (Finalises and Reinitialises the SDK3 Library) Tj T* ET
+Q
+Q
+q
+1 0 0 1 6 81 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (sdk3.cameras) Tj T* ET
+Q
+Q
+q
+1 0 0 1 254.7652 69 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 14 Tm /F1 10 Tf 12 TL (\(Property\) a list of cameras opened and) Tj T* (available for use) Tj T* ET
+Q
+Q
+q
+1 0 0 1 6 51 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (sdk3.DeviceCount) Tj T* ET
+Q
+Q
+q
+1 0 0 1 254.7652 51 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (\(Property\) the number of cameras available) Tj T* ET
+Q
+Q
+q
+1 0 0 1 6 33 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (sdk3.SoftwareVersion) Tj T* ET
+Q
+Q
+q
+1 0 0 1 254.7652 33 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (\(Property\) the SDK3 Software Version) Tj T* ET
+Q
+Q
+q
+1 0 0 1 6 15 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (sdk3.GetCamera\(camera_index\)) Tj T* ET
+Q
+Q
+q
+1 0 0 1 254.7652 3 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 14 Tm /F1 10 Tf 12 TL (Retrieves the camera at the user indicated) Tj T* (index \(if available\)) Tj T* ET
+Q
+Q
+q
+1 J
+1 j
+0 0 0 RG
+.25 w
+n 0 0 m 469.8898 0 l S
+n 0 156 m 469.8898 156 l S
+n 0 114 m 469.8898 114 l S
+n 0 96 m 469.8898 96 l S
+n 0 66 m 469.8898 66 l S
+n 0 48 m 469.8898 48 l S
+n 0 30 m 469.8898 30 l S
+n 248.7652 0 m 248.7652 174 l S
+n 0 174 m 469.8898 174 l S
+n 0 0 m 0 174 l S
+n 469.8898 0 m 469.8898 174 l S
+Q
+Q
+Q
+ 
+endstream
+endobj
+37 0 obj
+<<
+/Length 8071
+>>
+stream
+1 0 0 1 0 0 cm  BT /F1 12 Tf 14.4 TL ET
+q
+1 0 0 1 62.69291 705.0236 cm
+q
+1 1 1 rg
+n 0 60 469.8898 -60 re f*
+0 0 0 rg
+BT /F1 10 Tf 12 TL ET
+q
+1 0 0 1 6 45 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (sdk3.event_callback\(cb_func\)) Tj T* ET
+Q
+Q
+q
+1 0 0 1 254.7652 51 cm
+Q
+q
+1 0 0 1 254.7652 27 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 14 Tm /F1 10 Tf 12 TL .970656 Tw (Creates an event callback function to be used) Tj T* 0 Tw (with callback registering.) Tj T* ET
+Q
+Q
+q
+1 0 0 1 254.7652 3 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 14 Tm /F1 10 Tf 12 TL 4.934099 Tw (Best used as a decorator \(see Callbacks) Tj T* 0 Tw (section for more info\)) Tj T* ET
+Q
+Q
+q
+1 0 0 1 254.7652 3 cm
+Q
+q
+1 J
+1 j
+0 0 0 RG
+.25 w
+n 0 60 m 469.8898 60 l S
+n 248.7652 0 m 248.7652 60 l S
+n 0 0 m 0 60 l S
+n 469.8898 0 m 469.8898 60 l S
+n 0 0 m 469.8898 0 l S
+Q
+Q
+Q
+q
+1 0 0 1 62.69291 705.0236 cm
+Q
+q
+1 0 0 1 62.69291 672.0236 cm
+q
+BT 1 0 0 1 0 3.5 Tm 21 TL /F2 17.5 Tf 0 0 0 rg (Camera Object Usage) Tj T* ET
+Q
+Q
+q
+1 0 0 1 62.69291 642.0236 cm
+q
+BT 1 0 0 1 0 3 Tm 18 TL /F2 15 Tf 0 0 0 rg (Feature Usage) Tj T* ET
+Q
+Q
+q
+1 0 0 1 62.69291 612.0236 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 14 Tm /F1 10 Tf 12 TL .92881 Tw (Using pyAndorSDK3 it is not necessary to call specific typed methods and the knowlegde of the type is) Tj T* 0 Tw (figured and handled by the wrapper. It is very simple to set and get features.) Tj T* ET
+Q
+Q
+q
+1 0 0 1 62.69291 606.0236 cm
+Q
+q
+1 0 0 1 62.69291 330.0236 cm
+q
+1 1 1 rg
+n 0 276 469.8898 -18 re f*
+.878431 .878431 .878431 rg
+n 0 258 469.8898 -30 re f*
+1 1 1 rg
+n 0 228 469.8898 -30 re f*
+.878431 .878431 .878431 rg
+n 0 198 469.8898 -30 re f*
+1 1 1 rg
+n 0 168 469.8898 -18 re f*
+.878431 .878431 .878431 rg
+n 0 150 469.8898 -18 re f*
+1 1 1 rg
+n 0 132 469.8898 -30 re f*
+.878431 .878431 .878431 rg
+n 0 102 469.8898 -42 re f*
+1 1 1 rg
+n 0 60 469.8898 -30 re f*
+.878431 .878431 .878431 rg
+n 0 30 469.8898 -30 re f*
+.960784 .960784 .862745 rg
+n 0 276 469.8898 -18 re f*
+0 0 0 rg
+BT /F1 10 Tf 12 TL ET
+q
+1 0 0 1 6 261 cm
+q
+.960784 .960784 .862745 rg
+n 0 0 236.7652 12 re f*
+Q
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL 85.59258 0 Td (Example Code) Tj T* -85.59258 0 Td ET
+Q
+Q
+q
+1 0 0 1 254.7652 261 cm
+q
+.960784 .960784 .862745 rg
+n 0 0 209.1246 12 re f*
+Q
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL 79.5573 0 Td (Description) Tj T* -79.5573 0 Td ET
+Q
+Q
+0 0 0 rg
+q
+1 0 0 1 6 243 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (val = cam.FeatureName) Tj T* ET
+Q
+Q
+q
+1 0 0 1 254.7652 231 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 14 Tm /F1 10 Tf 12 TL (Gets the value of FeatureName \(use the SDK3) Tj T* (Feature Matrix for Feature Names\)) Tj T* ET
+Q
+Q
+q
+1 0 0 1 6 213 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (cam.FeatureName = val) Tj T* ET
+Q
+Q
+q
+1 0 0 1 254.7652 201 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 14 Tm /F1 10 Tf 12 TL (Sets the FeatureName to the value held by the) Tj T* ("val" variable) Tj T* ET
+Q
+Q
+q
+1 0 0 1 6 183 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (val = cam.CmdFeatureName\(\)) Tj T* ET
+Q
+Q
+q
+1 0 0 1 254.7652 171 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 14 Tm /F1 10 Tf 12 TL (Executes the Command Feature with the name) Tj T* (CmdFeatureName) Tj T* ET
+Q
+Q
+q
+1 0 0 1 6 153 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (val = cam.max_FeatureName) Tj T* ET
+Q
+Q
+q
+1 0 0 1 254.7652 153 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (Gets the maximum value of FeatureName) Tj T* ET
+Q
+Q
+q
+1 0 0 1 6 135 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (val = cam.min_FeatureName) Tj T* ET
+Q
+Q
+q
+1 0 0 1 254.7652 135 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (Gets the minimum value of FeatureName) Tj T* ET
+Q
+Q
+q
+1 0 0 1 6 117 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (opts = cam.options_EnumFeatureName) Tj T* ET
+Q
+Q
+q
+1 0 0 1 254.7652 105 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 14 Tm /F1 10 Tf 12 TL (Gets the list of legal options for the) Tj T* (EnumFeatureName feature) Tj T* ET
+Q
+Q
+q
+1 0 0 1 6 75 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 14 Tm /F1 10 Tf 12 TL (avail =) Tj T* (cam.is_available_EnumFeatureName\("EnumEntry"\)) Tj T* ET
+Q
+Q
+q
+1 0 0 1 254.7652 63 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 26 Tm /F1 10 Tf 12 TL (Gets the availablity of a given EnumEntry for) Tj T* (an EnumFeature \(an EnumEntry maybe legal) Tj T* (but unavailable at certain times\)) Tj T* ET
+Q
+Q
+q
+1 0 0 1 6 33 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 14 Tm /F1 10 Tf 12 TL (avail_opts =) Tj T* (cam.available_options_EnumFeatureName) Tj T* ET
+Q
+Q
+q
+1 0 0 1 254.7652 33 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 14 Tm /F1 10 Tf 12 TL (Gets the list of available options for the) Tj T* (EnumFeatureName feature) Tj T* ET
+Q
+Q
+q
+1 0 0 1 6 15 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (feat_type = cam.type_FeatureName) Tj T* ET
+Q
+Q
+q
+1 0 0 1 254.7652 3 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 14 Tm /F1 10 Tf 12 TL (Gets the feature type of FeatureName as a) Tj T* (string) Tj T* ET
+Q
+Q
+q
+1 J
+1 j
+0 0 0 RG
+.25 w
+n 0 258 m 469.8898 258 l S
+n 0 228 m 469.8898 228 l S
+n 0 198 m 469.8898 198 l S
+n 0 168 m 469.8898 168 l S
+n 0 150 m 469.8898 150 l S
+n 0 132 m 469.8898 132 l S
+n 0 102 m 469.8898 102 l S
+n 0 60 m 469.8898 60 l S
+n 0 30 m 469.8898 30 l S
+n 248.7652 0 m 248.7652 276 l S
+n 0 276 m 469.8898 276 l S
+n 0 0 m 469.8898 0 l S
+n 0 0 m 0 276 l S
+n 469.8898 0 m 469.8898 276 l S
+Q
+Q
+Q
+q
+1 0 0 1 62.69291 330.0236 cm
+Q
+q
+1 0 0 1 62.69291 324.0236 cm
+Q
+q
+1 0 0 1 62.69291 312.0236 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL ( ) Tj T* ET
+Q
+Q
+q
+1 0 0 1 62.69291 312.0236 cm
+Q
+q
+1 0 0 1 62.69291 282.0236 cm
+q
+BT 1 0 0 1 0 3 Tm 18 TL /F2 15 Tf 0 0 0 rg (Camera Class Methods) Tj T* ET
+Q
+Q
+q
+1 0 0 1 62.69291 252.0236 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 14 Tm /F1 10 Tf 12 TL .98811 Tw (Below are the methods available for use with the Camera class. Most of the available functions revolve) Tj T* 0 Tw (around setting up and acquiring images.) Tj T* ET
+Q
+Q
+q
+1 0 0 1 62.69291 246.0236 cm
+Q
+q
+1 0 0 1 62.69291 78.02362 cm
+q
+1 1 1 rg
+n 0 168 469.8898 -18 re f*
+.878431 .878431 .878431 rg
+n 0 150 469.8898 -72 re f*
+1 1 1 rg
+n 0 78 469.8898 -60 re f*
+.878431 .878431 .878431 rg
+n 0 18 469.8898 -18 re f*
+.960784 .960784 .862745 rg
+n 0 168 469.8898 -18 re f*
+0 0 0 rg
+BT /F1 10 Tf 12 TL ET
+q
+1 0 0 1 6 153 cm
+q
+.960784 .960784 .862745 rg
+n 0 0 216.9207 12 re f*
+Q
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL 75.67033 0 Td (Example Code) Tj T* -75.67033 0 Td ET
+Q
+Q
+q
+1 0 0 1 234.9207 153 cm
+q
+.960784 .960784 .862745 rg
+n 0 0 228.9691 12 re f*
+Q
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL 89.47955 0 Td (Description) Tj T* -89.47955 0 Td ET
+Q
+Q
+0 0 0 rg
+q
+1 0 0 1 6 135 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (cam.open\(\)) Tj T* ET
+Q
+Q
+q
+1 0 0 1 234.9207 141 cm
+Q
+q
+1 0 0 1 234.9207 129 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (Opens the camera.) Tj T* ET
+Q
+Q
+q
+1 0 0 1 234.9207 105 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 14 Tm /F1 10 Tf 12 TL .353555 Tw (NOTE it is not required to call this as the camera is) Tj T* 0 Tw (opened automatically) Tj T* ET
+Q
+Q
+q
+1 0 0 1 234.9207 81 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 14 Tm /F1 10 Tf 12 TL .924346 Tw (If you have manually called close you can call this) Tj T* 0 Tw (to reopen the camera associated with this object) Tj T* ET
+Q
+Q
+q
+1 0 0 1 234.9207 81 cm
+Q
+q
+1 0 0 1 6 63 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (cam.close\(\)) Tj T* ET
+Q
+Q
+q
+1 0 0 1 234.9207 69 cm
+Q
+q
+1 0 0 1 234.9207 57 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (Closes the camera instance.) Tj T* ET
+Q
+Q
+q
+1 0 0 1 234.9207 21 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 26 Tm /F1 10 Tf 12 TL -0.10099 Tw (NOTE: it is not required to call this method - close is) Tj T* 0 Tw 2.694159 Tw (called automaticaly when the object goes out of) Tj T* 0 Tw (scope) Tj T* ET
+Q
+Q
+q
+1 0 0 1 234.9207 21 cm
+Q
+q
+1 0 0 1 6 3 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (cam.queue\(buffer, buffer_size\)) Tj T* ET
+Q
+Q
+q
+1 0 0 1 234.9207 3 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (Calls AT_QueueBuffer with a user created buffer) Tj T* ET
+Q
+Q
+q
+1 J
+1 j
+0 0 0 RG
+.25 w
+n 0 0 m 469.8898 0 l S
+n 0 150 m 469.8898 150 l S
+n 0 78 m 469.8898 78 l S
+n 0 18 m 469.8898 18 l S
+n 228.9207 0 m 228.9207 168 l S
+n 0 168 m 469.8898 168 l S
+n 0 0 m 0 168 l S
+n 469.8898 0 m 469.8898 168 l S
+Q
+Q
+Q
+ 
+endstream
+endobj
+38 0 obj
+<<
+/Length 8995
+>>
+stream
+1 0 0 1 0 0 cm  BT /F1 12 Tf 14.4 TL ET
+q
+1 0 0 1 62.69291 369.0236 cm
+q
+1 1 1 rg
+n 0 396 469.8898 -18 re f*
+.878431 .878431 .878431 rg
+n 0 378 469.8898 -42 re f*
+1 1 1 rg
+n 0 336 469.8898 -30 re f*
+.878431 .878431 .878431 rg
+n 0 306 469.8898 -30 re f*
+1 1 1 rg
+n 0 276 469.8898 -30 re f*
+.878431 .878431 .878431 rg
+n 0 246 469.8898 -30 re f*
+1 1 1 rg
+n 0 216 469.8898 -42 re f*
+.878431 .878431 .878431 rg
+n 0 174 469.8898 -42 re f*
+1 1 1 rg
+n 0 132 469.8898 -42 re f*
+.878431 .878431 .878431 rg
+n 0 90 469.8898 -42 re f*
+1 1 1 rg
+n 0 48 469.8898 -30 re f*
+.878431 .878431 .878431 rg
+n 0 18 469.8898 -18 re f*
+0 0 0 rg
+BT /F1 10 Tf 12 TL ET
+q
+1 0 0 1 6 381 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (cam.queue_buffer\(buffer_size\)) Tj T* ET
+Q
+Q
+q
+1 0 0 1 234.9207 381 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (Creates and queues an empty buffer of 'buffer_size') Tj T* ET
+Q
+Q
+q
+1 0 0 1 6 363 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (img = cam.wait_buffer\(timeout_ms\)) Tj T* ET
+Q
+Q
+q
+1 0 0 1 234.9207 339 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 26 Tm /F1 10 Tf 12 TL (Calls the AT_WaitBuffer command and waits for) Tj T* (and returns the next available image within the) Tj T* (timout period given) Tj T* ET
+Q
+Q
+q
+1 0 0 1 6 321 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (cam.flush\(\)) Tj T* ET
+Q
+Q
+q
+1 0 0 1 234.9207 309 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 14 Tm /F1 10 Tf 12 TL (Calls the AT_Flush command and cleans any) Tj T* (existing queued buffers) Tj T* ET
+Q
+Q
+q
+1 0 0 1 6 291 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (updated_list = cam.get_updated_features\(\)) Tj T* ET
+Q
+Q
+q
+1 0 0 1 234.9207 279 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 14 Tm /F1 10 Tf 12 TL (Returns a list of strings with the names of features) Tj T* (that have been updated) Tj T* ET
+Q
+Q
+q
+1 0 0 1 6 261 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (cam.register_feature_callback\(feature, func\)) Tj T* ET
+Q
+Q
+q
+1 0 0 1 234.9207 249 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 14 Tm /F1 10 Tf 12 TL (Register a callback function to a feature \(see) Tj T* (Callbacks section for more information\)) Tj T* ET
+Q
+Q
+q
+1 0 0 1 6 231 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (cam.unregister_feature_callback\(feature, func\)) Tj T* ET
+Q
+Q
+q
+1 0 0 1 234.9207 219 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 14 Tm /F1 10 Tf 12 TL (Unregister a feature callback function \(see) Tj T* (Callbacks section for more information\)) Tj T* ET
+Q
+Q
+q
+1 0 0 1 6 201 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (img = cam.acquire\(\)) Tj T* ET
+Q
+Q
+q
+1 0 0 1 234.9207 177 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 26 Tm /F1 10 Tf 12 TL (Acquires a single image - returns an Acquisition) Tj T* (object \(see Acquisition Object section for more) Tj T* (information\)) Tj T* ET
+Q
+Q
+q
+1 0 0 1 6 159 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (imgs = cam.acquire_series\(\)) Tj T* ET
+Q
+Q
+q
+1 0 0 1 234.9207 135 cm
+q
+BT 1 0 0 1 0 26 Tm 12 TL /F1 10 Tf 0 0 0 rg (Acquires <) Tj (FrameCount) Tj (> images and returns a list) Tj T* (of Acquisition objects - it is recommended to read) Tj T* (the docs for this function below) Tj T* ET
+Q
+Q
+q
+1 0 0 1 6 117 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (imgs = cam.get_previous_acquisition_series\(\)) Tj T* ET
+Q
+Q
+q
+1 0 0 1 234.9207 93 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 26 Tm /F1 10 Tf 12 TL (Returns the list of images from the previous) Tj T* (acquire_series \(useful for retrieval of images when) Tj T* (acquire_series failed with an exception\)) Tj T* ET
+Q
+Q
+q
+1 0 0 1 6 75 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (lib = cam.lib) Tj T* ET
+Q
+Q
+q
+1 0 0 1 234.9207 51 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 26 Tm /F1 10 Tf 12 TL (\(Property\) Returns an instance of the) Tj T* (andor_internals object \(still recommended to use) Tj T* (the camera through its own interface\)) Tj T* ET
+Q
+Q
+q
+1 0 0 1 6 33 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (hndl = cam.handle) Tj T* ET
+Q
+Q
+q
+1 0 0 1 234.9207 21 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 14 Tm /F1 10 Tf 12 TL (\(Property\) The handle of the camera this object) Tj T* (owns) Tj T* ET
+Q
+Q
+q
+1 0 0 1 6 3 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (index = cam.index) Tj T* ET
+Q
+Q
+q
+1 0 0 1 234.9207 3 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL -0.001361 Tw (\(Property\) The index of the camera this object owns) Tj T* 0 Tw ET
+Q
+Q
+q
+1 J
+1 j
+0 0 0 RG
+.25 w
+n 0 396 m 469.8898 396 l S
+n 0 378 m 469.8898 378 l S
+n 0 336 m 469.8898 336 l S
+n 0 306 m 469.8898 306 l S
+n 0 276 m 469.8898 276 l S
+n 0 246 m 469.8898 246 l S
+n 0 216 m 469.8898 216 l S
+n 0 174 m 469.8898 174 l S
+n 0 132 m 469.8898 132 l S
+n 0 90 m 469.8898 90 l S
+n 0 48 m 469.8898 48 l S
+n 0 18 m 469.8898 18 l S
+n 228.9207 0 m 228.9207 396 l S
+n 0 0 m 0 396 l S
+n 469.8898 0 m 469.8898 396 l S
+n 0 0 m 469.8898 0 l S
+Q
+Q
+Q
+q
+1 0 0 1 62.69291 369.0236 cm
+Q
+q
+1 0 0 1 62.69291 363.0236 cm
+Q
+q
+1 0 0 1 62.69291 351.0236 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL ( ) Tj T* ET
+Q
+Q
+q
+1 0 0 1 62.69291 351.0236 cm
+Q
+q
+1 0 0 1 62.69291 324.0236 cm
+q
+BT 1 0 0 1 0 2.5 Tm 15 TL /F5 12.5 Tf 0 0 0 rg (acquire\(\) and acquire_series\(\)) Tj T* ET
+Q
+Q
+q
+1 0 0 1 62.69291 294.0236 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 14 Tm /F1 10 Tf 12 TL .599431 Tw (With both the acquire and acquire_series it is possible to pass in features and values you wish to assign) Tj T* 0 Tw (for the acquisition\(s\), and other keyword values for the acquisition. E.g.:) Tj T* ET
+Q
+Q
+q
+1 0 0 1 62.69291 288.0236 cm
+Q
+q
+1 0 0 1 62.69291 288.0236 cm
+Q
+q
+1 0 0 1 62.69291 276.0236 cm
+q
+0 0 0 rg
+BT /F1 10 Tf 12 TL ET
+q
+1 0 0 1 6 -3 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL 10.5 0 Td (\177) Tj T* -10.5 0 Td ET
+Q
+Q
+q
+1 0 0 1 23 -3 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (img = cam.acquire\(\("ElectronicShutteringMode","Rolling"\), timeout=1000\)) Tj T* ET
+Q
+Q
+q
+Q
+Q
+Q
+q
+1 0 0 1 62.69291 270.0236 cm
+Q
+q
+1 0 0 1 62.69291 246.0236 cm
+q
+0 0 0 rg
+BT /F1 10 Tf 12 TL ET
+q
+1 0 0 1 6 9 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL 10.5 0 Td (\177) Tj T* -10.5 0 Td ET
+Q
+Q
+q
+1 0 0 1 23 -3 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 14 Tm /F1 10 Tf 12 TL 2.463255 Tw (imgs = cam.acquire_series\(\("CycleMode","Fixed"\),\("FrameCount",100\),timeout=5000, max_buf=10,) Tj T* 0 Tw (circ_buf=True\)) Tj T* ET
+Q
+Q
+q
+Q
+Q
+Q
+q
+1 0 0 1 62.69291 246.0236 cm
+Q
+q
+1 0 0 1 62.69291 228.0236 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (Optional keyword parameters for acquire_series:) Tj T* ET
+Q
+Q
+q
+1 0 0 1 62.69291 222.0236 cm
+Q
+q
+1 0 0 1 62.69291 102.0236 cm
+q
+1 1 1 rg
+n 0 120 469.8898 -18 re f*
+.878431 .878431 .878431 rg
+n 0 102 469.8898 -42 re f*
+1 1 1 rg
+n 0 60 469.8898 -18 re f*
+.878431 .878431 .878431 rg
+n 0 42 469.8898 -42 re f*
+.960784 .960784 .862745 rg
+n 0 120 469.8898 -18 re f*
+0 0 0 rg
+BT /F1 10 Tf 12 TL ET
+q
+1 0 0 1 6 105 cm
+q
+.960784 .960784 .862745 rg
+n 0 0 86.92416 12 re f*
+Q
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL 24.01208 0 Td (Keyword) Tj T* -24.01208 0 Td ET
+Q
+Q
+q
+1 0 0 1 104.9242 105 cm
+q
+.960784 .960784 .862745 rg
+n 0 0 29.2184 12 re f*
+Q
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL 3.4942 0 Td (Type) Tj T* -3.4942 0 Td ET
+Q
+Q
+q
+1 0 0 1 146.1426 105 cm
+q
+.960784 .960784 .862745 rg
+n 0 0 70.4368 12 re f*
+Q
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL 19.3784 0 Td (Default) Tj T* -19.3784 0 Td ET
+Q
+Q
+q
+1 0 0 1 228.5794 105 cm
+q
+.960784 .960784 .862745 rg
+n 0 0 235.3104 12 re f*
+Q
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL 92.6502 0 Td (Description) Tj T* -92.6502 0 Td ET
+Q
+Q
+0 0 0 rg
+q
+1 0 0 1 6 87 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (timeout) Tj T* ET
+Q
+Q
+q
+1 0 0 1 104.9242 87 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (int) Tj T* ET
+Q
+Q
+q
+1 0 0 1 146.1426 63 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 26 Tm /F1 10 Tf 12 TL (max\(5000,) Tj T* (ceil\(5000 / cam) Tj T* (.FrameRate\)\)) Tj T* ET
+Q
+Q
+q
+1 0 0 1 228.5794 87 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (Sets the timeout of each image) Tj T* ET
+Q
+Q
+q
+1 0 0 1 6 45 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (min_buf) Tj T* ET
+Q
+Q
+q
+1 0 0 1 104.9242 45 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (int) Tj T* ET
+Q
+Q
+q
+1 0 0 1 146.1426 45 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (2) Tj T* ET
+Q
+Q
+q
+1 0 0 1 228.5794 45 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (Sets the minimum num buffers to be queued) Tj T* ET
+Q
+Q
+q
+1 0 0 1 6 27 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (max_buf) Tj T* ET
+Q
+Q
+q
+1 0 0 1 104.9242 27 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (int) Tj T* ET
+Q
+Q
+q
+1 0 0 1 146.1426 27 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (25) Tj T* ET
+Q
+Q
+q
+1 0 0 1 228.5794 3 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 26 Tm /F1 10 Tf 12 TL (The maximum number of buffers to be assigned) Tj T* (before acquisition begins \(this is also the muber of) Tj T* (buffers used when circular buffer is enabled\)) Tj T* ET
+Q
+Q
+q
+1 J
+1 j
+0 0 0 RG
+.25 w
+n 0 0 m 469.8898 0 l S
+n 0 102 m 469.8898 102 l S
+n 0 60 m 469.8898 60 l S
+n 0 42 m 469.8898 42 l S
+n 98.92416 0 m 98.92416 120 l S
+n 140.1426 0 m 140.1426 120 l S
+n 222.5794 0 m 222.5794 120 l S
+n 0 120 m 469.8898 120 l S
+n 0 0 m 0 120 l S
+n 469.8898 0 m 469.8898 120 l S
+Q
+Q
+Q
+ 
+endstream
+endobj
+39 0 obj
+<<
+/Length 8817
+>>
+stream
+1 0 0 1 0 0 cm  BT /F1 12 Tf 14.4 TL ET
+q
+1 0 0 1 62.69291 495.0236 cm
+q
+1 1 1 rg
+n 0 270 469.8898 -42 re f*
+.878431 .878431 .878431 rg
+n 0 228 469.8898 -108 re f*
+1 1 1 rg
+n 0 120 469.8898 -30 re f*
+.878431 .878431 .878431 rg
+n 0 90 469.8898 -30 re f*
+1 1 1 rg
+n 0 60 469.8898 -30 re f*
+.878431 .878431 .878431 rg
+n 0 30 469.8898 -30 re f*
+0 0 0 rg
+BT /F1 10 Tf 12 TL ET
+q
+1 0 0 1 6 255 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (circ_buf) Tj T* ET
+Q
+Q
+q
+1 0 0 1 104.9242 255 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (bool) Tj T* ET
+Q
+Q
+q
+1 0 0 1 146.1426 255 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (False) Tj T* ET
+Q
+Q
+q
+1 0 0 1 228.5794 231 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 26 Tm /F1 10 Tf 12 TL -0.1112 Tw (Use the assigned buffers in a circular fashion \(normal) Tj T* 0 Tw (running will create a new buffer for each new) Tj T* (acquisition\)) Tj T* ET
+Q
+Q
+q
+1 0 0 1 6 213 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (frame_count) Tj T* ET
+Q
+Q
+q
+1 0 0 1 104.9242 213 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (int) Tj T* ET
+Q
+Q
+q
+1 0 0 1 146.1426 201 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 14 Tm /F1 10 Tf 12 TL (FrameCount) Tj T* (feature or 0) Tj T* ET
+Q
+Q
+q
+1 0 0 1 228.5794 219 cm
+Q
+q
+1 0 0 1 228.5794 207 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (The number of frames you want to acquire.) Tj T* ET
+Q
+Q
+q
+1 0 0 1 228.5794 195 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (Sets FrameCount Feature when in Fixed mode.) Tj T* ET
+Q
+Q
+q
+1 0 0 1 228.5794 123 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 62 Tm /F1 10 Tf 12 TL .29904 Tw (When this value is not explicitly passed in it uses the) Tj T* 0 Tw .822915 Tw (FrameCount Feature value as default value when in) Tj T* 0 Tw 4.395772 Tw (Fixed CycleMode and 0 as default when using) Tj T* 0 Tw 1.4456 Tw (Continuous so will acquire forever - it is advised to) Tj T* 0 Tw .8588 Tw (use this parameter when using Continuous or use a) Tj T* 0 Tw (threaded stop) Tj T* ET
+Q
+Q
+q
+1 0 0 1 228.5794 123 cm
+Q
+q
+1 0 0 1 6 105 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (print_frame) Tj T* ET
+Q
+Q
+q
+1 0 0 1 104.9242 105 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (bool) Tj T* ET
+Q
+Q
+q
+1 0 0 1 146.1426 105 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (False) Tj T* ET
+Q
+Q
+q
+1 0 0 1 228.5794 93 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 14 Tm /F1 10 Tf 12 TL (Print the data in the acquired frames as they are) Tj T* (acquired) Tj T* ET
+Q
+Q
+q
+1 0 0 1 6 75 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (print_fps) Tj T* ET
+Q
+Q
+q
+1 0 0 1 104.9242 75 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (bool) Tj T* ET
+Q
+Q
+q
+1 0 0 1 146.1426 75 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (False) Tj T* ET
+Q
+Q
+q
+1 0 0 1 228.5794 63 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 14 Tm /F1 10 Tf 12 TL (Enable to print Effective FrameRate during the) Tj T* (acquisition series) Tj T* ET
+Q
+Q
+q
+1 0 0 1 6 45 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (print_fps_interval) Tj T* ET
+Q
+Q
+q
+1 0 0 1 104.9242 45 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (int) Tj T* ET
+Q
+Q
+q
+1 0 0 1 146.1426 45 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (1) Tj T* ET
+Q
+Q
+q
+1 0 0 1 228.5794 33 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 14 Tm /F1 10 Tf 12 TL (The number of frames to acquire before printing) Tj T* (Effective FrameRate) Tj T* ET
+Q
+Q
+q
+1 0 0 1 6 15 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (pause_after) Tj T* ET
+Q
+Q
+q
+1 0 0 1 104.9242 15 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (float) Tj T* ET
+Q
+Q
+q
+1 0 0 1 146.1426 15 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (0.0) Tj T* ET
+Q
+Q
+q
+1 0 0 1 228.5794 3 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 14 Tm /F1 10 Tf 12 TL (Pause for the specified num seconds after all) Tj T* (acquisitions are acquirired) Tj T* ET
+Q
+Q
+q
+1 J
+1 j
+0 0 0 RG
+.25 w
+n 0 270 m 469.8898 270 l S
+n 0 228 m 469.8898 228 l S
+n 0 120 m 469.8898 120 l S
+n 0 90 m 469.8898 90 l S
+n 0 60 m 469.8898 60 l S
+n 0 30 m 469.8898 30 l S
+n 98.92416 0 m 98.92416 270 l S
+n 140.1426 0 m 140.1426 270 l S
+n 222.5794 0 m 222.5794 270 l S
+n 0 0 m 0 270 l S
+n 469.8898 0 m 469.8898 270 l S
+n 0 0 m 469.8898 0 l S
+Q
+Q
+Q
+q
+1 0 0 1 62.69291 495.0236 cm
+Q
+q
+1 0 0 1 62.69291 465.0236 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 14 Tm /F1 10 Tf 12 TL .570651 Tw (The acquire and acquire_series methods can used as a basis to create custom acquisition functions and) Tj T* 0 Tw (routines along with the examples custom_acquisition.py and custom_acquisition_circular_buffer.py) Tj T* ET
+Q
+Q
+q
+1 0 0 1 62.69291 459.0236 cm
+Q
+q
+1 0 0 1 62.69291 447.0236 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL ( ) Tj T* ET
+Q
+Q
+q
+1 0 0 1 62.69291 447.0236 cm
+Q
+q
+1 0 0 1 62.69291 414.0236 cm
+q
+BT 1 0 0 1 0 3.5 Tm 21 TL /F2 17.5 Tf 0 0 0 rg (Acquisition Object) Tj T* ET
+Q
+Q
+q
+1 0 0 1 62.69291 396.0236 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (The Acquisition objects can be interected with in the following ways:) Tj T* ET
+Q
+Q
+q
+1 0 0 1 62.69291 390.0236 cm
+Q
+q
+1 0 0 1 62.69291 216.0236 cm
+q
+1 1 1 rg
+n 0 174 469.8898 -18 re f*
+.878431 .878431 .878431 rg
+n 0 156 469.8898 -18 re f*
+1 1 1 rg
+n 0 138 469.8898 -18 re f*
+.878431 .878431 .878431 rg
+n 0 120 469.8898 -60 re f*
+1 1 1 rg
+n 0 60 469.8898 -60 re f*
+.960784 .960784 .862745 rg
+n 0 174 469.8898 -18 re f*
+0 0 0 rg
+BT /F1 10 Tf 12 TL ET
+q
+1 0 0 1 6 159 cm
+q
+.960784 .960784 .862745 rg
+n 0 0 156.7449 12 re f*
+Q
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL 45.58247 0 Td (Example Code) Tj T* -45.58247 0 Td ET
+Q
+Q
+q
+1 0 0 1 174.7449 159 cm
+q
+.960784 .960784 .862745 rg
+n 0 0 289.1448 12 re f*
+Q
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL 119.5674 0 Td (Description) Tj T* -119.5674 0 Td ET
+Q
+Q
+0 0 0 rg
+q
+1 0 0 1 6 141 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (img.image) Tj T* ET
+Q
+Q
+q
+1 0 0 1 174.7449 141 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (Returns a numpy array of the image data acquired) Tj T* ET
+Q
+Q
+q
+1 0 0 1 6 123 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (img.raw_data) Tj T* ET
+Q
+Q
+q
+1 0 0 1 174.7449 123 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (Returns a copy of the raw image data acquired) Tj T* ET
+Q
+Q
+q
+1 0 0 1 6 93 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 14 Tm /F1 10 Tf 12 TL (imgs[2].save\("/path/to/file/filename") Tj T* (, overwrite_if_exist=True\)) Tj T* ET
+Q
+Q
+q
+1 0 0 1 174.7449 111 cm
+Q
+q
+1 0 0 1 174.7449 87 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 14 Tm /F1 10 Tf 12 TL .672256 Tw (Saves the second image in a series to path '/path/to/file' and file) Tj T* 0 Tw (name "filename.fits") Tj T* ET
+Q
+Q
+q
+1 0 0 1 174.7449 63 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 14 Tm /F1 10 Tf 12 TL .930603 Tw (Set optional param 'overwrite_if_exist' to True to force overwrite) Tj T* 0 Tw (files\)) Tj T* ET
+Q
+Q
+q
+1 0 0 1 174.7449 63 cm
+Q
+q
+1 0 0 1 6 33 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 14 Tm /F1 10 Tf 12 TL (img.show\(cmap="Greys_r",) Tj T* (image_name=None\)) Tj T* ET
+Q
+Q
+q
+1 0 0 1 174.7449 51 cm
+Q
+q
+1 0 0 1 174.7449 39 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (Displays the image using matplotlib) Tj T* ET
+Q
+Q
+q
+1 0 0 1 174.7449 15 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 14 Tm /F1 10 Tf 12 TL .714353 Tw (First optional parameter for matplotlib cmap \(defaults to Greys_r) Tj T* 0 Tw (see matplotlib colormap doc for other options\)) Tj T* ET
+Q
+Q
+q
+1 0 0 1 174.7449 3 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (Second optional parameter for titling the image) Tj T* ET
+Q
+Q
+q
+1 0 0 1 174.7449 3 cm
+Q
+q
+1 J
+1 j
+0 0 0 RG
+.25 w
+n 0 156 m 469.8898 156 l S
+n 0 138 m 469.8898 138 l S
+n 0 120 m 469.8898 120 l S
+n 0 60 m 469.8898 60 l S
+n 168.7449 0 m 168.7449 174 l S
+n 0 174 m 469.8898 174 l S
+n 0 0 m 469.8898 0 l S
+n 0 0 m 0 174 l S
+n 469.8898 0 m 469.8898 174 l S
+Q
+Q
+Q
+q
+1 0 0 1 62.69291 216.0236 cm
+Q
+q
+1 0 0 1 62.69291 210.0236 cm
+Q
+q
+1 0 0 1 62.69291 198.0236 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL ( ) Tj T* ET
+Q
+Q
+q
+1 0 0 1 62.69291 198.0236 cm
+Q
+q
+1 0 0 1 62.69291 192.0236 cm
+Q
+q
+1 0 0 1 62.69291 180.0236 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL ( ) Tj T* ET
+Q
+Q
+q
+1 0 0 1 62.69291 180.0236 cm
+Q
+q
+1 0 0 1 62.69291 150.0236 cm
+q
+BT 1 0 0 1 0 3 Tm 18 TL /F2 15 Tf 0 0 0 rg (Image Metadata) Tj T* ET
+Q
+Q
+q
+1 0 0 1 62.69291 123.0236 cm
+q
+BT 1 0 0 1 0 2.5 Tm 15 TL /F5 12.5 Tf 0 0 0 rg (TimeStamp Metadata) Tj T* ET
+Q
+Q
+q
+1 0 0 1 62.69291 111.0236 cm
+Q
+q
+1 0 0 1 62.69291 93.02362 cm
+q
+1 1 1 rg
+n 0 18 469.8898 -18 re f*
+.960784 .960784 .862745 rg
+n 0 18 469.8898 -18 re f*
+0 0 0 rg
+BT /F1 10 Tf 12 TL ET
+q
+1 0 0 1 6 3 cm
+q
+.960784 .960784 .862745 rg
+n 0 0 189.3813 12 re f*
+Q
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL 32.44566 0 Td (MetdataTimeStamp Options) Tj T* -32.44566 0 Td ET
+Q
+Q
+q
+1 0 0 1 207.3813 3 cm
+q
+.960784 .960784 .862745 rg
+n 0 0 256.5084 12 re f*
+Q
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL 103.2492 0 Td (Description) Tj T* -103.2492 0 Td ET
+Q
+Q
+q
+1 J
+1 j
+0 0 0 RG
+.25 w
+n 0 0 m 469.8898 0 l S
+n 201.3813 0 m 201.3813 18 l S
+n 0 18 m 469.8898 18 l S
+n 0 0 m 0 18 l S
+n 469.8898 0 m 469.8898 18 l S
+Q
+Q
+Q
+ 
+endstream
+endobj
+40 0 obj
+<<
+/Length 11432
+>>
+stream
+1 0 0 1 0 0 cm  BT /F1 12 Tf 14.4 TL ET
+q
+1 0 0 1 62.69291 747.0236 cm
+q
+1 1 1 rg
+n 0 18 469.8898 -18 re f*
+0 0 0 rg
+BT /F1 10 Tf 12 TL ET
+q
+1 0 0 1 6 3 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (val = img.metadata.timestamp) Tj T* ET
+Q
+Q
+q
+1 0 0 1 207.3813 3 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (Returns the value of MetadataTimestamp) Tj T* ET
+Q
+Q
+q
+1 J
+1 j
+0 0 0 RG
+.25 w
+n 0 18 m 469.8898 18 l S
+n 201.3813 0 m 201.3813 18 l S
+n 0 0 m 0 18 l S
+n 469.8898 0 m 469.8898 18 l S
+n 0 0 m 469.8898 0 l S
+Q
+Q
+Q
+q
+1 0 0 1 62.69291 747.0236 cm
+Q
+q
+1 0 0 1 62.69291 741.0236 cm
+Q
+q
+1 0 0 1 62.69291 729.0236 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL ( ) Tj T* ET
+Q
+Q
+q
+1 0 0 1 62.69291 729.0236 cm
+Q
+q
+1 0 0 1 62.69291 702.0236 cm
+q
+BT 1 0 0 1 0 2.5 Tm 15 TL /F5 12.5 Tf 0 0 0 rg (Frame Info Metadata) Tj T* ET
+Q
+Q
+q
+1 0 0 1 62.69291 690.0236 cm
+Q
+q
+1 0 0 1 62.69291 600.0236 cm
+q
+1 1 1 rg
+n 0 90 469.8898 -18 re f*
+.878431 .878431 .878431 rg
+n 0 72 469.8898 -18 re f*
+1 1 1 rg
+n 0 54 469.8898 -18 re f*
+.878431 .878431 .878431 rg
+n 0 36 469.8898 -18 re f*
+1 1 1 rg
+n 0 18 469.8898 -18 re f*
+.960784 .960784 .862745 rg
+n 0 90 469.8898 -18 re f*
+0 0 0 rg
+BT /F1 10 Tf 12 TL ET
+q
+1 0 0 1 6 75 cm
+q
+.960784 .960784 .862745 rg
+n 0 0 167.5084 12 re f*
+Q
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL 21.50422 0 Td (MetatadaFrameInfo Options) Tj T* -21.50422 0 Td ET
+Q
+Q
+q
+1 0 0 1 185.5084 75 cm
+q
+.960784 .960784 .862745 rg
+n 0 0 278.3813 12 re f*
+Q
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL 114.1857 0 Td (Description) Tj T* -114.1857 0 Td ET
+Q
+Q
+0 0 0 rg
+q
+1 0 0 1 6 57 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (val = img.metadata.width) Tj T* ET
+Q
+Q
+q
+1 0 0 1 185.5084 57 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (Returns value of width from MetadataFrameInfo) Tj T* ET
+Q
+Q
+q
+1 0 0 1 6 39 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (val = img.metadata.height) Tj T* ET
+Q
+Q
+q
+1 0 0 1 185.5084 39 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (Returns value of height from MetadataFrameInfo) Tj T* ET
+Q
+Q
+q
+1 0 0 1 6 21 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (val = img.metadata.stride) Tj T* ET
+Q
+Q
+q
+1 0 0 1 185.5084 21 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (Returns value of stride from MetadataFrameInfo) Tj T* ET
+Q
+Q
+q
+1 0 0 1 6 3 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (val = img.metadata.pixelencoding) Tj T* ET
+Q
+Q
+q
+1 0 0 1 185.5084 3 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (Returns value of pixelencoding from MetadataFrameInfo) Tj T* ET
+Q
+Q
+q
+1 J
+1 j
+0 0 0 RG
+.25 w
+n 0 72 m 469.8898 72 l S
+n 0 54 m 469.8898 54 l S
+n 0 36 m 469.8898 36 l S
+n 0 18 m 469.8898 18 l S
+n 179.5084 0 m 179.5084 90 l S
+n 0 90 m 469.8898 90 l S
+n 0 0 m 469.8898 0 l S
+n 0 0 m 0 90 l S
+n 469.8898 0 m 469.8898 90 l S
+Q
+Q
+Q
+q
+1 0 0 1 62.69291 600.0236 cm
+Q
+q
+1 0 0 1 62.69291 594.0236 cm
+Q
+q
+1 0 0 1 62.69291 582.0236 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL ( ) Tj T* ET
+Q
+Q
+q
+1 0 0 1 62.69291 582.0236 cm
+Q
+q
+1 0 0 1 62.69291 555.0236 cm
+q
+BT 1 0 0 1 0 2.5 Tm 15 TL /F5 12.5 Tf 0 0 0 rg (IRIG Metadata) Tj T* ET
+Q
+Q
+q
+1 0 0 1 62.69291 543.0236 cm
+Q
+q
+1 0 0 1 62.69291 417.0236 cm
+q
+1 1 1 rg
+n 0 126 469.8898 -18 re f*
+.878431 .878431 .878431 rg
+n 0 108 469.8898 -18 re f*
+1 1 1 rg
+n 0 90 469.8898 -18 re f*
+.878431 .878431 .878431 rg
+n 0 72 469.8898 -18 re f*
+1 1 1 rg
+n 0 54 469.8898 -18 re f*
+.878431 .878431 .878431 rg
+n 0 36 469.8898 -18 re f*
+1 1 1 rg
+n 0 18 469.8898 -18 re f*
+.960784 .960784 .862745 rg
+n 0 126 469.8898 -18 re f*
+0 0 0 rg
+BT /F1 10 Tf 12 TL ET
+q
+1 0 0 1 6 111 cm
+q
+.960784 .960784 .862745 rg
+n 0 0 190.1619 12 re f*
+Q
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL 42.00094 0 Td (MetatadaIRIGB Options) Tj T* -42.00094 0 Td ET
+Q
+Q
+q
+1 0 0 1 208.1619 111 cm
+q
+.960784 .960784 .862745 rg
+n 0 0 255.7279 12 re f*
+Q
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL 102.8589 0 Td (Description) Tj T* -102.8589 0 Td ET
+Q
+Q
+0 0 0 rg
+q
+1 0 0 1 6 93 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (val = img.metadata.irig_nanoseconds) Tj T* ET
+Q
+Q
+q
+1 0 0 1 208.1619 93 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (Returns value of nanoseconds from MetadataIRIGB) Tj T* ET
+Q
+Q
+q
+1 0 0 1 6 75 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (val = img.metadata.irig_seconds) Tj T* ET
+Q
+Q
+q
+1 0 0 1 208.1619 75 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (Returns value of seconds from MetadataIRIGB) Tj T* ET
+Q
+Q
+q
+1 0 0 1 6 57 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (val = img.metadata.irig_minutes) Tj T* ET
+Q
+Q
+q
+1 0 0 1 208.1619 57 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (Returns value of minutes from MetadataIRIGB) Tj T* ET
+Q
+Q
+q
+1 0 0 1 6 39 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (val = img.metadata.irig_hours) Tj T* ET
+Q
+Q
+q
+1 0 0 1 208.1619 39 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (Returns value of hours from MetadataIRIGB) Tj T* ET
+Q
+Q
+q
+1 0 0 1 6 21 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (val = img.metadata.irig_days) Tj T* ET
+Q
+Q
+q
+1 0 0 1 208.1619 21 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (Returns value of days from MetadataIRIGB) Tj T* ET
+Q
+Q
+q
+1 0 0 1 6 3 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (val = img.metadata.irig_years) Tj T* ET
+Q
+Q
+q
+1 0 0 1 208.1619 3 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (Returns value of years from MetadataIRIGB) Tj T* ET
+Q
+Q
+q
+1 J
+1 j
+0 0 0 RG
+.25 w
+n 0 108 m 469.8898 108 l S
+n 0 90 m 469.8898 90 l S
+n 0 72 m 469.8898 72 l S
+n 0 54 m 469.8898 54 l S
+n 0 36 m 469.8898 36 l S
+n 0 18 m 469.8898 18 l S
+n 202.1619 0 m 202.1619 126 l S
+n 0 126 m 469.8898 126 l S
+n 0 0 m 469.8898 0 l S
+n 0 0 m 0 126 l S
+n 469.8898 0 m 469.8898 126 l S
+Q
+Q
+Q
+q
+1 0 0 1 62.69291 417.0236 cm
+Q
+q
+1 0 0 1 62.69291 411.0236 cm
+Q
+q
+1 0 0 1 62.69291 399.0236 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL ( ) Tj T* ET
+Q
+Q
+q
+1 0 0 1 62.69291 399.0236 cm
+Q
+q
+1 0 0 1 62.69291 393.0236 cm
+Q
+q
+1 0 0 1 62.69291 381.0236 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL ( ) Tj T* ET
+Q
+Q
+q
+1 0 0 1 62.69291 381.0236 cm
+Q
+q
+1 0 0 1 62.69291 348.0236 cm
+q
+BT 1 0 0 1 0 3.5 Tm 21 TL /F2 17.5 Tf 0 0 0 rg (Callbacks) Tj T* ET
+Q
+Q
+q
+1 0 0 1 62.69291 336.0236 cm
+Q
+q
+1 0 0 1 62.69291 234.0236 cm
+q
+0 0 0 rg
+BT /F1 10 Tf 12 TL ET
+BT 1 0 0 1 0 2 Tm  T* ET
+q
+1 0 0 1 20 54 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 38 Tm /F1 10 Tf 12 TL 1.446412 Tw (Callbacks allow the application to receive notification when a feature has indirect change occur, a) Tj T* 0 Tw -0.12689 Tw (callback function can be created and attached to a feature. Whenever the feature changes in any way,) Tj T* 0 Tw .432485 Tw (this callback will be triggered, allowing the application to carry out any actions required to respond to) Tj T* 0 Tw (the change.) Tj T* ET
+Q
+Q
+q
+1 0 0 1 20 0 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 38 Tm /F1 10 Tf 12 TL .199431 Tw (A callback should complete any work required in the minimal amount of time as it holds up the thread) Tj T* 0 Tw 3.389269 Tw (that caused the callback. If possible the application should delegate any work to a separate) Tj T* 0 Tw .36186 Tw (application thread if the action will take a significant amount of time. The callback function should not) Tj T* 0 Tw (attempt to modify the value of any feature as this can cause lockup) Tj T* ET
+Q
+Q
+q
+Q
+Q
+Q
+q
+1 0 0 1 62.69291 234.0236 cm
+Q
+q
+1 0 0 1 62.69291 192.0236 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 26 Tm /F1 10 Tf 12 TL 1.927485 Tw (Registering callbacks for feature updates is a simple process with 2 main steps. First is creating the) Tj T* 0 Tw 2.47784 Tw (callback function. The second is registering that function to a feature. On successfully registering a) Tj T* 0 Tw (callback to a feature the callback function will execute once.) Tj T* ET
+Q
+Q
+q
+1 0 0 1 62.69291 129.5307 cm
+q
+q
+.744439 0 0 .744439 0 0 cm
+q
+1 0 0 1 6.6 8.865739 cm
+q
+.662745 .662745 .662745 RG
+.5 w
+.960784 .960784 .862745 rg
+n -6 -6 630 72 re B*
+Q
+q
+.960784 .960784 .862745 rg
+n 0 48 30 12 re f*
+.960784 .960784 .862745 rg
+n 30 48 6 12 re f*
+.960784 .960784 .862745 rg
+n 36 48 84 12 re f*
+.960784 .960784 .862745 rg
+n 144 48 330 12 re f*
+.960784 .960784 .862745 rg
+n 0 36 18 12 re f*
+.960784 .960784 .862745 rg
+n 24 36 24 12 re f*
+.960784 .960784 .862745 rg
+n 48 36 6 12 re f*
+.960784 .960784 .862745 rg
+n 54 36 36 12 re f*
+.960784 .960784 .862745 rg
+n 90 36 6 12 re f*
+.960784 .960784 .862745 rg
+n 102 36 42 12 re f*
+.960784 .960784 .862745 rg
+n 144 36 12 12 re f*
+.960784 .960784 .862745 rg
+n 24 24 30 12 re f*
+.960784 .960784 .862745 rg
+n 54 24 6 12 re f*
+.960784 .960784 .862745 rg
+n 60 24 108 12 re f*
+.960784 .960784 .862745 rg
+n 168 24 12 12 re f*
+.960784 .960784 .862745 rg
+n 180 24 66 12 re f*
+.960784 .960784 .862745 rg
+n 246 24 12 12 re f*
+.960784 .960784 .862745 rg
+n 258 24 54 12 re f*
+.960784 .960784 .862745 rg
+n 312 24 12 12 re f*
+.960784 .960784 .862745 rg
+n 324 24 6 12 re f*
+.960784 .960784 .862745 rg
+n 330 24 6 12 re f*
+.960784 .960784 .862745 rg
+n 336 24 36 12 re f*
+.960784 .960784 .862745 rg
+n 372 24 6 12 re f*
+.960784 .960784 .862745 rg
+n 378 24 36 12 re f*
+.960784 .960784 .862745 rg
+n 414 24 6 12 re f*
+.960784 .960784 .862745 rg
+n 426 24 42 12 re f*
+.960784 .960784 .862745 rg
+n 468 24 6 12 re f*
+.960784 .960784 .862745 rg
+n 480 24 42 12 re f*
+.960784 .960784 .862745 rg
+n 522 24 6 12 re f*
+.960784 .960784 .862745 rg
+n 528 24 18 12 re f*
+.960784 .960784 .862745 rg
+n 546 24 6 12 re f*
+.960784 .960784 .862745 rg
+n 558 24 42 12 re f*
+.960784 .960784 .862745 rg
+n 600 24 18 12 re f*
+.960784 .960784 .862745 rg
+n 0 0 18 12 re f*
+.960784 .960784 .862745 rg
+n 18 0 6 12 re f*
+.960784 .960784 .862745 rg
+n 24 0 150 12 re f*
+.960784 .960784 .862745 rg
+n 174 0 6 12 re f*
+.960784 .960784 .862745 rg
+n 180 0 84 12 re f*
+.960784 .960784 .862745 rg
+n 264 0 6 12 re f*
+.960784 .960784 .862745 rg
+n 276 0 24 12 re f*
+.960784 .960784 .862745 rg
+n 300 0 6 12 re f*
+BT 1 0 0 1 0 50 Tm 12 TL /F4 10 Tf .666667 .133333 1 rg (@sdk3) Tj .4 .4 .4 rg (.) Tj 0 0 0 rg (event_callback) Tj 0 0 0 rg (    ) Tj /F6 10 Tf .25098 .501961 .501961 rg (# notice using sdk.event_callback method as a decorator) Tj /F4 10 Tf 0 0 0 rg  T* /F3 10 Tf 0 .501961 0 rg (def) Tj /F4 10 Tf 0 0 0 rg ( ) Tj 0 0 1 rg (func) Tj 0 0 0 rg (\() Tj 0 0 0 rg (handle) Tj 0 0 0 rg (,) Tj 0 0 0 rg ( ) Tj 0 0 0 rg (feature) Tj 0 0 0 rg (\):) Tj 0 0 0 rg  T* (    ) Tj 0 .501961 0 rg (print) Tj 0 0 0 rg (\() Tj .729412 .129412 .129412 rg ("callback handle: ) Tj /F3 10 Tf .733333 .4 .533333 rg ({}) Tj /F4 10 Tf .729412 .129412 .129412 rg (  feature: ) Tj /F3 10 Tf .733333 .4 .533333 rg ({}) Tj /F4 10 Tf .729412 .129412 .129412 rg (  value: ) Tj /F3 10 Tf .733333 .4 .533333 rg ({}) Tj /F4 10 Tf .729412 .129412 .129412 rg (") Tj .4 .4 .4 rg (.) Tj 0 0 0 rg (format) Tj 0 0 0 rg (\() Tj 0 0 0 rg (handle) Tj 0 0 0 rg (,) Tj 0 0 0 rg ( ) Tj 0 0 0 rg (feature) Tj 0 0 0 rg (,) Tj 0 0 0 rg ( ) Tj 0 .501961 0 rg (getattr) Tj 0 0 0 rg (\() Tj 0 0 0 rg (cam) Tj 0 0 0 rg (,) Tj 0 0 0 rg ( ) Tj 0 0 0 rg (feature) Tj 0 0 0 rg (\)\)\)) Tj 0 0 0 rg  T*  T* 0 0 0 rg (cam) Tj .4 .4 .4 rg (.) Tj 0 0 0 rg (register_feature_callback) Tj 0 0 0 rg (\() Tj .729412 .129412 .129412 rg ("ExposureTime") Tj 0 0 0 rg (,) Tj 0 0 0 rg ( ) Tj 0 0 0 rg (func) Tj 0 0 0 rg (\)) Tj T* ET
+Q
+Q
+Q
+Q
+Q
+q
+1 0 0 1 62.69291 97.5307 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 14 Tm /F1 10 Tf 12 TL .84936 Tw (It is not necessary to manually unregister feature callbacks as it is done automatically when the camera) Tj T* 0 Tw (object goes out of scope. But this can be done as below:) Tj T* ET
+Q
+Q
+ 
+endstream
+endobj
+41 0 obj
+<<
+/Length 8189
+>>
+stream
+1 0 0 1 0 0 cm  BT /F1 12 Tf 14.4 TL ET
+q
+1 0 0 1 62.69291 739.8236 cm
+q
+q
+1 0 0 1 0 0 cm
+q
+1 0 0 1 6.6 6.6 cm
+q
+.662745 .662745 .662745 RG
+.5 w
+.960784 .960784 .862745 rg
+n -6 -6 468.6898 24 re B*
+Q
+q
+.960784 .960784 .862745 rg
+n 0 0 18 12 re f*
+.960784 .960784 .862745 rg
+n 18 0 6 12 re f*
+.960784 .960784 .862745 rg
+n 24 0 162 12 re f*
+.960784 .960784 .862745 rg
+n 186 0 6 12 re f*
+.960784 .960784 .862745 rg
+n 192 0 84 12 re f*
+.960784 .960784 .862745 rg
+n 276 0 6 12 re f*
+.960784 .960784 .862745 rg
+n 288 0 24 12 re f*
+.960784 .960784 .862745 rg
+n 312 0 6 12 re f*
+BT 1 0 0 1 0 2 Tm 12 TL /F4 10 Tf 0 0 0 rg (cam) Tj .4 .4 .4 rg (.) Tj 0 0 0 rg (unregister_feature_callback) Tj 0 0 0 rg (\() Tj .729412 .129412 .129412 rg ("ExposureTime") Tj 0 0 0 rg (,) Tj 0 0 0 rg ( ) Tj 0 0 0 rg (func) Tj 0 0 0 rg (\)) Tj T* ET
+Q
+Q
+Q
+Q
+Q
+q
+1 0 0 1 62.69291 719.8236 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (For a fully executable example see the example callback.py.) Tj T* ET
+Q
+Q
+q
+1 0 0 1 62.69291 713.8236 cm
+Q
+q
+1 0 0 1 62.69291 701.8236 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL ( ) Tj T* ET
+Q
+Q
+q
+1 0 0 1 62.69291 701.8236 cm
+Q
+q
+1 0 0 1 62.69291 668.8236 cm
+q
+BT 1 0 0 1 0 3.5 Tm 21 TL /F2 17.5 Tf 0 0 0 rg (Examples) Tj T* ET
+Q
+Q
+q
+1 0 0 1 62.69291 650.8236 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (Below is the list of examples available and a small description:) Tj T* ET
+Q
+Q
+q
+1 0 0 1 62.69291 644.8236 cm
+Q
+q
+1 0 0 1 62.69291 158.8236 cm
+q
+1 1 1 rg
+n 0 486 469.8898 -18 re f*
+.878431 .878431 .878431 rg
+n 0 468 469.8898 -30 re f*
+1 1 1 rg
+n 0 438 469.8898 -42 re f*
+.878431 .878431 .878431 rg
+n 0 396 469.8898 -18 re f*
+1 1 1 rg
+n 0 378 469.8898 -42 re f*
+.878431 .878431 .878431 rg
+n 0 336 469.8898 -18 re f*
+1 1 1 rg
+n 0 318 469.8898 -30 re f*
+.878431 .878431 .878431 rg
+n 0 288 469.8898 -18 re f*
+1 1 1 rg
+n 0 270 469.8898 -18 re f*
+.878431 .878431 .878431 rg
+n 0 252 469.8898 -30 re f*
+1 1 1 rg
+n 0 222 469.8898 -42 re f*
+.878431 .878431 .878431 rg
+n 0 180 469.8898 -30 re f*
+1 1 1 rg
+n 0 150 469.8898 -42 re f*
+.878431 .878431 .878431 rg
+n 0 108 469.8898 -30 re f*
+1 1 1 rg
+n 0 78 469.8898 -30 re f*
+.878431 .878431 .878431 rg
+n 0 48 469.8898 -30 re f*
+1 1 1 rg
+n 0 18 469.8898 -18 re f*
+.960784 .960784 .862745 rg
+n 0 486 469.8898 -18 re f*
+0 0 0 rg
+BT /F1 10 Tf 12 TL ET
+q
+1 0 0 1 6 471 cm
+q
+.960784 .960784 .862745 rg
+n 0 0 175.9559 12 re f*
+Q
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL 53.80295 0 Td (Example Name) Tj T* -53.80295 0 Td ET
+Q
+Q
+q
+1 0 0 1 193.9559 471 cm
+q
+.960784 .960784 .862745 rg
+n 0 0 269.9339 12 re f*
+Q
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL 109.9619 0 Td (Description) Tj T* -109.9619 0 Td ET
+Q
+Q
+0 0 0 rg
+q
+1 0 0 1 6 453 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (get_serial_number.py) Tj T* ET
+Q
+Q
+q
+1 0 0 1 193.9559 441 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 14 Tm /F1 10 Tf 12 TL (Simply showing how to open the camera and retrieve the) Tj T* (camera's SerialNumber.) Tj T* ET
+Q
+Q
+q
+1 0 0 1 6 423 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (get_image_data.py) Tj T* ET
+Q
+Q
+q
+1 0 0 1 193.9559 399 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 26 Tm /F1 10 Tf 12 TL (Demonstrating the use of cam.acquire\(\) and) Tj T* (cam.acquire_series\(\) methods and showing how the) Tj T* (frame_count keyword interacts with the CycleMode.) Tj T* ET
+Q
+Q
+q
+1 0 0 1 6 381 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (get_image_data_circular_buffer.py) Tj T* ET
+Q
+Q
+q
+1 0 0 1 193.9559 381 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (Using cam.acquire_series\(\) with the circ_buf keyword.) Tj T* ET
+Q
+Q
+q
+1 0 0 1 6 363 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (custom_single_acquisition.py) Tj T* ET
+Q
+Q
+q
+1 0 0 1 193.9559 339 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 26 Tm /F1 10 Tf 12 TL (Starting acquisition and acquiring a single image. This is the) Tj T* (most basic acquisition example showing the minimum) Tj T* (requirement for acquiring.) Tj T* ET
+Q
+Q
+q
+1 0 0 1 6 321 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (custom_acquisition.py) Tj T* ET
+Q
+Q
+q
+1 0 0 1 193.9559 321 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (An example acquisition for acquiring a series of images.) Tj T* ET
+Q
+Q
+q
+1 0 0 1 6 303 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (custom_acquisition_circular_buffer.py) Tj T* ET
+Q
+Q
+q
+1 0 0 1 193.9559 291 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 14 Tm /F1 10 Tf 12 TL (An example acquisition for acquiring a series of images and) Tj T* (requeuing buffers in a circular fashion.) Tj T* ET
+Q
+Q
+q
+1 0 0 1 6 273 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (get_metadata.py) Tj T* ET
+Q
+Q
+q
+1 0 0 1 193.9559 273 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (Shows how to retrieve metadata from Acquisition objects.) Tj T* ET
+Q
+Q
+q
+1 0 0 1 6 255 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (callbacks.py) Tj T* ET
+Q
+Q
+q
+1 0 0 1 193.9559 255 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL -0.024518 Tw (The creation and registering of callback functions to features.) Tj T* 0 Tw ET
+Q
+Q
+q
+1 0 0 1 6 237 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (using_with_statement.py) Tj T* ET
+Q
+Q
+q
+1 0 0 1 193.9559 225 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 14 Tm /F1 10 Tf 12 TL (Showing opening and using the camera using a with) Tj T* (statement.) Tj T* ET
+Q
+Q
+q
+1 0 0 1 6 207 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (error_handling.py) Tj T* ET
+Q
+Q
+q
+1 0 0 1 193.9559 183 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 26 Tm /F1 10 Tf 12 TL (Contains various examples of catching CameraExceptions) Tj T* (thrown by pyAndorSDK3 and using the ErrorCodes enum to) Tj T* (handle.) Tj T* ET
+Q
+Q
+q
+1 0 0 1 6 165 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (multi_camera.py) Tj T* ET
+Q
+Q
+q
+1 0 0 1 193.9559 153 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 14 Tm /F1 10 Tf 12 TL (Demonstrating how to open and control multiple cameras at) Tj T* (once.) Tj T* ET
+Q
+Q
+q
+1 0 0 1 6 135 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (framerate_max.py) Tj T* ET
+Q
+Q
+q
+1 0 0 1 193.9559 111 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 26 Tm /F1 10 Tf 12 TL (Example of how the framerate by the camera can produce) Tj T* (data faster than the interface can trnasfer and how to handle) Tj T* (this situation.) Tj T* ET
+Q
+Q
+q
+1 0 0 1 6 93 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (sensor_cooling.py) Tj T* ET
+Q
+Q
+q
+1 0 0 1 193.9559 81 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 14 Tm /F1 10 Tf 12 TL (Setting a camera sensor target temperature and waiting for) Tj T* (temperature to stabilise.) Tj T* ET
+Q
+Q
+q
+1 0 0 1 6 63 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (accumulation.py) Tj T* ET
+Q
+Q
+q
+1 0 0 1 193.9559 51 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 14 Tm /F1 10 Tf 12 TL (An couple of examples to show how to use Image) Tj T* (Accumulation.) Tj T* ET
+Q
+Q
+q
+1 0 0 1 6 33 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (save_images.py) Tj T* ET
+Q
+Q
+q
+1 0 0 1 193.9559 21 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 14 Tm /F1 10 Tf 12 TL (Examples for saving image data using acq.save\(\) and) Tj T* (astropy.) Tj T* ET
+Q
+Q
+q
+1 0 0 1 6 3 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (show_image.py) Tj T* ET
+Q
+Q
+q
+1 0 0 1 193.9559 3 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL (Example for using the acq.show\(\) method.) Tj T* ET
+Q
+Q
+q
+1 J
+1 j
+0 0 0 RG
+.25 w
+n 0 468 m 469.8898 468 l S
+n 0 438 m 469.8898 438 l S
+n 0 396 m 469.8898 396 l S
+n 0 378 m 469.8898 378 l S
+n 0 336 m 469.8898 336 l S
+n 0 318 m 469.8898 318 l S
+n 0 288 m 469.8898 288 l S
+n 0 270 m 469.8898 270 l S
+n 0 252 m 469.8898 252 l S
+n 0 222 m 469.8898 222 l S
+n 0 180 m 469.8898 180 l S
+n 0 150 m 469.8898 150 l S
+n 0 108 m 469.8898 108 l S
+n 0 78 m 469.8898 78 l S
+n 0 48 m 469.8898 48 l S
+n 0 18 m 469.8898 18 l S
+n 187.9559 0 m 187.9559 486 l S
+n 0 486 m 469.8898 486 l S
+n 0 0 m 469.8898 0 l S
+n 0 0 m 0 486 l S
+n 469.8898 0 m 469.8898 486 l S
+Q
+Q
+Q
+q
+1 0 0 1 62.69291 158.8236 cm
+Q
+q
+1 0 0 1 62.69291 152.8236 cm
+Q
+q
+1 0 0 1 62.69291 140.8236 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F1 10 Tf 12 TL ( ) Tj T* ET
+Q
+Q
+q
+1 0 0 1 62.69291 140.8236 cm
+Q
+q
+1 0 0 1 62.69291 112.4772 cm
+n 0 14.17323 m 469.8898 14.17323 l S
+Q
+q
+1 0 0 1 62.69291 82.47717 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 14 Tm /F1 10 Tf 12 TL .692126 Tw (For SDK3 usage or feature specific information please refer to the manual Andor Software Development) Tj T* 0 Tw (Kit 3.pdf) Tj T* ET
+Q
+Q
+ 
+endstream
+endobj
+42 0 obj
+<<
+/Nums [ 0 43 0 R 1 44 0 R 2 45 0 R 3 46 0 R 4 47 0 R 
+  5 48 0 R 6 49 0 R ]
+>>
+endobj
+43 0 obj
+<<
+/S /D /St 1
+>>
+endobj
+44 0 obj
+<<
+/S /D /St 2
+>>
+endobj
+45 0 obj
+<<
+/S /D /St 3
+>>
+endobj
+46 0 obj
+<<
+/S /D /St 4
+>>
+endobj
+47 0 obj
+<<
+/S /D /St 5
+>>
+endobj
+48 0 obj
+<<
+/S /D /St 6
+>>
+endobj
+49 0 obj
+<<
+/S /D /St 7
+>>
+endobj
+xref
+0 50
+0000000000 65535 f 
+0000000073 00000 n 
+0000000155 00000 n 
+0000000262 00000 n 
+0000000374 00000 n 
+0000000484 00000 n 
+0000000589 00000 n 
+0000000794 00000 n 
+0000000999 00000 n 
+0000001204 00000 n 
+0000001323 00000 n 
+0000001529 00000 n 
+0000001735 00000 n 
+0000001849 00000 n 
+0000002055 00000 n 
+0000002261 00000 n 
+0000002367 00000 n 
+0000002657 00000 n 
+0000002732 00000 n 
+0000002844 00000 n 
+0000002970 00000 n 
+0000003093 00000 n 
+0000003234 00000 n 
+0000003373 00000 n 
+0000003545 00000 n 
+0000003659 00000 n 
+0000003819 00000 n 
+0000003942 00000 n 
+0000004114 00000 n 
+0000004253 00000 n 
+0000004373 00000 n 
+0000004507 00000 n 
+0000004622 00000 n 
+0000004746 00000 n 
+0000004856 00000 n 
+0000004956 00000 n 
+0000012160 00000 n 
+0000021577 00000 n 
+0000029700 00000 n 
+0000038747 00000 n 
+0000047616 00000 n 
+0000059101 00000 n 
+0000067342 00000 n 
+0000067440 00000 n 
+0000067474 00000 n 
+0000067508 00000 n 
+0000067542 00000 n 
+0000067576 00000 n 
+0000067610 00000 n 
+0000067644 00000 n 
+trailer
+<<
+/ID 
+[<90ae610bcef792490668daf81df6c7a1><90ae610bcef792490668daf81df6c7a1>]
+% ReportLab generated PDF document -- digest (http://www.reportlab.com)
+
+/Info 16 0 R
+/Root 15 0 R
+/Size 50
+>>
+startxref
+67678
+%%EOF

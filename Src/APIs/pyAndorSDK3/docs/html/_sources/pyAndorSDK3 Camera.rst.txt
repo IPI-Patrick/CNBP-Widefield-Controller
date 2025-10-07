@@ -1,0 +1,9 @@
+Camera
+======
+
+pyAndorSDK3 Camera class
+------------------------
+
+.. autoclass:: pyAndorSDK3.andor_camera.Camera
+   :members:
+   :show-inheritance:

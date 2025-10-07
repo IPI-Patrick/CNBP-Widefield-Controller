@@ -40,7 +40,12 @@ def clamp(value, min_value, max_value):
 
 def load_window_classes(folder):
     window_classes = []
-    for filename in os.listdir(folder):
+    
+    if "Unused" in folder:
+            return
+    
+    for filename in os.listdir(folder):                
+
         if filename.endswith(".py") and not filename.startswith("__"):
             module_name     = filename[:-3]
             module_path     = os.path.join(folder, filename)
