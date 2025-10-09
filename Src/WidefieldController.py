@@ -12,12 +12,12 @@ def setup():
     dpg.create_viewport(
         title='Widefield Controller', 
         width=1650, 
-        height=1080, 
+        height=1200, 
         x_pos=0, 
         y_pos=0, 
         always_on_top=True, 
         decorated=True,
-        resizable=False, 
+        resizable=True, 
         clear_color=[0, 0, 0, 255]
     )
 

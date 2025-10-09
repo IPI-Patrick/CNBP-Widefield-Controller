@@ -37,6 +37,10 @@ with dpg.theme() as red_green_button_disabled:
         # dpg.add_theme_color(dpg.mvThemeCol_Button,          ?)
         # dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered,   [166, 0, 0])
 
+with dpg.theme() as yellow_button:
+    with dpg.theme_component(dpg.mvButton):
+        dpg.add_theme_color(dpg.mvThemeCol_Button,          [255, 204, 0])
+        dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered,   [204, 153, 0])
 
 
 
@@ -57,3 +61,4 @@ with dpg.theme() as disabled_theme:
 with dpg.theme() as no_padding_theme:
     with dpg.theme_component(dpg.mvAll):
         dpg.add_theme_style(dpg.mvStyleVar_WindowPadding, 0, 0)
+

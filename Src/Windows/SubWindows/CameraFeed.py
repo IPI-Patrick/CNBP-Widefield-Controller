@@ -16,8 +16,8 @@ class CameraFeedWindow:
         self.parent         = parent
         self.Andor          = Andor
 
-        self.width          = 1000
-        self.height         = 1000
+        self.width          = 600
+        self.height         = 600
 
         self.name           = "Camera Feed"
         self.tag            = "CameraFeed"
