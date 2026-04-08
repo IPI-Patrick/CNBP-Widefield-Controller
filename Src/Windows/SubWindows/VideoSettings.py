@@ -1,6 +1,7 @@
 import threading
 import numpy as np
 import dearpygui.dearpygui as dpg
+from Utils.state_persistence import apply_window_state, capture_window_state, load_state_file, save_state_file
 from Utils.themes import read_only_theme, red_green_button_disabled, red_green_button_enabled
 
 class VideoSettings:
@@ -177,3 +178,21 @@ class VideoSettings:
             dpg.bind_item_theme(self.zero_start_button, red_green_button_disabled)
 
             self.controls.andor.AbortAquisition()
+
+    def SaveState(self):
+        save_state_file(
+            type(self).__name__,
+            {
+                "window": capture_window_state(self.window_id),
+                "zero_frame_time": float(dpg.get_value(self.zero_frame_time)),
+            },
+        )
+
+    def LoadState(self):
+        state = load_state_file(type(self).__name__)
+        if not state:
+            return
+
+        apply_window_state(self.window_id, state.get("window"))
+        if "zero_frame_time" in state:
+            dpg.set_value(self.zero_frame_time, float(state["zero_frame_time"]))

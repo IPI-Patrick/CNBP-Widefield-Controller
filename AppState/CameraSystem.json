@@ -1,0 +1,29 @@
+{
+  "acquisition_awg_amplitude_vpp_volts": 1.0,
+  "acquisition_awg_dc_offset_volts": 0.0,
+  "acquisition_awg_frequency_hz": 2.0,
+  "acquisition_awg_periodic_offset_volts": 1.0,
+  "acquisition_awg_start_after_seconds": 2.0,
+  "acquisition_awg_waveform": "sine",
+  "acquisition_duration_seconds": 10.0,
+  "acquisition_frame_rate_hz": 10.0,
+  "acquisition_scope_sample_rate_hz": 1000.0,
+  "acquisition_set_awg_on_start": true,
+  "acquisition_zero_on_start": true,
+  "exposure_time": 0.05000000074505806,
+  "image_height": 1024,
+  "image_left": 1,
+  "image_top": 1,
+  "image_width": 1024,
+  "pixel_binning": "1x1",
+  "trigger_mode": "Internal",
+  "window": {
+    "height": 690,
+    "pos": [
+      625,
+      10
+    ],
+    "show": true,
+    "width": 300
+  }
+}

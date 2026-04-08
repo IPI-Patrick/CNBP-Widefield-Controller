@@ -1,0 +1,38 @@
+{
+  "autoscale_enabled": true,
+  "autoscale_grace_percent": 1.0,
+  "display_mode": "Contrast",
+  "lp_filter_cutoff_hz": 1.0,
+  "lp_filter_enabled": true,
+  "mirrored_difference_scale": true,
+  "negative_difference_color": [
+    0.0,
+    0.0,
+    255.0
+  ],
+  "positive_difference_color": [
+    255.0,
+    0.0,
+    0.0
+  ],
+  "roi_index": 67,
+  "roi_state_names": [
+    "RegionOfInterest_CameraFeed_ROI_64",
+    "RegionOfInterest_CameraFeed_ROI_65",
+    "RegionOfInterest_CameraFeed_ROI_66"
+  ],
+  "scale_max": 37.03265625,
+  "scale_min": -37.03265625,
+  "view_center_x": 511.9999999999999,
+  "view_center_y": 511.9999999999999,
+  "window": {
+    "height": 600,
+    "pos": [
+      10,
+      10
+    ],
+    "show": true,
+    "width": 600
+  },
+  "zoom": 1.0000000000000002
+}

@@ -1,0 +1,55 @@
+{
+  "data_bits": "float16",
+  "device_serial": "",
+  "history_seconds": 1.0,
+  "panels": [
+    {
+      "color": [
+        86,
+        180,
+        233,
+        255
+      ],
+      "display_name": "Channel 1",
+      "enabled": true,
+      "id": "A"
+    },
+    {
+      "color": [
+        230,
+        159,
+        0,
+        255
+      ],
+      "display_name": "Channel 2",
+      "enabled": false,
+      "id": "B"
+    },
+    {
+      "awg_amplitude_vpp_volts": 1.0,
+      "awg_dc_offset_volts": 0.0,
+      "awg_frequency_hz": 10.0,
+      "awg_periodic_offset_volts": 0.0,
+      "awg_waveform_type": "sine",
+      "color": [
+        0,
+        158,
+        115,
+        255
+      ],
+      "display_name": "AWG",
+      "enabled": true,
+      "id": "AWG"
+    }
+  ],
+  "sample_rate_hz": 1000.0,
+  "window": {
+    "height": 618,
+    "pos": [
+      960,
+      676
+    ],
+    "show": true,
+    "width": 307
+  }
+}

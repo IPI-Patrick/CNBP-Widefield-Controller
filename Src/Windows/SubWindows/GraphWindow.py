@@ -7,6 +7,7 @@ import Windows.SubWindows.CameraFeed as CameraFeed
 import threading
 import dearpygui.dearpygui as dpg
 from Windows.SubWindows.VideoSettings import VideoSettings
+from Utils.state_persistence import apply_window_state, capture_window_state, load_state_file, save_state_file
 from Utils.utils import scale
 from Utils.themes import read_only_theme, red_green_button_disabled, red_green_button_enabled
 
@@ -73,5 +74,16 @@ class GraphWindow:
 
             # Limit to ~60 FPS
             time.sleep(0.016) 
+
+    def _state_name(self):
+        return f"{type(self).__name__}_{self.window_id}"
+
+    def SaveState(self):
+        save_state_file(self._state_name(), {"window": capture_window_state(self.window_id)})
+
+    def LoadState(self):
+        state = load_state_file(self._state_name())
+        if state:
+            apply_window_state(self.window_id, state.get("window"))
 
         

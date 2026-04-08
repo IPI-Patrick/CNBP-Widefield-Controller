@@ -1,0 +1,13 @@
+{
+  "laser_com_port": "COM1",
+  "target_power_mw": 25.0,
+  "window": {
+    "height": 500,
+    "pos": [
+      617,
+      707
+    ],
+    "show": true,
+    "width": 300
+  }
+}
