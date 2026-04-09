@@ -5,7 +5,7 @@ import serial.tools.list_ports
 class LaserDriver():
 
     def __init__(self):
-        self.max_power_mw = 100.0
+        self.max_power_mw = 150.0
         self.COMPort = self.find_laser_com_port()
         self.available_ports = []
         self.connected = self.COMPort is not None

@@ -53,7 +53,7 @@ def update_performance_overlay():
         (
             max(8, viewport_width - overlay_width - 16),
             max(8, viewport_height - overlay_height - 16),
-        ),
+        ), # type: ignore
     )
 
 
@@ -86,17 +86,19 @@ def setup():
     dpg.create_context()
     dpg.create_viewport(
         title='Widefield Controller', 
-        width=1600, 
-        height=1200, 
+        width=1920, 
+        height=1080, 
         x_pos=0, 
         y_pos=0, 
-        always_on_top=True, 
+        always_on_top=False, 
         decorated=True,
         resizable=True, 
         clear_color=[0, 0, 0, 255]
     )
 
+    
     dpg.setup_dearpygui()
+    dpg.maximize_viewport()
     
     # Create the disabled theme 
     with dpg.theme() as disabled_when_disabled_theme:
@@ -125,7 +127,7 @@ def setup():
 
     # Dynamically load and instantiate window classes
     window_classes = load_window_classes(WINDOWS_FOLDER)
-    for cls in window_classes:
+    for cls in window_classes: # type: ignore
         class_objects.append(cls())  # Each class should create its window in __init__
         # print(f"Failed to initialize window {cls.__name__}: {e}")
 

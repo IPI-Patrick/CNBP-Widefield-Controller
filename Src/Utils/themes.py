@@ -62,3 +62,16 @@ with dpg.theme() as no_padding_theme:
     with dpg.theme_component(dpg.mvAll):
         dpg.add_theme_style(dpg.mvStyleVar_WindowPadding, 0, 0)
 
+with dpg.theme() as no_spacing_theme:
+    with dpg.theme_component(dpg.mvAll):
+        dpg.add_theme_style(dpg.mvStyleVar_ItemSpacing, 0, 0)
+        dpg.add_theme_style(dpg.mvStyleVar_WindowPadding, 0, 0)
+
+with dpg.theme() as transparent_plot_theme:
+    with dpg.theme_component(dpg.mvAll):
+        dpg.add_theme_color(dpg.mvPlotCol_PlotBg, [0, 0, 0, 0])
+        dpg.add_theme_color(dpg.mvPlotCol_FrameBg, [0, 0, 0, 0])
+        dpg.add_theme_color(dpg.mvPlotCol_PlotBorder, [0, 0, 0, 0])
+    with dpg.theme_component(dpg.mvChildWindow):
+        dpg.add_theme_color(dpg.mvThemeCol_ChildBg, [0, 0, 0, 0])
+

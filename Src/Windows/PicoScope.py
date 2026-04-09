@@ -3,7 +3,7 @@ import dearpygui.dearpygui as dpg
 import numpy as np
 import threading
 
-from Drivers.PicoScope import CHANNEL_NAMES, PicoScope as PicoScopeDriver, SUPPORTED_DATA_BITS
+from Drivers.PicoScope import CHANNEL_NAMES, PicoScope as PicoScopeDriver, SUPPORTED_AWG_WAVEFORMS, SUPPORTED_DATA_BITS
 from Utils.state_persistence import apply_window_state, capture_window_state, load_state_file, save_state_file
 from Utils.themes import red_green_button_disabled, red_green_button_enabled
 from Windows.SubWindows.Oscilloscope import OscilloscopeWindow
@@ -12,13 +12,12 @@ from Windows.SubWindows.Oscilloscope import OscilloscopeWindow
 CHANNEL_PANEL_SPECS = (
     {"panel_id": "A", "title": "Channel 1", "source_channel": "A", "default_enabled": True, "default_color": [86, 180, 233, 255]},
     {"panel_id": "B", "title": "Channel 2", "source_channel": "B", "default_enabled": False, "default_color": [230, 159, 0, 255]},
-    {"panel_id": "AWG", "title": "AWG", "source_channel": None, "default_enabled": False, "default_color": [0, 158, 115, 255]},
-)
-AWG_WAVEFORM_TYPES = (
-    {"key": "dc", "tooltip": "DC"},
-    {"key": "sine", "tooltip": "Sine Wave"},
-    {"key": "square", "tooltip": "Square Wave"},
-    {"key": "triangle", "tooltip": "Triangle Wave"},
+    {"panel_id": "C", "title": "Channel 3", "source_channel": "C", "default_enabled": False, "default_color": [0, 158, 115, 255]},
+    {"panel_id": "D", "title": "Channel 4", "source_channel": "D", "default_enabled": False, "default_color": [204, 121, 167, 255]},
+    {"panel_id": "E", "title": "Channel 5", "source_channel": "E", "default_enabled": False, "default_color": [213, 94, 0, 255]},
+    {"panel_id": "F", "title": "Channel 6", "source_channel": "F", "default_enabled": False, "default_color": [0, 114, 178, 255]},
+    {"panel_id": "G", "title": "Channel 7", "source_channel": "G", "default_enabled": False, "default_color": [240, 228, 66, 255]},
+    {"panel_id": "H", "title": "Channel 8", "source_channel": "H", "default_enabled": False, "default_color": [128, 128, 128, 255]},
 )
 
 
@@ -37,7 +36,6 @@ class PicoScopeControl:
         self._device_refresh_in_progress = False
         self._device_refresh_requested = False
         self.oscilloscope_window = None
-        self.awg_icon_textures = {}
 
         with dpg.font_registry():
             mdl_font = os.path.abspath("src/Assets/Fonts/SegMDL2.ttf")
@@ -51,8 +49,6 @@ class PicoScopeControl:
                 dpg.add_theme_color(dpg.mvThemeCol_FrameBgActive, [0, 0, 0, 0])
                 dpg.add_theme_color(dpg.mvThemeCol_Border, [0, 0, 0, 0])
                 dpg.add_theme_style(dpg.mvStyleVar_FrameBorderSize, 0)
-
-        self._create_awg_icon_textures()
 
         with dpg.window(
             label="PicoScope",
@@ -136,6 +132,8 @@ class PicoScopeControl:
         for channel_spec in CHANNEL_PANEL_SPECS:
             self._create_channel_panel(channel_spec)
 
+        self._create_awg_panel()
+
         self.oscilloscope_window = OscilloscopeWindow(self._get_oscilloscope_traces)
         self._refresh_available_devices()
         self._sync_driver_channels()
@@ -152,6 +150,8 @@ class PicoScopeControl:
             status_text = "Collecting"
         elif self.driver.is_open:
             status_text = "Open"
+        if self._last_error_message:
+            status_text += f"\nError: {self._last_error_message}"
         dpg.set_value(self.connection_status_id, f"Status: {status_text}")
 
     def _refresh_available_devices(self, sender=None, app_data=None, user_data=None):
@@ -242,84 +242,6 @@ class PicoScopeControl:
         for channel_name, enabled in enabled_channels.items():
             self.driver.configure_channel(channel_name, enabled=enabled)
 
-    def _build_waveform_icon_rgba(self, waveform_key, width=56, height=22):
-        image = np.zeros((height, width, 4), dtype=np.float32)
-        line_color = np.array([1.0, 1.0, 1.0, 1.0], dtype=np.float32)
-        x_values = np.arange(5, width - 5, dtype=np.float32)
-        midline = height * 0.5
-        amplitude = height * 0.28
-
-        if waveform_key == "dc":
-            y_values = np.full_like(x_values, midline)
-        elif waveform_key == "sine":
-            angles = np.linspace(0.0, 2.0 * np.pi, len(x_values), endpoint=False)
-            y_values = (midline - (amplitude * np.sin(angles))).astype(np.float32)
-        elif waveform_key == "square":
-            y_values = np.where(x_values < (width * 0.5), midline - amplitude, midline + amplitude).astype(np.float32)
-            transition_index = int(len(x_values) * 0.5)
-            start_index = max(0, transition_index - 1)
-            end_index = min(len(y_values), transition_index + 2)
-            y_values[start_index:end_index] = np.linspace(midline - amplitude, midline + amplitude, end_index - start_index, endpoint=True)
-        else:
-            phase = np.linspace(0.0, 1.0, len(x_values), endpoint=False)
-            triangle = 2.0 * np.abs((2.0 * phase) - 1.0) - 1.0
-            y_values = (midline - (amplitude * triangle)).astype(np.float32)
-
-        for x_value, y_value in zip(x_values.astype(int), y_values.astype(int)):
-            for dx in (-1, 0, 1):
-                for dy in (-1, 0, 1):
-                    x_index = int(np.clip(x_value + dx, 0, width - 1))
-                    y_index = int(np.clip(y_value + dy, 0, height - 1))
-                    image[y_index, x_index] = line_color
-
-        return image.flatten().tolist()
-
-    def _create_awg_icon_textures(self):
-        with dpg.texture_registry(show=False):
-            for waveform in AWG_WAVEFORM_TYPES:
-                waveform_key = waveform["key"]
-                self.awg_icon_textures[waveform_key] = dpg.add_static_texture(
-                    width=56,
-                    height=22,
-                    default_value=self._build_waveform_icon_rgba(waveform_key, width=56, height=22),
-                )
-
-    def _collect_awg_driver_config(self, panel):
-        waveform_type = panel["awg_waveform_type"]
-        if waveform_type == "dc":
-            return {
-                "waveform_type": waveform_type,
-                "offset_volts": float(panel["awg_dc_offset_volts"]),
-                "amplitude_vpp_volts": 0.0,
-                "frequency_hz": 0.0,
-            }
-
-        return {
-            "waveform_type": waveform_type,
-            "offset_volts": float(panel["awg_periodic_offset_volts"]),
-            "amplitude_vpp_volts": float(panel["awg_amplitude_vpp_volts"]),
-            "frequency_hz": float(panel["awg_frequency_hz"]),
-        }
-
-    def _update_awg_waveform_buttons(self, panel):
-        selected_waveform = panel["awg_waveform_type"]
-        for waveform in AWG_WAVEFORM_TYPES:
-            button_id = panel["awg_waveform_button_ids"][waveform["key"]]
-            is_selected = waveform["key"] == selected_waveform
-            dpg.configure_item(
-                button_id,
-                background_color=[0, 124, 80, 255] if is_selected else [32, 32, 32, 255],
-                tint_color=[255, 255, 255, 255],
-            )
-
-    def _update_awg_settings_visibility(self, panel):
-        dpg.configure_item(panel["awg_dc_settings_group_id"], show=panel["awg_waveform_type"] == "dc")
-        dpg.configure_item(panel["awg_periodic_settings_group_id"], show=panel["awg_waveform_type"] != "dc")
-
-    def _apply_awg_panel_state(self, panel):
-        self.driver.configure_awg(**self._collect_awg_driver_config(panel))
-        self.driver.set_awg_enabled(panel["enabled"])
-
     def _create_channel_panel(self, channel_spec):
         panel_id = channel_spec["panel_id"]
         display_name = channel_spec["title"]
@@ -347,79 +269,6 @@ class PicoScopeControl:
                 )
             dpg.add_separator()
 
-            awg_waveform_button_ids = {}
-            awg_dc_settings_group_id = None
-            awg_periodic_settings_group_id = None
-            awg_dc_offset_input_id = None
-            awg_frequency_input_id = None
-            awg_amplitude_input_id = None
-            awg_periodic_offset_input_id = None
-
-            if channel_spec["source_channel"] is None:
-                dpg.add_spacer(height=4)
-                with dpg.table(header_row=False, borders_innerH=False, borders_innerV=False, borders_outerH=False, borders_outerV=False, policy=dpg.mvTable_SizingStretchSame):
-                    for _ in AWG_WAVEFORM_TYPES:
-                        dpg.add_table_column(init_width_or_weight=1.0)
-
-                    with dpg.table_row():
-                        table_width = dpg.get_item_width(self.window_id)
-                        
-                        for waveform in AWG_WAVEFORM_TYPES:
-                            button_id = dpg.add_image_button(
-                                self.awg_icon_textures[waveform["key"]],
-                                width=table_width / 4 - 18,
-                                height=30,
-                                callback=self._on_awg_waveform_selected,
-                                user_data=(panel_id, waveform["key"]),
-                                background_color=[32, 32, 32, 255],
-                                tint_color=[255, 255, 255, 255],
-                            )
-                            awg_waveform_button_ids[waveform["key"]] = button_id
-                            with dpg.tooltip(button_id):
-                                dpg.add_text(waveform["tooltip"])
-
-                with dpg.group(show=True):
-                    awg_dc_settings_group_id = dpg.last_item()
-                    awg_dc_offset_input_id = dpg.add_input_float(
-                        label="Offset (V)",
-                        width=-120,
-                        default_value=float(self.driver.awg_config["offset_volts"]),
-                        step=0.1,
-                        callback=self._on_awg_setting_changed,
-                        user_data=(panel_id, "awg_dc_offset_volts"),
-                    )
-
-                with dpg.group(show=False):
-                    awg_periodic_settings_group_id = dpg.last_item()
-                    awg_frequency_input_id = dpg.add_input_float(
-                        label="Frequency (Hz)",
-                        width=-120,
-                        default_value=float(self.driver.awg_config["frequency_hz"]),
-                        min_value=0.0,
-                        min_clamped=True,
-                        step=100.0,
-                        callback=self._on_awg_setting_changed,
-                        user_data=(panel_id, "awg_frequency_hz"),
-                    )
-                    awg_amplitude_input_id = dpg.add_input_float(
-                        label="Amplitude (Vpp)",
-                        width=-120,
-                        default_value=float(self.driver.awg_config["amplitude_vpp_volts"]),
-                        min_value=0.0,
-                        min_clamped=True,
-                        step=0.1,
-                        callback=self._on_awg_setting_changed,
-                        user_data=(panel_id, "awg_amplitude_vpp_volts"),
-                    )
-                    awg_periodic_offset_input_id = dpg.add_input_float(
-                        label="Offset (V)",
-                        width=-120,
-                        default_value=float(self.driver.awg_config["offset_volts"]),
-                        step=0.1,
-                        callback=self._on_awg_setting_changed,
-                        user_data=(panel_id, "awg_periodic_offset_volts"),
-                    )
-
             enabled_button_id = dpg.add_button(
                 label="Enabled" if channel_spec["default_enabled"] else "Disabled",
                 width=-1,
@@ -440,25 +289,105 @@ class PicoScopeControl:
             "source_channel": channel_spec["source_channel"],
             "enabled": bool(channel_spec["default_enabled"]),
             "color": list(channel_spec["default_color"]),
-            "awg_waveform_type": self.driver.awg_config["waveform_type"],
-            "awg_waveform_button_ids": awg_waveform_button_ids,
-            "awg_dc_settings_group_id": awg_dc_settings_group_id,
-            "awg_periodic_settings_group_id": awg_periodic_settings_group_id,
-            "awg_dc_offset_input_id": awg_dc_offset_input_id,
-            "awg_frequency_input_id": awg_frequency_input_id,
-            "awg_amplitude_input_id": awg_amplitude_input_id,
-            "awg_periodic_offset_input_id": awg_periodic_offset_input_id,
-            "awg_dc_offset_volts": float(self.driver.awg_config["offset_volts"]),
-            "awg_frequency_hz": float(self.driver.awg_config["frequency_hz"]),
-            "awg_amplitude_vpp_volts": float(self.driver.awg_config["amplitude_vpp_volts"]),
-            "awg_periodic_offset_volts": float(self.driver.awg_config["offset_volts"]),
         }
         self.channel_panels.append(panel)
         self._update_panel_enabled_button(panel)
-        if channel_spec["source_channel"] is None:
-            self._update_awg_waveform_buttons(panel)
-            self._update_awg_settings_visibility(panel)
         self._sync_driver_channels()
+
+    def _create_awg_panel(self):
+        with dpg.group(parent=self.channels_container_id):
+            dpg.add_text("Signal Generator (AWG)")
+            dpg.add_separator()
+
+            self.awg_enabled_button_id = dpg.add_button(
+                label="Disabled",
+                width=-1,
+                callback=self._on_awg_enabled_toggled,
+            )
+            self._awg_enabled = False
+            dpg.bind_item_theme(self.awg_enabled_button_id, red_green_button_disabled)
+
+            with dpg.group() as self.awg_settings_group_id:
+                self.awg_waveform_combo_id = dpg.add_combo(
+                    label="Waveform",
+                    width=-120,
+                    items=[w.title() for w in SUPPORTED_AWG_WAVEFORMS],
+                    default_value="Dc",
+                    callback=self._on_awg_waveform_changed,
+                )
+
+                self.awg_frequency_input_id = dpg.add_input_float(
+                    label="Frequency (Hz)",
+                    width=-120,
+                    default_value=self.driver.awg_config["frequency_hz"],
+                    min_value=0.0,
+                    step=100.0,
+                    callback=self._on_awg_setting_changed,
+                )
+
+                self.awg_amplitude_input_id = dpg.add_input_float(
+                    label="Amplitude (Vpp)",
+                    width=-120,
+                    default_value=self.driver.awg_config["amplitude_vpp_volts"],
+                    min_value=0.0,
+                    step=0.1,
+                    callback=self._on_awg_setting_changed,
+                )
+
+                self.awg_offset_input_id = dpg.add_input_float(
+                    label="Offset (V)",
+                    width=-120,
+                    default_value=self.driver.awg_config["offset_volts"],
+                    step=0.1,
+                    callback=self._on_awg_setting_changed,
+                )
+
+            self._update_awg_settings_visibility()
+
+            dpg.add_separator()
+            dpg.add_spacer(height=6)
+
+    def _update_awg_enabled_button(self):
+        label = "Enabled" if self._awg_enabled else "Disabled"
+        theme = red_green_button_enabled if self._awg_enabled else red_green_button_disabled
+        dpg.configure_item(self.awg_enabled_button_id, label=label)
+        dpg.bind_item_theme(self.awg_enabled_button_id, theme)
+
+    def _update_awg_settings_visibility(self):
+        waveform = dpg.get_value(self.awg_waveform_combo_id).lower()
+        is_periodic = waveform in ("sine", "square", "triangle")
+        dpg.configure_item(self.awg_frequency_input_id, show=is_periodic)
+        dpg.configure_item(self.awg_amplitude_input_id, show=is_periodic or waveform == "dc")
+        dpg.configure_item(self.awg_offset_input_id, show=True)
+
+    def _on_awg_enabled_toggled(self, sender=None, app_data=None, user_data=None):
+        self._awg_enabled = not self._awg_enabled
+        self._update_awg_enabled_button()
+        self._apply_awg_to_driver()
+
+    def _on_awg_waveform_changed(self, sender=None, app_data=None, user_data=None):
+        self._update_awg_settings_visibility()
+        self._apply_awg_to_driver()
+
+    def _on_awg_setting_changed(self, sender=None, app_data=None, user_data=None):
+        self._apply_awg_to_driver()
+
+    def _apply_awg_to_driver(self):
+        waveform = dpg.get_value(self.awg_waveform_combo_id).lower()
+        frequency = dpg.get_value(self.awg_frequency_input_id)
+        amplitude = dpg.get_value(self.awg_amplitude_input_id)
+        offset = dpg.get_value(self.awg_offset_input_id)
+
+        try:
+            self.driver.configure_awg(
+                waveform_type=waveform,
+                frequency_hz=frequency,
+                amplitude_vpp_volts=amplitude,
+                offset_volts=offset,
+            )
+            self.driver.set_awg_enabled(self._awg_enabled)
+        except Exception as exc:
+            self._set_status(self.status_message, error=str(exc))
 
     def _get_panel(self, panel_id):
         for panel in self.channel_panels:
@@ -521,32 +450,9 @@ class PicoScopeControl:
         panel = self._get_panel(panel_id)
         previous_enabled = panel["enabled"]
         panel["enabled"] = not panel["enabled"]
-        action = (lambda: self.driver.set_awg_enabled(panel["enabled"])) if panel["source_channel"] is None else (lambda: None)
-        if not self._apply_stopped_configuration(action):
+        if not self._apply_stopped_configuration(lambda: None):
             panel["enabled"] = previous_enabled
         self._update_panel_enabled_button(panel)
-
-    def _on_awg_waveform_selected(self, sender, app_data, user_data):
-        panel_id, waveform_type = user_data
-        panel = self._get_panel(panel_id)
-        previous_waveform = panel["awg_waveform_type"]
-        panel["awg_waveform_type"] = waveform_type
-
-        if not self._apply_stopped_configuration(lambda: self.driver.configure_awg(**self._collect_awg_driver_config(panel))):
-            panel["awg_waveform_type"] = previous_waveform
-
-        self._update_awg_waveform_buttons(panel)
-        self._update_awg_settings_visibility(panel)
-
-    def _on_awg_setting_changed(self, sender, app_data, user_data):
-        panel_id, setting_name = user_data
-        panel = self._get_panel(panel_id)
-        previous_value = panel[setting_name]
-        panel[setting_name] = float(app_data)
-
-        if not self._apply_stopped_configuration(lambda: self.driver.configure_awg(**self._collect_awg_driver_config(panel))):
-            panel[setting_name] = previous_value
-            dpg.set_value(sender, previous_value)
 
     def _on_panel_color_changed(self, sender, app_data, panel_id):
         panel = self._get_panel(panel_id)
@@ -566,15 +472,8 @@ class PicoScopeControl:
                 continue
 
             channel_name = panel["source_channel"]
-            raw_samples = snapshot["channels"].get(channel_name, []) if channel_name is not None else []
-            if channel_name is None:
-                preview = self.driver.get_awg_preview(
-                    duration_seconds=self.driver.history_seconds,
-                    sample_count=max(128, min(1024, int(snapshot.get("buffer_capacity") or 512))),
-                )
-                x_values = preview["timestamps"]
-                y_values = list(preview["voltages"])
-            elif not raw_samples:
+            raw_samples = snapshot["channels"].get(channel_name, [])
+            if not raw_samples:
                 x_values = []
                 y_values = []
             else:
@@ -654,17 +553,10 @@ class PicoScopeControl:
             for item_id in (panel["name_input_id"], panel["enabled_button_id"], panel["color_edit_id"]):
                 dpg.configure_item(item_id, enabled=config_enabled)
 
-            for item_id in (
-                panel.get("awg_dc_offset_input_id"),
-                panel.get("awg_frequency_input_id"),
-                panel.get("awg_amplitude_input_id"),
-                panel.get("awg_periodic_offset_input_id"),
-            ):
-                if item_id is not None:
-                    dpg.configure_item(item_id, enabled=config_enabled)
-
-            for button_id in panel.get("awg_waveform_button_ids", {}).values():
-                dpg.configure_item(button_id, enabled=config_enabled)
+        awg_config_enabled = is_open and not is_collecting
+        dpg.configure_item(self.awg_enabled_button_id, enabled=awg_config_enabled)
+        for item_id in (self.awg_waveform_combo_id, self.awg_frequency_input_id, self.awg_amplitude_input_id, self.awg_offset_input_id):
+            dpg.configure_item(item_id, enabled=awg_config_enabled)
 
         if self.driver.last_error is not None:
             self._last_error_message = self.driver.last_error.get("message", "Unknown PicoScope error")
@@ -683,16 +575,6 @@ class PicoScopeControl:
                 "enabled": bool(panel["enabled"]),
                 "color": list(panel["color"]),
             }
-            if panel["source_channel"] is None:
-                panel_state.update(
-                    {
-                        "awg_waveform_type": panel["awg_waveform_type"],
-                        "awg_dc_offset_volts": float(panel["awg_dc_offset_volts"]),
-                        "awg_frequency_hz": float(panel["awg_frequency_hz"]),
-                        "awg_amplitude_vpp_volts": float(panel["awg_amplitude_vpp_volts"]),
-                        "awg_periodic_offset_volts": float(panel["awg_periodic_offset_volts"]),
-                    }
-                )
             panel_states.append(panel_state)
 
         save_state_file(
@@ -704,6 +586,13 @@ class PicoScopeControl:
                 "history_seconds": float(dpg.get_value(self.seconds_input_id)),
                 "data_bits": str(dpg.get_value(self.data_bits_combo_id)),
                 "panels": panel_states,
+                "awg": {
+                    "enabled": self._awg_enabled,
+                    "waveform": dpg.get_value(self.awg_waveform_combo_id),
+                    "frequency_hz": float(dpg.get_value(self.awg_frequency_input_id)),
+                    "amplitude_vpp_volts": float(dpg.get_value(self.awg_amplitude_input_id)),
+                    "offset_volts": float(dpg.get_value(self.awg_offset_input_id)),
+                },
             },
         )
         if self.oscilloscope_window is not None:
@@ -757,26 +646,22 @@ class PicoScopeControl:
                 panel["enabled"] = bool(panel_state["enabled"])
                 self._update_panel_enabled_button(panel)
 
-            if panel["source_channel"] is None:
-                panel["awg_waveform_type"] = str(panel_state.get("awg_waveform_type", panel["awg_waveform_type"]))
-                panel["awg_dc_offset_volts"] = float(panel_state.get("awg_dc_offset_volts", panel["awg_dc_offset_volts"]))
-                panel["awg_frequency_hz"] = float(panel_state.get("awg_frequency_hz", panel["awg_frequency_hz"]))
-                panel["awg_amplitude_vpp_volts"] = float(panel_state.get("awg_amplitude_vpp_volts", panel["awg_amplitude_vpp_volts"]))
-                panel["awg_periodic_offset_volts"] = float(panel_state.get("awg_periodic_offset_volts", panel["awg_periodic_offset_volts"]))
+        awg_state = state.get("awg", {})
+        if awg_state:
+            waveform = str(awg_state.get("waveform", "Dc"))
+            dpg.set_value(self.awg_waveform_combo_id, waveform)
 
-                if panel.get("awg_dc_offset_input_id") is not None:
-                    dpg.set_value(panel["awg_dc_offset_input_id"], panel["awg_dc_offset_volts"])
-                if panel.get("awg_frequency_input_id") is not None:
-                    dpg.set_value(panel["awg_frequency_input_id"], panel["awg_frequency_hz"])
-                if panel.get("awg_amplitude_input_id") is not None:
-                    dpg.set_value(panel["awg_amplitude_input_id"], panel["awg_amplitude_vpp_volts"])
-                if panel.get("awg_periodic_offset_input_id") is not None:
-                    dpg.set_value(panel["awg_periodic_offset_input_id"], panel["awg_periodic_offset_volts"])
+            if "frequency_hz" in awg_state:
+                dpg.set_value(self.awg_frequency_input_id, float(awg_state["frequency_hz"]))
+            if "amplitude_vpp_volts" in awg_state:
+                dpg.set_value(self.awg_amplitude_input_id, float(awg_state["amplitude_vpp_volts"]))
+            if "offset_volts" in awg_state:
+                dpg.set_value(self.awg_offset_input_id, float(awg_state["offset_volts"]))
 
-                self.driver.configure_awg(**self._collect_awg_driver_config(panel))
-                self.driver.set_awg_enabled(panel["enabled"])
-                self._update_awg_waveform_buttons(panel)
-                self._update_awg_settings_visibility(panel)
+            self._awg_enabled = bool(awg_state.get("enabled", False))
+            self._update_awg_enabled_button()
+            self._update_awg_settings_visibility()
+            self._apply_awg_to_driver()
 
         self._sync_driver_channels()
         self._refresh_status_labels()

@@ -4,16 +4,14 @@ import time
 import dearpygui.dearpygui as dpg
 import numpy as np
 
-from Utils.state_persistence import apply_window_state, capture_window_state, load_state_file, save_state_file
-from Utils.themes import no_padding_theme, default_theme
+from Utils.state_persistence import load_state_file, save_state_file
 
 
 class RegionOfInterest:
 
-    def __init__(self, name, tag, parent, bounds):
-        self.width = 640
-        self.height = 200
+    def __init__(self, name, tag, parent, rois_window, bounds):
         self.parent = parent
+        self.rois_window = rois_window
         self.Andor = parent.Andor
         self.name = name
         self.tag = tag
@@ -40,55 +38,6 @@ class RegionOfInterest:
         self.image_height = max(1, int(initial_crop.shape[0]))
         self.pending_image_rgba = self._frame_to_rgba(initial_crop)
         self.pending_image_shape = (self.image_height, self.image_width)
-
-        with dpg.window(
-            label=name,
-            tag=f"{tag}_Window",
-            width=self.width,
-            height=self.height,
-            pos=(935, 10),
-            no_scrollbar=True,
-            no_resize=False,
-            no_scroll_with_mouse=True,
-            on_close=lambda: self.parent._close_roi(tag),
-        ):
-
-            self.window_id = dpg.last_item()
-            dpg.bind_item_theme(self.window_id, no_padding_theme)
-
-            with dpg.item_handler_registry(tag=f"{tag}_ResizeHandler"):
-                dpg.add_item_resize_handler(callback=self._on_window_resize)
-                dpg.bind_item_handler_registry(self.window_id, f"{tag}_ResizeHandler")
-
-            with dpg.texture_registry(show=False):
-                self.texture_id = dpg.add_dynamic_texture(
-                    width=self.image_width,
-                    height=self.image_height,
-                    default_value=self.pending_image_rgba,
-                )
-
-            with dpg.group(horizontal=True):
-                self.group_id = dpg.last_item()
-                self.image_id = dpg.add_image(
-                    tag=f"{tag}_Image",
-                    texture_tag=self.texture_id,
-                    width=self.height,
-                    height=self.height,
-                )
-
-                with dpg.plot(height=-1, width=-1, no_title=True, no_menus=True):
-                    self.plot_id = dpg.last_item()
-                    self.x_axis_id = dpg.add_plot_axis(dpg.mvXAxis, label="Frame", auto_fit=True)
-                    self.y_axis_id = dpg.add_plot_axis(dpg.mvYAxis, label="Mean", auto_fit=True)
-                    self.trace_series_id = dpg.add_line_series(
-                        [],
-                        [],
-                        label="Mean Intensity",
-                        parent=self.y_axis_id,
-                    )
-
-            dpg.bind_item_theme(self.plot_id, default_theme)
-            self._update_image_widget_size()
 
         self.worker_thread = threading.Thread(target=self._worker_loop, daemon=True)
         self.worker_thread.start()
@@ -191,71 +140,8 @@ class RegionOfInterest:
     def _frame_to_rgba(self, frame):
         return self.parent._frame_to_rgba(frame)
 
-    def _ensure_texture_shape(self, image_shape):
-        crop_height, crop_width = image_shape
-        crop_height = max(1, int(crop_height))
-        crop_width = max(1, int(crop_width))
-
-        if crop_width == self.image_width and crop_height == self.image_height:
-            return
-
-        self.image_width = crop_width
-        self.image_height = crop_height
-
-        with dpg.texture_registry(show=False):
-            replacement_texture_id = dpg.add_dynamic_texture(
-                width=self.image_width,
-                height=self.image_height,
-                default_value=np.zeros((self.image_width * self.image_height * 4,), dtype=np.float32),
-            )
-
-        previous_texture_id = self.texture_id
-        self.texture_id = replacement_texture_id
-        dpg.configure_item(self.image_id, texture_tag=self.texture_id)
-
-        if dpg.does_item_exist(previous_texture_id):
-            dpg.delete_item(previous_texture_id)
-
-        self._update_image_widget_size()
-
-    def _update_image_widget_size(self):
-        window_width, window_height = dpg.get_item_rect_size(self.window_id)
-        max_image_height = max(120, int(window_height) - 24)
-        max_image_width = max(160, int(window_width * 0.45))
-        aspect_ratio = self.image_width / max(1, self.image_height)
-
-        image_height = max_image_height
-        image_width = int(image_height * aspect_ratio)
-        if image_width > max_image_width:
-            image_width = max_image_width
-            image_height = max(1, int(image_width / max(aspect_ratio, 1e-6)))
-
-        dpg.set_item_width(self.image_id, image_width)
-        dpg.set_item_height(self.image_id, image_height)
-
-    def _on_window_resize(self, sender=None, app_data=None):
-        self._update_image_widget_size()
-
     def render(self):
-        if not dpg.does_item_exist(self.window_id):
-            return
-
-        with self.data_lock:
-            pending_version = self.pending_version
-            pending_shape = self.pending_image_shape
-            pending_image_rgba = self.pending_image_rgba
-            pending_plot_x, pending_plot_y = self.pending_plot_data
-
-        if pending_version != self.applied_version:
-            self._ensure_texture_shape(pending_shape)
-            if pending_image_rgba is not None:
-                dpg.set_value(self.texture_id, pending_image_rgba)
-            dpg.set_value(self.trace_series_id, [pending_plot_x, pending_plot_y])
-            dpg.fit_axis_data(self.x_axis_id)
-            dpg.fit_axis_data(self.y_axis_id)
-            self.applied_version = pending_version
-
-        self._update_image_widget_size()
+        self.rois_window.render_roi(self)
 
     def _state_name(self):
         return f"{type(self).__name__}_{self.tag}"
@@ -264,7 +150,6 @@ class RegionOfInterest:
         save_state_file(
             self._state_name(),
             {
-                "window": capture_window_state(self.window_id),
                 "name": self.name,
                 "bounds": list(self.get_bounds()),
             },
@@ -276,8 +161,6 @@ class RegionOfInterest:
             return
 
         self.name = str(state.get("name") or self.name)
-        dpg.configure_item(self.window_id, label=self.name)
         if "bounds" in state:
             self.set_bounds(state["bounds"])
             self.request_trace_rebuild()
-        apply_window_state(self.window_id, state.get("window"))

@@ -1,5 +1,6 @@
 import os
 import Drivers.LaserDriver as LaserDriverModule
+from Drivers.PM1000 import PM1000
 import dearpygui.dearpygui as dpg
 from Utils.state_persistence import apply_window_state, capture_window_state, load_state_file, save_state_file
 
@@ -13,10 +14,16 @@ class LaserControls:
         self.history_y              = [0.0] * self.history_capacity
         self._last_history_update   = 0.0
 
+        self.pm1000                     = PM1000()
+        self.pm1000_connected           = False
+        self.pm1000_history_y           = [0.0] * self.history_capacity
+        self._last_pm1000_history_update = 0.0
+
         # Set up value sources for laser power to enable real-time updates in the UI
         with dpg.value_registry():
             self.target_power_source = dpg.add_float_value(default_value=self.laser.get_target_power())
             self.actual_power_source = dpg.add_float_value(default_value=self.laser.get_laser_power())
+            self.pm1000_power_source = dpg.add_float_value(default_value=0.0)
 
 
         # Add custom font for icons
@@ -38,7 +45,7 @@ class LaserControls:
         ):
             self.window_id = dpg.last_item()
 
-            dpg.add_text("Connection")
+            dpg.add_text("Laser Connection")
             dpg.add_separator()
 
             with dpg.group(horizontal=True):
@@ -65,8 +72,6 @@ class LaserControls:
                     callback = self._toggle_connection,
                 )
 
-
-
                 with dpg.tooltip(self.connection_button_id):
                     self.connection_button_tooltip_id = dpg.add_text(
                         "Disconnect laser" if self.laser.is_connected() else "Connect laser"
@@ -76,34 +81,38 @@ class LaserControls:
                 dpg.bind_item_font(self.connection_button_id, mdl)
 
             dpg.add_spacer(height=6)
+            dpg.add_text("Power Meter Connection")
+            dpg.add_separator()
 
-            with dpg.table(
-                header_row = False,
-                row_background = True,
-                borders_innerH = True,
-                borders_outerH = True,
-                borders_innerV = True,
-                borders_outerV = True,
-                policy = dpg.mvTable_SizingStretchProp,
-            ):
-                dpg.add_table_column(init_width_or_weight=0.45)
-                dpg.add_table_column(init_width_or_weight=0.55)
+            with dpg.group(horizontal=True):
+                self.pm1000_device_combo_id = dpg.add_combo(
+                    label = "Device",
+                    width = -130,
+                    items = [],
+                    default_value = "No devices",
+                    callback = self._on_pm1000_device_selected,
+                )
 
-                with dpg.table_row():
-                    dpg.add_text("Port")
-                    self.port_status_id = dpg.add_text(self.laser.COMPort or "Not Found")
+                self.pm1000_refresh_button_id = dpg.add_button(
+                    label = "\uE117",
+                    width = 40,
+                    callback = self._pm1000_refresh_devices,
+                )
 
-                with dpg.table_row():
-                    dpg.add_text("Connected")
-                    self.connection_status_id = dpg.add_text("Yes" if self.laser.is_connected() else "No")
+                with dpg.tooltip(self.pm1000_refresh_button_id):
+                    dpg.add_text("Refresh power meter devices")
 
-                with dpg.table_row():
-                    dpg.add_text("Emission")
-                    self.emission_status_id = dpg.add_text("Enabled" if self.laser.get_laser_state() else "Disabled")
+                self.pm1000_connect_button_id = dpg.add_button(
+                    label = "\uE8CD",
+                    width = 40,
+                    callback = self._pm1000_toggle_connection,
+                )
 
-                with dpg.table_row():
-                    dpg.add_text("Actual Power")
-                    self.actual_power_text_id = dpg.add_text(f"{self.laser.get_laser_power():.2f} mW")
+                with dpg.tooltip(self.pm1000_connect_button_id):
+                    self.pm1000_connect_tooltip_id = dpg.add_text("Connect power meter")
+
+                dpg.bind_item_font(self.pm1000_refresh_button_id, mdl)
+                dpg.bind_item_font(self.pm1000_connect_button_id, mdl)
 
             dpg.add_spacer(height=10)
             dpg.add_text("Power Control")
@@ -145,13 +154,16 @@ class LaserControls:
                 callback = self.request_laser_power,
             )
 
-            self.laser_actual_id = dpg.add_slider_float(
+            self.laser_actual_id = dpg.add_progress_bar(
+                label = "Actual",
+                default_value = 0.0,
+                overlay = "0.00 mW",
+            )
+
+            self.pm1000_reading_bar_id = dpg.add_progress_bar(
                 label = "Measured",
-                source = self.actual_power_source,
-                min_value = 0.0,
-                max_value = self.laser.max_power_mw,
-                format = "%.2f mW",
-                enabled = False,
+                default_value = 0.0,
+                overlay = "0.0000 mW",
             )
 
             dpg.add_spacer(height=10)
@@ -172,16 +184,75 @@ class LaserControls:
                     no_tick_labels=True,
                     no_tick_marks=True,
                 )
-                self.power_history_axis_id = dpg.add_plot_axis(dpg.mvYAxis, label="")
+                self.power_history_axis_id = dpg.add_plot_axis(dpg.mvYAxis, label="mW")
                 dpg.set_axis_limits(self.power_history_axis_id, 0.0, self.laser.max_power_mw)
                 self.power_history_series_id = dpg.add_line_series(
-                    self.history_x,
+                    self.history_x, # type: ignore
                     self.history_y,
                     label="Actual Power",
                     parent=self.power_history_axis_id,
                 )
+                self.pm1000_history_series_id = dpg.add_line_series(
+                    self.history_x, # type: ignore
+                    self.pm1000_history_y,
+                    label="Measured Power",
+                    parent=self.power_history_axis_id,
+                )
 
         self._sync_ui_with_driver()
+        self._sync_pm1000_ui()
+        self._pm1000_auto_connect()
+
+    def _pm1000_auto_connect(self):
+        try:
+            self.pm1000.connect()
+            self.pm1000_connected = True
+            self.pm1000.start_continuous()
+            devices = self.pm1000._device_list.resourceName if self.pm1000._device_list else []
+            if devices:
+                dpg.configure_item(self.pm1000_device_combo_id, items=devices)
+                dpg.set_value(self.pm1000_device_combo_id, devices[0])
+        except Exception:
+            self.pm1000_connected = False
+        self._sync_pm1000_ui()
+
+    def _pm1000_refresh_devices(self, sender=None, app_data=None, user_data=None):
+        try:
+            devices = self.pm1000.list_devices()
+            dpg.configure_item(self.pm1000_device_combo_id, items=devices or ["No devices"])
+            dpg.set_value(self.pm1000_device_combo_id, devices[0] if devices else "No devices")
+            self._pm1000_selected_index = 0
+        except Exception:
+            dpg.configure_item(self.pm1000_device_combo_id, items=["No devices"])
+            dpg.set_value(self.pm1000_device_combo_id, "No devices")
+
+    def _on_pm1000_device_selected(self, sender, app_data, user_data):
+        devices = self.pm1000._device_list.resourceName if self.pm1000._device_list else []
+        if app_data in devices:
+            self._pm1000_selected_index = devices.index(app_data)
+
+    def _pm1000_toggle_connection(self, sender=None, app_data=None, user_data=None):
+        if self.pm1000_connected:
+            self.pm1000.disconnect()
+            self.pm1000_connected = False
+        else:
+            try:
+                idx = getattr(self, '_pm1000_selected_index', 0)
+                self.pm1000.connect(idx)
+                self.pm1000_connected = True
+                self.pm1000.start_continuous()
+            except Exception:
+                self.pm1000_connected = False
+        self._sync_pm1000_ui()
+
+    def _sync_pm1000_ui(self):
+        connected = self.pm1000_connected
+        dpg.configure_item(self.pm1000_device_combo_id, enabled=not connected)
+        dpg.configure_item(self.pm1000_refresh_button_id, enabled=not connected)
+        dpg.set_item_label(self.pm1000_connect_button_id, "\uE71B" if connected else "\uE8CD")
+        dpg.set_value(self.pm1000_connect_tooltip_id, "Disconnect power meter" if connected else "Connect power meter")
+        if not connected:
+            dpg.set_value(self.pm1000_power_source, 0.0)
 
     def _on_port_selected(self, sender, app_data, user_data):
         self.laser.COMPort = app_data
@@ -206,22 +277,27 @@ class LaserControls:
 
     def _sync_ui_with_driver(self):
         status = self.laser.get_status()
+        connected = status["connected"]
 
         dpg.set_value(self.target_power_source, status["target_power_mw"])
         dpg.set_value(self.actual_power_source, status["actual_power_mw"])
 
-        dpg.set_value(self.port_status_id, status["port"])
-        dpg.set_value(self.connection_status_id, "Yes" if status["connected"] else "No")
-        dpg.set_value(self.emission_status_id, "Enabled" if status["emission_enabled"] else "Disabled")
-        dpg.set_value(self.actual_power_text_id, f"{status['actual_power_mw']:.2f} mW")
+        actual_mw = status["actual_power_mw"]
+        max_mw = self.laser.max_power_mw
+        fraction = actual_mw / max_mw if max_mw > 0 else 0.0
+        dpg.set_value(self.laser_actual_id, fraction)
+        dpg.configure_item(self.laser_actual_id, overlay=f"{actual_mw:.2f} mW")
 
-        dpg.set_item_label(self.connection_button_id, "\uE71B" if status["connected"] else "\uE8CD")
-        dpg.set_value(self.connection_button_tooltip_id, "Disconnect laser" if status["connected"] else "Connect laser")
+        dpg.set_item_label(self.connection_button_id, "\uE71B" if connected else "\uE8CD")
+        dpg.set_value(self.connection_button_tooltip_id, "Disconnect laser" if connected else "Connect laser")
         dpg.set_item_label(self.laser_button_id, "Disable Emission" if status["emission_enabled"] else "Enable Emission")
 
-        dpg.configure_item(self.laser_button_id, enabled=status["connected"])
-        dpg.configure_item(self.laser_power_id, enabled=status["connected"])
-        dpg.configure_item(self.laser_power_input_id, enabled=status["connected"])
+        dpg.configure_item(self.laser_com_port_id, enabled=not connected)
+        dpg.configure_item(self.refresh_ports_button_id, enabled=not connected)
+
+        dpg.configure_item(self.laser_button_id, enabled=connected)
+        dpg.configure_item(self.laser_power_id, enabled=connected)
+        dpg.configure_item(self.laser_power_input_id, enabled=connected)
 
         indicator_color = (0, 200, 0, 255) if status["emission_enabled"] else (40, 40, 40, 255)
         dpg.configure_item(self.laser_indicator_id, default_value=indicator_color)
@@ -238,9 +314,42 @@ class LaserControls:
 
         dpg.set_value(self.power_history_series_id, [self.history_x[:len(self.history_y)], self.history_y])
 
+    def _update_pm1000_history(self):
+        if not self.pm1000_connected:
+            return
+
+        current_time = dpg.get_total_time()
+        if current_time - self._last_pm1000_history_update < 0.2:
+            return
+        self._last_pm1000_history_update = current_time
+
+        with self.pm1000._lock:
+            reading = self.pm1000.power_reading
+            unit = self.pm1000.power_unit
+
+        if reading is None:
+            return
+
+        # Convert W to mW for the shared axis
+        reading_mw = reading * 1000.0
+
+        dpg.set_value(self.pm1000_power_source, reading_mw)
+
+        max_mw = self.laser.max_power_mw
+        fraction = reading_mw / max_mw if max_mw > 0 else 0.0
+        dpg.set_value(self.pm1000_reading_bar_id, fraction)
+        dpg.configure_item(self.pm1000_reading_bar_id, overlay=f"{reading_mw:.4f} mW")
+
+        self.pm1000_history_y.append(reading_mw)
+        if len(self.pm1000_history_y) > self.history_capacity:
+            self.pm1000_history_y.pop(0)
+
+        dpg.set_value(self.pm1000_history_series_id, [self.history_x[:len(self.pm1000_history_y)], self.pm1000_history_y])
+
     def render(self):
         self._sync_ui_with_driver()
         self._update_power_history(self.laser.get_laser_power())
+        self._update_pm1000_history()
 
     def request_laser_power(self, sender, app_data, user_data):
         self.laser.set_laser_power(app_data)
@@ -277,7 +386,6 @@ class LaserControls:
             self.laser.set_laser_power(float(target_power))
 
         self._sync_ui_with_driver()
-
 
     def checkLaserState(self):
         return self.laser.get_laser_state()

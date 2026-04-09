@@ -1,24 +1,58 @@
-import plotly.express as px
-import numpy as np
-import plotly.graph_objects as go
-import os
+﻿"""
+Minimal test: open COM6 at 115200.
+Do NOT toggle DTR/RTS. Just open, send, and listen.
+"""
 
-# Load .npz file from ./Experiments
-npz_files = [f for f in os.listdir('./Experiments') if f.endswith('.npz')]
-if not npz_files:
-    print("No .npz files found in ./Experiments")
-else:
-    npz_path = os.path.join('./Experiments', npz_files[0])
-    print(f"Loading: {npz_path}")
-    data = np.load(npz_path)
-    print("Keys in .npz file:", data.files)
-    for key in data.files:
-        arr = data[key]
-        print(f"{key}: shape={arr.shape}, dtype={arr.dtype}")
+import serial
+import time
 
-    print(data['frames'])
-    # Plot the first acquisition frame if available
-    fig = go.Figure()
-    fig.add_trace( go.Scatter(x=data['pH_frames'], y=data['pH_values'], mode='lines+markers', name='pH Values') )
-    fig.add_trace( go.Scatter(x=data['frames'], y=np.mean(data['acquisitions'], axis=(1,2)), mode='lines+markers', name='Acquisitions') )
-    fig.show()
+PORT = "COM6"
+BAUD = 115200
+
+
+def main():
+    # Simplest possible open - let pyserial use defaults
+    ser = serial.Serial(PORT, BAUD, timeout=3.0)
+    time.sleep(2.0)  # Wait for device to settle after port open
+    
+    # Read any unsolicited data
+    n = ser.in_waiting
+    if n:
+        raw = ser.read(n)
+        print(f"Unsolicited ({n} bytes): hex={raw.hex(' ')}, ascii={raw.decode('ascii', errors='replace')!r}")
+    else:
+        print("No unsolicited data")
+    
+    # Send ?LT and wait
+    ser.reset_input_buffer()
+    ser.write(b"?LT\r\n")
+    print("Sent ?LT\\r\\n, waiting 3s...")
+    time.sleep(3.0)
+    n = ser.in_waiting
+    if n:
+        raw = ser.read(n)
+        print(f"Response ({n} bytes): hex={raw.hex(' ')}, ascii={raw.decode('ascii', errors='replace')!r}")
+    else:
+        print("No response to ?LT")
+    
+    # Try blocking read with timeout
+    ser.reset_input_buffer()
+    ser.write(b"?HID\r\n")
+    print("Sent ?HID\\r\\n, blocking read...")
+    raw = ser.read(50)  # Will block up to 3s (timeout)
+    if raw:
+        print(f"Response ({len(raw)} bytes): hex={raw.hex(' ')}, ascii={raw.decode('ascii', errors='replace')!r}")
+    else:
+        print("No response to ?HID (timeout)")
+    
+    # Check if write is actually going out
+    print(f"\nPort info: name={ser.name}, baudrate={ser.baudrate}")
+    print(f"Modem: CTS={ser.cts}, DSR={ser.dsr}, RI={ser.ri}, CD={ser.cd}")
+    print(f"Bytes written: {ser.write(b'test')}")
+    
+    ser.close()
+    print("Done.")
+
+
+if __name__ == "__main__":
+    main()

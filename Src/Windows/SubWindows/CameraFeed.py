@@ -9,6 +9,7 @@ from Utils.themes import no_padding_theme, read_only_theme
 from Windows.SubWindows.FeedControlsWindow import FeedControlsWindow
 from Windows.SubWindows.ImageWindow import ImageWindow
 from Windows.SubWindows.RegionOfInterest import RegionOfInterest
+from Windows.SubWindows.ROIsWindow import ROIsWindow
 
 class CameraFeedWindow:
 
@@ -110,6 +111,7 @@ class CameraFeedWindow:
             show=False,
             image_size=(self.image_height, self.image_width),
         )
+        self.rois_window = ROIsWindow()
 
         self.reset_texture()
 
@@ -969,11 +971,12 @@ class CameraFeedWindow:
 
         roi_tag = f"{self.tag}_ROI_{self.roi_index}"
         roi_name = f"ROI {self.roi_index + 1}"
-        roi = RegionOfInterest(name=roi_name, tag=roi_tag, parent=self, bounds=normalized_bounds)
+        roi = RegionOfInterest(name=roi_name, tag=roi_tag, parent=self, rois_window=self.rois_window, bounds=normalized_bounds)
         self.roi_index += 1
         self.rois.append(roi)
         self.selected_roi = roi
         roi.request_trace_rebuild()
+        self.rois_window.rebuild_layout(self.rois)
         return roi
 
     def _close_roi(self, tag):
@@ -988,6 +991,7 @@ class CameraFeedWindow:
 
         roi_to_remove.close()
         self.rois.remove(roi_to_remove)
+        self.rois_window.rebuild_layout(self.rois)
         if self.selected_roi is roi_to_remove:
             self.selected_roi = None
         if self.hover_target is not None and self.hover_target[0] is roi_to_remove:
@@ -1216,6 +1220,8 @@ class CameraFeedWindow:
             self.controls_window.SaveState()
         if self.zero_reference_window is not None:
             self.zero_reference_window.SaveState()
+        if self.rois_window is not None:
+            self.rois_window.SaveState()
 
         save_state_file(
             self._state_name(),
@@ -1246,6 +1252,8 @@ class CameraFeedWindow:
             self.controls_window.LoadState()
         if self.zero_reference_window is not None:
             self.zero_reference_window.LoadState()
+        if self.rois_window is not None:
+            self.rois_window.LoadState()
 
         if not state:
             return
@@ -1307,6 +1315,8 @@ class CameraFeedWindow:
     def render(self):
         dpg.set_item_height(self.window_id, self.width)
         self.zero_reference_window.render()
+        self.rois_window.rebuild_layout(self.rois)
+        self.rois_window.render()
         self._update_zero_window()
 
         for roi in list(self.rois):

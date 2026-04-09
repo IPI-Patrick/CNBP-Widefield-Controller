@@ -1,6 +1,13 @@
 {
+  "awg": {
+    "amplitude_vpp_volts": 1.0,
+    "enabled": true,
+    "frequency_hz": 10.0,
+    "offset_volts": 0.0,
+    "waveform": "Sine"
+  },
   "data_bits": "float16",
-  "device_serial": "",
+  "device_serial": "IW011/0187",
   "history_seconds": 1.0,
   "panels": [
     {
@@ -26,30 +33,80 @@
       "id": "B"
     },
     {
-      "awg_amplitude_vpp_volts": 1.0,
-      "awg_dc_offset_volts": 0.0,
-      "awg_frequency_hz": 10.0,
-      "awg_periodic_offset_volts": 0.0,
-      "awg_waveform_type": "sine",
       "color": [
         0,
         158,
         115,
         255
       ],
-      "display_name": "AWG",
+      "display_name": "Channel 3",
+      "enabled": false,
+      "id": "C"
+    },
+    {
+      "color": [
+        204,
+        121,
+        167,
+        255
+      ],
+      "display_name": "Channel 4",
+      "enabled": false,
+      "id": "D"
+    },
+    {
+      "color": [
+        213,
+        94,
+        0,
+        255
+      ],
+      "display_name": "AWG Output",
       "enabled": true,
-      "id": "AWG"
+      "id": "E"
+    },
+    {
+      "color": [
+        0,
+        114,
+        178,
+        255
+      ],
+      "display_name": "Channel 6",
+      "enabled": true,
+      "id": "F"
+    },
+    {
+      "color": [
+        240,
+        228,
+        66,
+        255
+      ],
+      "display_name": "Channel 7",
+      "enabled": true,
+      "id": "G"
+    },
+    {
+      "color": [
+        128,
+        128,
+        128,
+        255
+      ],
+      "display_name": "Channel 8",
+      "enabled": true,
+      "id": "H"
     }
   ],
   "sample_rate_hz": 1000.0,
   "window": {
-    "height": 618,
+    "height": 737,
     "pos": [
-      960,
-      676
+      1384,
+      20
     ],
     "show": true,
-    "width": 307
+    "width": 503
   }
 }
