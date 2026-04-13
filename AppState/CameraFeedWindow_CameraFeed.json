@@ -1,39 +1,22 @@
 {
   "autoscale_enabled": true,
   "autoscale_grace_percent": 1.0,
+  "colormap_name": "Tofino",
   "display_mode": "Contrast",
   "lp_filter_cutoff_hz": 1.0,
-  "lp_filter_enabled": true,
+  "lp_filter_enabled": false,
   "mirrored_difference_scale": true,
-  "negative_difference_color": [
-    240.0,
-    0.0,
-    183.5294189453125
-  ],
-  "positive_difference_color": [
-    0.0,
-    255.0,
-    135.0
-  ],
-  "roi_index": 501,
+  "roi_index": 195,
   "roi_state_names": [
-    "RegionOfInterest_CameraFeed_ROI_497",
-    "RegionOfInterest_CameraFeed_ROI_498",
-    "RegionOfInterest_CameraFeed_ROI_499",
-    "RegionOfInterest_CameraFeed_ROI_500"
+    "RegionOfInterest_CameraFeed_ROI_193",
+    "RegionOfInterest_CameraFeed_ROI_194"
   ],
-  "scale_max": 34.9334375,
-  "scale_min": -34.9334375,
-  "view_center_x": 512.0,
-  "view_center_y": 512.0,
+  "scale_max": 45.274375,
+  "scale_min": -45.274375,
+  "view_center_x": 128.0,
+  "view_center_y": 128.0,
   "window": {
-    "height": 600,
-    "pos": [
-      5,
-      5
-    ],
-    "show": true,
-    "width": 600
+    "show": true
   },
   "zoom": 1.0
 }

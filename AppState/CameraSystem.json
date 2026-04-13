@@ -5,25 +5,29 @@
   "acquisition_awg_periodic_offset_volts": 1.0,
   "acquisition_awg_start_after_seconds": 2.0,
   "acquisition_awg_waveform": "sine",
-  "acquisition_duration_seconds": 10.0,
-  "acquisition_frame_rate_hz": 10.0,
+  "acquisition_duration_seconds": 50.0,
+  "acquisition_frame_rate_hz": 1000.0,
   "acquisition_scope_sample_rate_hz": 1000.0,
   "acquisition_set_awg_on_start": true,
   "acquisition_zero_on_start": true,
-  "exposure_time": 0.05000000074505806,
-  "image_height": 1024,
+  "exposure_time": 0.10000000149011612,
+  "frame_storage_dtype": "float16",
+  "hardware_storage_drive": "C:\\ (Fixed)",
+  "image_height": 256,
   "image_left": 1,
   "image_top": 1,
-  "image_width": 1024,
+  "image_width": 256,
   "pixel_binning": "1x1",
+  "preview_max_frames": 100,
+  "spool_to_disk_directory": "C:\\CodingProjects\\Widefield-Controller\\Experiments",
+  "spool_to_disk_enabled": false,
+  "spool_to_disk_filename": "acquisition",
+  "spool_write_contrast": true,
+  "spool_write_difference": true,
+  "spool_write_power": false,
+  "spool_write_scope": true,
   "trigger_mode": "Internal",
   "window": {
-    "height": 690,
-    "pos": [
-      626,
-      23
-    ],
-    "show": true,
-    "width": 300
+    "show": true
   }
 }

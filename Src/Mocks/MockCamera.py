@@ -30,11 +30,14 @@ class MockCamera:
     queue                   = lambda self, buf, size: ()
     flush                   = lambda self: print("Mocking Flushing buffers")
 
+    def __init__(self):
+        self._mock_blob_state = None
+
     @property
     def ImageSizeBytes(self):
         return self.AOIWidth * self.AOIHeight * (self.BitDepth // 8)
 
-    def wait_buffer(self, timeout):
+    def wait_buffer(self, _timeout):
 
         # Wait for the exposure time (in seconds)
         time_to_wait = max(self.ExposureTime, 1.0 / max(float(getattr(self, "FrameRate", 100.0)), 1e-6))
@@ -49,7 +52,11 @@ class MockCamera:
         dtype = np.dtype(f"u{self.BitDepth // 8}")
 
         state = getattr(self, "_mock_blob_state", None)
-        if state is None or state["width"] != width or state["height"] != height:
+        state_is_valid = isinstance(state, dict)
+        if state_is_valid:
+            state_is_valid = state.get("width") == width and state.get("height") == height
+
+        if not state_is_valid:
             rng = np.random.default_rng(12345)
             blob_count = max(10, min(28, (width * height) // 70000))
             min_sigma = max(3.0, min(width, height) * 0.006)

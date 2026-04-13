@@ -1,9 +1,9 @@
-import os
 import dearpygui.dearpygui as dpg
 import numpy as np
 import threading
 
-from Drivers.PicoScope import CHANNEL_NAMES, PicoScope as PicoScopeDriver, SUPPORTED_AWG_WAVEFORMS, SUPPORTED_DATA_BITS
+from Drivers.PicoScope import CHANNEL_NAMES, PicoScope as PicoScopeDriver, SUPPORTED_AWG_WAVEFORMS
+from Utils.fonts import get_segmdl2_icon_font
 from Utils.state_persistence import apply_window_state, capture_window_state, load_state_file, save_state_file
 from Utils.themes import red_green_button_disabled, red_green_button_enabled
 from Windows.SubWindows.Oscilloscope import OscilloscopeWindow
@@ -36,11 +36,9 @@ class PicoScopeControl:
         self._device_refresh_in_progress = False
         self._device_refresh_requested = False
         self.oscilloscope_window = None
+        self._awg_enabled = False
 
-        with dpg.font_registry():
-            mdl_font = os.path.abspath("src/Assets/Fonts/SegMDL2.ttf")
-            mdl = dpg.add_font(mdl_font, 12)
-            dpg.add_font_chars(chars=[0xE117], parent=mdl)
+        mdl = get_segmdl2_icon_font()
 
         with dpg.theme() as self.channel_header_theme:
             with dpg.theme_component(dpg.mvInputText):
@@ -114,14 +112,6 @@ class PicoScopeControl:
                 min_value=0.01,
                 step=0.1,
                 callback=self._on_history_seconds_changed,
-            )
-
-            self.data_bits_combo_id = dpg.add_combo(
-                label="Data Bits",
-                width=-120,
-                items=list(SUPPORTED_DATA_BITS.keys()),
-                default_value=self.driver.data_bits,
-                callback=self._on_data_bits_changed,
             )
 
             dpg.add_spacer(height=10)
@@ -304,7 +294,6 @@ class PicoScopeControl:
                 width=-1,
                 callback=self._on_awg_enabled_toggled,
             )
-            self._awg_enabled = False
             dpg.bind_item_theme(self.awg_enabled_button_id, red_green_button_disabled)
 
             with dpg.group() as self.awg_settings_group_id:
@@ -434,10 +423,6 @@ class PicoScopeControl:
         if not self._apply_stopped_configuration(lambda: self.driver.set_history_seconds(app_data)):
             dpg.set_value(self.seconds_input_id, self.driver.history_seconds)
 
-    def _on_data_bits_changed(self, sender, app_data, user_data):
-        if not self._apply_stopped_configuration(lambda: self.driver.set_data_bits(app_data)):
-            dpg.set_value(self.data_bits_combo_id, self.driver.data_bits)
-
     def _on_panel_name_changed(self, sender, app_data, panel_id):
         panel = self._get_panel(panel_id)
         panel["display_name"] = str(app_data).strip() or panel["title"]
@@ -502,7 +487,6 @@ class PicoScopeControl:
         try:
             self.driver.set_sample_capture_rate(dpg.get_value(self.sample_rate_input_id))
             self.driver.set_history_seconds(dpg.get_value(self.seconds_input_id))
-            self.driver.set_data_bits(dpg.get_value(self.data_bits_combo_id))
             self._sync_driver_channels()
             self.driver.start_collection()
             self._set_status("Collecting", error=None)
@@ -542,7 +526,7 @@ class PicoScopeControl:
         dpg.configure_item(self.stop_button_id, enabled=is_collecting)
 
         config_enabled = not is_collecting
-        for item_id in (self.sample_rate_input_id, self.seconds_input_id, self.data_bits_combo_id):
+        for item_id in (self.sample_rate_input_id, self.seconds_input_id):
             dpg.configure_item(item_id, enabled=config_enabled)
 
         device_controls_enabled = config_enabled and not self._device_refresh_in_progress and not is_open
@@ -584,7 +568,6 @@ class PicoScopeControl:
                 "device_serial": self.driver.serial_number,
                 "sample_rate_hz": float(dpg.get_value(self.sample_rate_input_id)),
                 "history_seconds": float(dpg.get_value(self.seconds_input_id)),
-                "data_bits": str(dpg.get_value(self.data_bits_combo_id)),
                 "panels": panel_states,
                 "awg": {
                     "enabled": self._awg_enabled,
@@ -614,11 +597,6 @@ class PicoScopeControl:
         if history_seconds is not None:
             dpg.set_value(self.seconds_input_id, float(history_seconds))
             self.driver.set_history_seconds(float(history_seconds))
-
-        data_bits = state.get("data_bits")
-        if data_bits is not None:
-            dpg.set_value(self.data_bits_combo_id, str(data_bits))
-            self.driver.set_data_bits(str(data_bits))
 
         saved_serial = str(state.get("device_serial") or "").strip()
         if saved_serial:

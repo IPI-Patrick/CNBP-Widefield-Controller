@@ -1,13 +1,8 @@
 {
   "laser_com_port": "COM1",
+  "pm1000_device": "",
   "target_power_mw": 25.0,
   "window": {
-    "height": 363,
-    "pos": [
-      1063,
-      507
-    ],
-    "show": true,
-    "width": 300
+    "show": true
   }
 }

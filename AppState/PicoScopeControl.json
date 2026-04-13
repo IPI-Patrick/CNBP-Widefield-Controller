@@ -6,7 +6,6 @@
     "offset_volts": 0.0,
     "waveform": "Sine"
   },
-  "data_bits": "float16",
   "device_serial": "IW011/0187",
   "history_seconds": 1.0,
   "panels": [
@@ -18,7 +17,7 @@
         255
       ],
       "display_name": "Channel 1",
-      "enabled": true,
+      "enabled": false,
       "id": "A"
     },
     {
@@ -101,12 +100,6 @@
   ],
   "sample_rate_hz": 1000.0,
   "window": {
-    "height": 737,
-    "pos": [
-      1384,
-      20
-    ],
-    "show": true,
-    "width": 503
+    "show": true
   }
 }

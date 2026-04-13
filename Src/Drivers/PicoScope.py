@@ -17,12 +17,8 @@ DEFAULT_HISTORY_SECONDS = 1.0
 CAPTURE_BLOCK_DURATION_SECONDS = 0.1
 MAX_ADC_VALUE = 32767.0
 SUPPORTED_AWG_WAVEFORMS = ("dc", "sine", "square", "triangle")
-SUPPORTED_DATA_BITS = {
-    "uint8": np.uint8,
-    "uint16": np.uint16,
-    "float16": np.float16,
-    "float32": np.float32,
-}
+SCOPE_STORAGE_DTYPE = np.dtype(np.float16)
+SCOPE_STORAGE_DTYPE_NAME = SCOPE_STORAGE_DTYPE.name
 SUPPORTED_COUPLINGS = ("AC", "DC")
 PICO_STATUS_OK = 0x00000000
 PICO_POWER_SUPPLY_NOT_CONNECTED = 0x0000011E
@@ -65,14 +61,6 @@ PS4000A_TIME_UNIT_TO_SECONDS = {
 }
 
 
-def _canonical_dtype_name(data_bits):
-    dtype_name = np.dtype(data_bits).name
-    if dtype_name not in SUPPORTED_DATA_BITS:
-        supported = ", ".join(sorted(SUPPORTED_DATA_BITS))
-        raise ValueError(f"Unsupported data-bits '{data_bits}'. Supported values: {supported}")
-    return dtype_name
-
-
 def _normalize_voltage_range(range_name):
     """Convert various range name formats to PICO_X1_PROBE_* format."""
     range_text = str(range_name).upper().strip()
@@ -90,16 +78,8 @@ def _normalize_voltage_range(range_name):
     raise ValueError(f"Unrecognized voltage range '{range_name}'.")
 
 
-def _convert_samples(raw_samples, dtype_name):
-    target_dtype = SUPPORTED_DATA_BITS[dtype_name]
-    raw_array = np.asarray(raw_samples)
-
-    if np.issubdtype(target_dtype, np.unsignedinteger):
-        limits = np.iinfo(target_dtype)
-        clipped = np.clip(raw_array, 0, limits.max)
-        return clipped.astype(target_dtype, copy=False)
-
-    return raw_array.astype(target_dtype, copy=False)
+def _convert_samples(raw_samples, _dtype_name):
+    return np.asarray(raw_samples, dtype=SCOPE_STORAGE_DTYPE)
 
 
 def _emit_payload(output_queue, timestamps, channel_arrays, dtype_name):
@@ -288,6 +268,14 @@ def _compute_capture_block_samples(sample_rate_hz):
     return max(32, int(round(float(sample_rate_hz) * CAPTURE_BLOCK_DURATION_SECONDS)))
 
 
+def _sample_at_index(channel_payload, sample_index):
+    return {
+        channel_name: samples[sample_index]
+        for channel_name, samples in channel_payload.items()
+        if sample_index < len(samples)
+    }
+
+
 def _normalize_awg_waveform_type(waveform_type):
     waveform_text = str(waveform_type).strip().lower()
     if waveform_text not in SUPPORTED_AWG_WAVEFORMS:
@@ -456,10 +444,11 @@ def _picoscope_worker(handle, config, output_queue, stop_event, control_queue, a
 
 class PicoScope:
 
-    def __init__(self, sample_rate_hz=1000.0, history_seconds=DEFAULT_HISTORY_SECONDS, data_bits="float32"):
+    def __init__(self, sample_rate_hz=1000.0, history_seconds=DEFAULT_HISTORY_SECONDS, data_bits="float16"):
+        _ = data_bits
         self.sample_rate_hz = float(sample_rate_hz)
         self.history_seconds = float(history_seconds)
-        self.data_bits = _canonical_dtype_name(data_bits)
+        self.data_bits = SCOPE_STORAGE_DTYPE_NAME
         self.device_model = MODEL_NAME
         self.active_scope_series = MODEL_NAME
         self.serial_number = ""
@@ -484,8 +473,12 @@ class PicoScope:
         self.data_lock = threading.Lock()
         self.channel_data = {channel_name: deque(maxlen=self.buffer_capacity) for channel_name in CHANNEL_NAMES}
         self.timestamps = deque(maxlen=self.buffer_capacity)
+        self.paired_camera_timestamps = deque(maxlen=self.buffer_capacity)
         self.actual_sample_rate_hz = None
         self.last_error = None
+        self.frame_pairing_enabled = False
+        self._pending_camera_timestamps = deque()
+        self._last_scope_sample = None
 
         self._output_queue = None
         self._stop_event = None
@@ -532,23 +525,104 @@ class PicoScope:
             raise
 
     def _reset_buffers(self):
-        self.buffer_capacity = _compute_buffer_capacity(self.actual_sample_rate_hz or self.sample_rate_hz, self.history_seconds)
+        if self.frame_pairing_enabled:
+            capacity = self.buffer_capacity
+        else:
+            capacity = _compute_buffer_capacity(self.actual_sample_rate_hz or self.sample_rate_hz, self.history_seconds)
+            self.buffer_capacity = capacity
         with self.data_lock:
-            self.channel_data = {channel_name: deque(maxlen=self.buffer_capacity) for channel_name in CHANNEL_NAMES}
-            self.timestamps = deque(maxlen=self.buffer_capacity)
+            self.channel_data = {channel_name: deque(maxlen=capacity) for channel_name in CHANNEL_NAMES}
+            self.timestamps = deque(maxlen=capacity)
+            self.paired_camera_timestamps = deque(maxlen=capacity)
+            self._pending_camera_timestamps = deque()
+            self._last_scope_sample = None
 
     def _resize_history_buffers(self, sample_rate_hz):
-        new_capacity = _compute_buffer_capacity(sample_rate_hz, self.history_seconds)
+        if self.frame_pairing_enabled:
+            new_capacity = self.buffer_capacity
+        else:
+            new_capacity = _compute_buffer_capacity(sample_rate_hz, self.history_seconds)
         if new_capacity == self.buffer_capacity:
             return
 
         self.buffer_capacity = new_capacity
         with self.data_lock:
             self.timestamps = deque(self.timestamps, maxlen=new_capacity)
+            self.paired_camera_timestamps = deque(self.paired_camera_timestamps, maxlen=new_capacity)
             self.channel_data = {
                 channel_name: deque(samples, maxlen=new_capacity)
                 for channel_name, samples in self.channel_data.items()
             }
+
+    def configure_frame_pairing(self, *, enabled, frame_buffer_size=None):
+        if self.is_collecting:
+            raise RuntimeError("Stop collection before changing scope frame pairing.")
+
+        with self.data_lock:
+            self.frame_pairing_enabled = bool(enabled)
+            if self.frame_pairing_enabled:
+                if frame_buffer_size is None:
+                    raise ValueError("frame_buffer_size is required when enabling scope frame pairing.")
+                self.buffer_capacity = max(1, int(frame_buffer_size))
+            else:
+                self.buffer_capacity = _compute_buffer_capacity(self.actual_sample_rate_hz or self.sample_rate_hz, self.history_seconds)
+
+            self.channel_data = {
+                channel_name: deque(self.channel_data.get(channel_name, ()), maxlen=self.buffer_capacity)
+                for channel_name in CHANNEL_NAMES
+            }
+            self.timestamps = deque(self.timestamps, maxlen=self.buffer_capacity)
+            self.paired_camera_timestamps = deque(self.paired_camera_timestamps, maxlen=self.buffer_capacity)
+            self._pending_camera_timestamps = deque()
+            self._last_scope_sample = None
+
+    def register_camera_frame_timestamps(self, timestamps):
+        if not timestamps:
+            return
+
+        with self.data_lock:
+            if not self.frame_pairing_enabled:
+                return
+
+            for timestamp in timestamps:
+                self._pending_camera_timestamps.append(float(timestamp))
+
+    def _append_paired_sample_locked(self, camera_timestamp, scope_timestamp, sample_values):
+        self.paired_camera_timestamps.append(float(camera_timestamp))
+        self.timestamps.append(float(scope_timestamp))
+        for channel_name in CHANNEL_NAMES:
+            if channel_name in sample_values:
+                self.channel_data[channel_name].append(sample_values[channel_name])
+
+    def _pair_pending_frames_with_last_sample_locked(self):
+        if self._last_scope_sample is None:
+            return
+
+        scope_timestamp, sample_values = self._last_scope_sample
+        while self._pending_camera_timestamps:
+            camera_timestamp = self._pending_camera_timestamps.popleft()
+            self._append_paired_sample_locked(camera_timestamp, scope_timestamp, sample_values)
+
+    def _handle_frame_pairing_payload_locked(self, timestamps, channel_payload):
+        for sample_index, scope_timestamp in enumerate(timestamps):
+            current_sample_values = _sample_at_index(channel_payload, sample_index)
+
+            if self._last_scope_sample is None:
+                self._last_scope_sample = (float(scope_timestamp), current_sample_values)
+                while self._pending_camera_timestamps and self._pending_camera_timestamps[0] <= scope_timestamp:
+                    camera_timestamp = self._pending_camera_timestamps.popleft()
+                    self._append_paired_sample_locked(camera_timestamp, scope_timestamp, current_sample_values)
+                continue
+
+            previous_scope_timestamp, previous_sample_values = self._last_scope_sample
+            while self._pending_camera_timestamps and self._pending_camera_timestamps[0] <= scope_timestamp:
+                camera_timestamp = self._pending_camera_timestamps.popleft()
+                if abs(previous_scope_timestamp - camera_timestamp) <= abs(float(scope_timestamp) - camera_timestamp):
+                    self._append_paired_sample_locked(camera_timestamp, previous_scope_timestamp, previous_sample_values)
+                else:
+                    self._append_paired_sample_locked(camera_timestamp, scope_timestamp, current_sample_values)
+
+            self._last_scope_sample = (float(scope_timestamp), current_sample_values)
 
     def _build_worker_config(self):
         with self.data_lock:
@@ -586,13 +660,21 @@ class PicoScope:
                 self._resize_history_buffers(self.actual_sample_rate_hz)
             elif kind == "data":
                 with self.data_lock:
-                    self.timestamps.extend(message.get("timestamps", []))
-                    for channel_name, samples in message.get("channels", {}).items():
-                        if channel_name in self.channel_data:
-                            self.channel_data[channel_name].extend(samples)
+                    timestamps = [float(timestamp) for timestamp in message.get("timestamps", [])]
+                    channel_payload = message.get("channels", {})
+                    if self.frame_pairing_enabled:
+                        self._handle_frame_pairing_payload_locked(timestamps, channel_payload)
+                    else:
+                        self.timestamps.extend(timestamps)
+                        for channel_name, samples in channel_payload.items():
+                            if channel_name in self.channel_data:
+                                self.channel_data[channel_name].extend(samples)
             elif kind == "error":
                 self.last_error = message
             elif kind == "stopped":
+                with self.data_lock:
+                    if self.frame_pairing_enabled:
+                        self._pair_pending_frames_with_last_sample_locked()
                 break
 
     @property
@@ -646,9 +728,10 @@ class PicoScope:
         self.set_history_seconds(float(max_samples) / max(self.sample_rate_hz, 1e-12))
 
     def set_data_bits(self, data_bits):
+        _ = data_bits
         if self.is_collecting:
             raise RuntimeError("Stop collection before changing data_bits.")
-        self.data_bits = _canonical_dtype_name(data_bits)
+        self.data_bits = SCOPE_STORAGE_DTYPE_NAME
 
     def configure_awg(self, *, waveform_type=None, offset_volts=None, amplitude_vpp_volts=None, frequency_hz=None):
         if waveform_type is not None:
@@ -844,6 +927,8 @@ class PicoScope:
         with self.data_lock:
             return {
                 "timestamps": list(self.timestamps),
+                "paired_camera_timestamps": list(self.paired_camera_timestamps),
+                "unpaired_camera_timestamps": list(self._pending_camera_timestamps),
                 "channels": {channel_name: list(samples) for channel_name, samples in self.channel_data.items()},
                 "actual_sample_rate_hz": self.actual_sample_rate_hz,
                 "data_bits": self.data_bits,
@@ -851,6 +936,7 @@ class PicoScope:
                 "active_scope_series": self.active_scope_series,
                 "history_seconds": self.history_seconds,
                 "buffer_capacity": self.buffer_capacity,
+                "frame_pairing_enabled": bool(self.frame_pairing_enabled),
             }
 
     def close(self):

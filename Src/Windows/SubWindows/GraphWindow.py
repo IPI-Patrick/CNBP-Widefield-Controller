@@ -1,23 +1,20 @@
-import os  
-import shutil
-import psutil
-import time
-import numpy as np
-import Windows.SubWindows.CameraFeed as CameraFeed
 import threading
+import time
+
+import numpy as np
 import dearpygui.dearpygui as dpg
-from Windows.SubWindows.VideoSettings import VideoSettings
+
 from Utils.state_persistence import apply_window_state, capture_window_state, load_state_file, save_state_file
-from Utils.utils import scale
-from Utils.themes import read_only_theme, red_green_button_disabled, red_green_button_enabled
 
 class GraphWindow:
 
-    def __init__(self, name, id, getYValues, getXValues, xlabel, ylabel, xpos, ypos):
+    def __init__(self, name, item_id=None, getYValues=None, getXValues=None, xlabel="", ylabel="", xpos=0, ypos=0, **kwargs):
+        if item_id is None:
+            item_id = kwargs.pop("id")
 
         with dpg.window(
             label                = name,
-            tag                  = f"#{id}",
+            tag                  = f"#{item_id}",
             width                = 600,
             height               = 250,
             pos                  = (xpos, ypos),
@@ -73,7 +70,7 @@ class GraphWindow:
             dpg.set_value(self.line_series, [new_x, new_y])
 
             # Limit to ~60 FPS
-            time.sleep(0.016) 
+            time.sleep(0.016)
 
     def _state_name(self):
         return f"{type(self).__name__}_{self.window_id}"
@@ -85,5 +82,3 @@ class GraphWindow:
         state = load_state_file(self._state_name())
         if state:
             apply_window_state(self.window_id, state.get("window"))
-
-        

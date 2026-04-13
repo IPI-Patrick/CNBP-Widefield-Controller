@@ -2,7 +2,7 @@ import threading
 import numpy as np
 import dearpygui.dearpygui as dpg
 from Utils.state_persistence import apply_window_state, capture_window_state, load_state_file, save_state_file
-from Utils.themes import read_only_theme, red_green_button_disabled, red_green_button_enabled
+from Utils.themes import red_green_button_disabled, red_green_button_enabled
 
 class VideoSettings:
 
@@ -20,6 +20,11 @@ class VideoSettings:
     def __init__(self, parent):
         
         self.parent         = parent    
+        self.camera_thread  = None
+        self.frames         = None
+        self.ser            = None
+        self.pH             = 7.00
+        self.reading        = False
 
 
         with dpg.window(
@@ -90,7 +95,7 @@ class VideoSettings:
 
     def start_live_feed(self):
 
-        if self.live == False:
+        if not self.live:
             self.controls.andor.Initialize()
             self.controls.andor.SetReadMode(4)
             
@@ -132,7 +137,7 @@ class VideoSettings:
         self.frames[self.frame_idx]     = self.controls.latest_frame
         self.frame_idx += 1
 
-        if(self.frame_idx >= self.num_frames):
+        if self.frame_idx >= self.num_frames:
 
             self.record_zero()
             
@@ -142,7 +147,7 @@ class VideoSettings:
 
             dpg.configure_item(self.zero_start_button, label="Record Zero Frame")
             dpg.bind_item_theme(self.zero_start_button, red_green_button_disabled)
-            dpg.configure_item(self.zero_frame_progess, default_value=1.0, overlay=f"Done")
+            dpg.configure_item(self.zero_frame_progess, default_value=1.0, overlay="Done")
             
             self.controls.zero_frame[:] = np.mean(self.frames, axis=0)
 
@@ -150,7 +155,7 @@ class VideoSettings:
 
 
     def record_zero(self):
-        if self.zero_started == False:
+        if not self.zero_started:
         
             self.num_frames        = int(dpg.get_value(self.zero_frame_time) * self.controls.settings["frame_rate"])
             self.frame_idx         = 0

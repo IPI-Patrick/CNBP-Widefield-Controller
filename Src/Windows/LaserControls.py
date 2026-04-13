@@ -1,7 +1,7 @@
-import os
 import Drivers.LaserDriver as LaserDriverModule
 from Drivers.PM1000 import PM1000
 import dearpygui.dearpygui as dpg
+from Utils.fonts import get_segmdl2_icon_font
 from Utils.state_persistence import apply_window_state, capture_window_state, load_state_file, save_state_file
 
 class LaserControls:
@@ -18,6 +18,8 @@ class LaserControls:
         self.pm1000_connected           = False
         self.pm1000_history_y           = [0.0] * self.history_capacity
         self._last_pm1000_history_update = 0.0
+        self._pm1000_selected_index     = 0
+        self._pm1000_selected_device_name = ""
 
         # Set up value sources for laser power to enable real-time updates in the UI
         with dpg.value_registry():
@@ -25,12 +27,7 @@ class LaserControls:
             self.actual_power_source = dpg.add_float_value(default_value=self.laser.get_laser_power())
             self.pm1000_power_source = dpg.add_float_value(default_value=0.0)
 
-
-        # Add custom font for icons
-        with dpg.font_registry():
-            mdl_font = os.path.abspath("src/Assets/Fonts/SegMDL2.ttf")
-            mdl = dpg.add_font(mdl_font, 12)
-            dpg.add_font_chars(chars=[0xE117, 0xE71B, 0xE8CD], parent=mdl)
+        mdl = get_segmdl2_icon_font()
 
 
         with dpg.window(
@@ -67,7 +64,7 @@ class LaserControls:
                     dpg.add_text("Refresh COM ports")
 
                 self.connection_button_id = dpg.add_button(
-                    label = "\uE71B" if self.laser.is_connected() else "\uE8CD",
+                    label = "\uE8CD" if self.laser.is_connected() else "\uE71B",
                     width = 40,
                     callback = self._toggle_connection,
                 )
@@ -86,7 +83,7 @@ class LaserControls:
 
             with dpg.group(horizontal=True):
                 self.pm1000_device_combo_id = dpg.add_combo(
-                    label = "Device",
+                    label = " Dev",
                     width = -130,
                     items = [],
                     default_value = "No devices",
@@ -103,7 +100,7 @@ class LaserControls:
                     dpg.add_text("Refresh power meter devices")
 
                 self.pm1000_connect_button_id = dpg.add_button(
-                    label = "\uE8CD",
+                    label = "\uE71B",
                     width = 40,
                     callback = self._pm1000_toggle_connection,
                 )
@@ -203,15 +200,38 @@ class LaserControls:
         self._sync_pm1000_ui()
         self._pm1000_auto_connect()
 
+    def _set_pm1000_device_selection(self, devices, preferred_device=None):
+        device_list = list(devices or [])
+        combo_items = device_list or ["No devices"]
+        dpg.configure_item(self.pm1000_device_combo_id, items=combo_items)
+
+        selected_device = str(preferred_device or "").strip()
+        if selected_device not in device_list:
+            current_value = str(dpg.get_value(self.pm1000_device_combo_id) or "").strip()
+            if current_value in device_list:
+                selected_device = current_value
+
+        if selected_device in device_list:
+            self._pm1000_selected_index = device_list.index(selected_device)
+            self._pm1000_selected_device_name = selected_device
+            dpg.set_value(self.pm1000_device_combo_id, selected_device)
+            return
+
+        self._pm1000_selected_index = 0
+        self._pm1000_selected_device_name = device_list[0] if device_list else ""
+        dpg.set_value(self.pm1000_device_combo_id, combo_items[0])
+
+    def _connect_pm1000_selected_device(self):
+        self.pm1000.connect(self._pm1000_selected_index)
+        self.pm1000_connected = True
+        self.pm1000.start_continuous()
+
     def _pm1000_auto_connect(self):
         try:
-            self.pm1000.connect()
-            self.pm1000_connected = True
-            self.pm1000.start_continuous()
-            devices = self.pm1000._device_list.resourceName if self.pm1000._device_list else []
+            devices = self.pm1000.list_devices()
+            self._set_pm1000_device_selection(devices, self._pm1000_selected_device_name)
             if devices:
-                dpg.configure_item(self.pm1000_device_combo_id, items=devices)
-                dpg.set_value(self.pm1000_device_combo_id, devices[0])
+                self._connect_pm1000_selected_device()
         except Exception:
             self.pm1000_connected = False
         self._sync_pm1000_ui()
@@ -219,17 +239,15 @@ class LaserControls:
     def _pm1000_refresh_devices(self, sender=None, app_data=None, user_data=None):
         try:
             devices = self.pm1000.list_devices()
-            dpg.configure_item(self.pm1000_device_combo_id, items=devices or ["No devices"])
-            dpg.set_value(self.pm1000_device_combo_id, devices[0] if devices else "No devices")
-            self._pm1000_selected_index = 0
+            self._set_pm1000_device_selection(devices, self._pm1000_selected_device_name)
         except Exception:
-            dpg.configure_item(self.pm1000_device_combo_id, items=["No devices"])
-            dpg.set_value(self.pm1000_device_combo_id, "No devices")
+            self._set_pm1000_device_selection([], None)
 
     def _on_pm1000_device_selected(self, sender, app_data, user_data):
-        devices = self.pm1000._device_list.resourceName if self.pm1000._device_list else []
+        devices = self.pm1000.get_device_names()
         if app_data in devices:
             self._pm1000_selected_index = devices.index(app_data)
+            self._pm1000_selected_device_name = str(app_data)
 
     def _pm1000_toggle_connection(self, sender=None, app_data=None, user_data=None):
         if self.pm1000_connected:
@@ -237,10 +255,7 @@ class LaserControls:
             self.pm1000_connected = False
         else:
             try:
-                idx = getattr(self, '_pm1000_selected_index', 0)
-                self.pm1000.connect(idx)
-                self.pm1000_connected = True
-                self.pm1000.start_continuous()
+                self._connect_pm1000_selected_device()
             except Exception:
                 self.pm1000_connected = False
         self._sync_pm1000_ui()
@@ -249,7 +264,7 @@ class LaserControls:
         connected = self.pm1000_connected
         dpg.configure_item(self.pm1000_device_combo_id, enabled=not connected)
         dpg.configure_item(self.pm1000_refresh_button_id, enabled=not connected)
-        dpg.set_item_label(self.pm1000_connect_button_id, "\uE71B" if connected else "\uE8CD")
+        dpg.set_item_label(self.pm1000_connect_button_id, "\uE8CD" if connected else "\uE71B")
         dpg.set_value(self.pm1000_connect_tooltip_id, "Disconnect power meter" if connected else "Connect power meter")
         if not connected:
             dpg.set_value(self.pm1000_power_source, 0.0)
@@ -288,7 +303,7 @@ class LaserControls:
         dpg.set_value(self.laser_actual_id, fraction)
         dpg.configure_item(self.laser_actual_id, overlay=f"{actual_mw:.2f} mW")
 
-        dpg.set_item_label(self.connection_button_id, "\uE71B" if connected else "\uE8CD")
+        dpg.set_item_label(self.connection_button_id, "\uE8CD" if connected else "\uE71B")
         dpg.set_value(self.connection_button_tooltip_id, "Disconnect laser" if connected else "Connect laser")
         dpg.set_item_label(self.laser_button_id, "Disable Emission" if status["emission_enabled"] else "Enable Emission")
 
@@ -323,9 +338,7 @@ class LaserControls:
             return
         self._last_pm1000_history_update = current_time
 
-        with self.pm1000._lock:
-            reading = self.pm1000.power_reading
-            unit = self.pm1000.power_unit
+        reading, _unit = self.pm1000.get_latest_reading()
 
         if reading is None:
             return
@@ -362,6 +375,7 @@ class LaserControls:
                 "window": capture_window_state(self.window_id),
                 "laser_com_port": str(dpg.get_value(self.laser_com_port_id)),
                 "target_power_mw": float(dpg.get_value(self.target_power_source)),
+                "pm1000_device": self._pm1000_selected_device_name,
             },
         )
 
@@ -384,6 +398,21 @@ class LaserControls:
         if target_power is not None:
             dpg.set_value(self.target_power_source, float(target_power))
             self.laser.set_laser_power(float(target_power))
+
+        saved_pm1000_device = str(state.get("pm1000_device") or "").strip()
+        if saved_pm1000_device:
+            previous_device = str(dpg.get_value(self.pm1000_device_combo_id) or "").strip()
+            self._pm1000_selected_device_name = saved_pm1000_device
+            available_devices = self.pm1000.get_device_names()
+            self._set_pm1000_device_selection(available_devices, saved_pm1000_device)
+            if self.pm1000_connected and previous_device != self._pm1000_selected_device_name:
+                try:
+                    self.pm1000.disconnect()
+                    self.pm1000_connected = False
+                    self._connect_pm1000_selected_device()
+                except Exception:
+                    self.pm1000_connected = False
+                self._sync_pm1000_ui()
 
         self._sync_ui_with_driver()
 

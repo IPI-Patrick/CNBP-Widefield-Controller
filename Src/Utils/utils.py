@@ -42,7 +42,7 @@ def load_window_classes(folder):
     window_classes = []
     
     if "Unused" in folder:
-            return
+        return []
     
     for filename in os.listdir(folder):                
 

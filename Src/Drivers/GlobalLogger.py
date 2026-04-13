@@ -67,7 +67,10 @@ class GlobalLogger():
         logger.addHandler(fileHandler)
         logger.addHandler(streamHandler)
 
-        logger.info('--------------------- '+time.strftime("%a, %d %b %Y %H:%M:%S %z",currenttime)+' ---------------------')
+        logger.info(
+            '--------------------- %s ---------------------',
+            time.strftime("%a, %d %b %Y %H:%M:%S %z", currenttime),
+        )
         return logger
 
 # #### END OF CODE #### #

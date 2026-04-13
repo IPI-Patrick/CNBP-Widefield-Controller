@@ -1,7 +1,6 @@
 import threading
 import time
 
-import dearpygui.dearpygui as dpg
 import numpy as np
 
 from Utils.state_persistence import load_state_file, save_state_file
@@ -30,10 +29,12 @@ class RegionOfInterest:
         self.series_x = []
         self.series_y = []
         self.last_frame_idx = -1
+        self.trace_min_value = 0.0
+        self.trace_max_value = 0.0
 
         initial_crop, _ = self.parent.get_roi_frame(self.bounds)
         if initial_crop is None:
-            initial_crop = np.zeros((1, 1), dtype=np.uint16)
+            initial_crop = np.zeros((1, 1), dtype=self.Andor.storage_dtype)
         self.image_width = max(1, int(initial_crop.shape[1]))
         self.image_height = max(1, int(initial_crop.shape[0]))
         self.pending_image_rgba = self._frame_to_rgba(initial_crop)
@@ -68,6 +69,8 @@ class RegionOfInterest:
                 self.series_y = []
                 self.last_frame_idx = -1
                 self.pending_plot_data = ([], [])
+                self.trace_min_value = 0.0
+                self.trace_max_value = 0.0
                 self.pending_version += 1
         self.rebuild_event.set()
 
@@ -85,17 +88,19 @@ class RegionOfInterest:
             crop = self.parent.extract_roi_frame(frame, bounds)
             if crop is None or crop.size == 0:
                 continue
-            series.append((index, float(np.mean(crop, dtype=np.float64))))
+            series.append((index, self.rois_window.compute_trace_value(crop)))
 
         x_axis = [point[0] for point in series][-self.max_points:]
         y_axis = [point[1] for point in series][-self.max_points:]
         return x_axis, y_axis
 
-    def _queue_update(self, crop, frame_idx, x_axis, y_axis):
+    def _queue_update(self, crop, frame_idx, x_axis, y_axis, trace_min_value, trace_max_value):
         with self.data_lock:
             self.series_x = list(x_axis)
             self.series_y = list(y_axis)
             self.last_frame_idx = frame_idx
+            self.trace_min_value = float(trace_min_value)
+            self.trace_max_value = float(trace_max_value)
             if crop is not None and crop.size > 0:
                 self.pending_image_shape = crop.shape
                 self.pending_image_rgba = self._frame_to_rgba(crop)
@@ -116,10 +121,12 @@ class RegionOfInterest:
             if rebuild_requested:
                 self.rebuild_event.clear()
                 x_axis, y_axis = self._build_history_trace(bounds, acquisitions or [], current_frame_idx)
+                trace_min_value = min(y_axis) if y_axis else 0.0
+                trace_max_value = max(y_axis) if y_axis else 0.0
                 crop = self.parent.extract_roi_frame(latest_frame, bounds)
                 if crop is not None and crop.size == 0:
                     crop = None
-                self._queue_update(crop, current_frame_idx, x_axis, y_axis)
+                self._queue_update(crop, current_frame_idx, x_axis, y_axis, trace_min_value, trace_max_value)
                 processed_frame_idx = current_frame_idx
 
             elif has_acquisitions and latest_frame is not None and current_frame_idx != processed_frame_idx:
@@ -128,23 +135,31 @@ class RegionOfInterest:
                     with self.data_lock:
                         x_axis = list(self.series_x)
                         y_axis = list(self.series_y)
+                        trace_min_value = float(self.trace_min_value)
+                        trace_max_value = float(self.trace_max_value)
+                    latest_value = self.rois_window.compute_trace_value(crop)
                     x_axis.append(current_frame_idx)
-                    y_axis.append(float(np.mean(crop, dtype=np.float64)))
+                    y_axis.append(latest_value)
                     x_axis = x_axis[-self.max_points:]
                     y_axis = y_axis[-self.max_points:]
-                    self._queue_update(crop, current_frame_idx, x_axis, y_axis)
+                    trace_min_value = min(trace_min_value, latest_value)
+                    trace_max_value = max(trace_max_value, latest_value)
+                    self._queue_update(crop, current_frame_idx, x_axis, y_axis, trace_min_value, trace_max_value)
                     processed_frame_idx = current_frame_idx
 
             time.sleep(0.01)
 
     def _frame_to_rgba(self, frame):
-        return self.parent._frame_to_rgba(frame)
+        return self.parent.frame_to_rgba(frame)
 
     def render(self):
         self.rois_window.render_roi(self)
 
     def _state_name(self):
         return f"{type(self).__name__}_{self.tag}"
+
+    def state_name(self):
+        return self._state_name()
 
     def SaveState(self):
         save_state_file(

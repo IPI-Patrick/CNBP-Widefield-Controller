@@ -73,17 +73,12 @@ class FeedControlsWindow:
                 callback=self.parent._on_display_mode_changed,
             )
 
-            self.positive_difference_color_id = dpg.add_color_edit(
-                label="Positive",
-                default_value=self.parent.positive_difference_color.tolist(),
-                no_alpha=True,
-                callback=self.parent._on_difference_colors_changed,
-            )
-            self.negative_difference_color_id = dpg.add_color_edit(
-                label="Negative",
-                default_value=self.parent.negative_difference_color.tolist(),
-                no_alpha=True,
-                callback=self.parent._on_difference_colors_changed,
+            self.color_scale_combo_id = dpg.add_combo(
+                label="Color Scale",
+                items=self.parent.get_available_colormap_labels(),
+                default_value=self.parent.get_selected_colormap_label(),
+                width=-120,
+                callback=self.parent._on_colormap_changed,
             )
 
             dpg.add_spacer(height=8)

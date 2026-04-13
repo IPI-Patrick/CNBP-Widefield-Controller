@@ -1,13 +1,7 @@
 {
   "window": {
-    "height": 606,
-    "pos": [
-      1392,
-      321
-    ],
-    "show": true,
-    "width": 419
+    "show": true
   },
   "x_view_limits": null,
-  "y_half_range_volts": 0.35378528822444694
+  "y_half_range_volts": 0.3537852882244469
 }

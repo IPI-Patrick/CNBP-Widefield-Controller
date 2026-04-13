@@ -1,0 +1,84 @@
+{
+  "layouts": {
+    "#CameraControls": {
+      "height": 684,
+      "pos": [
+        689,
+        8
+      ],
+      "width": 364
+    },
+    "#ConsoleWindow": {
+      "height": 209,
+      "pos": [
+        3,
+        1116
+      ],
+      "width": 619
+    },
+    "#LaserControls": {
+      "height": 475,
+      "pos": [
+        633,
+        707
+      ],
+      "width": 288
+    },
+    "#Oscilloscope": {
+      "height": 572,
+      "pos": [
+        1059,
+        601
+      ],
+      "width": 439
+    },
+    "#PicoScope": {
+      "height": 19,
+      "pos": [
+        1060,
+        9
+      ],
+      "width": 439
+    },
+    "CameraControls_ZAxis_Window": {
+      "height": 399,
+      "pos": [
+        317,
+        706
+      ],
+      "width": 309
+    },
+    "CameraFeed_ControlsWindow": {
+      "height": 401,
+      "pos": [
+        1,
+        705
+      ],
+      "width": 308
+    },
+    "CameraFeed_Window": {
+      "height": 692,
+      "pos": [
+        3,
+        3
+      ],
+      "width": 678
+    },
+    "CameraFeed_Zero_Window": {
+      "height": 152,
+      "pos": [
+        1074,
+        28
+      ],
+      "width": 152
+    },
+    "ROIsWindow_Window": {
+      "height": 478,
+      "pos": [
+        1062,
+        115
+      ],
+      "width": 439
+    }
+  }
+}

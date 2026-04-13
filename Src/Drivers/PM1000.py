@@ -1,7 +1,5 @@
-import os
 import pathlib
 import sys
-import glob
 
 _drivers_dir = str(pathlib.Path(__file__).parent.resolve())
 if _drivers_dir not in sys.path:
@@ -37,11 +35,20 @@ class PM1000:
         self._lock = threading.Lock()
         self._stop_event = threading.Event()
         self._thread = None
+        self._device_names = []
 
     def list_devices(self):
         self._device_list = ThorlabsPowerMeter.listDevices()
         self.logger = self._device_list.logger
-        return self._device_list.resourceName
+        self._device_names = list(self._device_list.resourceName)
+        return self._device_names
+
+    def get_device_names(self):
+        return list(self._device_names)
+
+    def get_latest_reading(self):
+        with self._lock:
+            return self.power_reading, self.power_unit
 
     def connect(self, resource_index=0):
         if self._device_list is None:
@@ -103,16 +110,16 @@ if __name__ == '__main__':
     pm.connect()
 
     # Single reading
-    power, unit = pm.read_power()
-    pm.logger.info(f'|PM1000| Single reading: {power} {unit}')
+    power, power_unit = pm.read_power()
+    pm.logger.info(f'|PM1000| Single reading: {power} {power_unit}')
 
     # Continuous reading for 10 seconds
     pm.start_continuous()
     time.sleep(10)
     pm.stop_continuous()
 
-    with pm._lock:
-        pm.logger.info(f'|PM1000| Last reading: {pm.power_reading} {pm.power_unit}')
-        pm.logger.info(f'|PM1000| History length: {len(pm.power_history)}')
+    last_reading, last_unit = pm.get_latest_reading()
+    pm.logger.info(f'|PM1000| Last reading: {last_reading} {last_unit}')
+    pm.logger.info(f'|PM1000| History length: {len(pm.power_history)}')
 
     pm.disconnect()

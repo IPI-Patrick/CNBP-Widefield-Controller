@@ -3,20 +3,29 @@ import time
 import numpy as np
 import threading
 from pyAndorSDK3 import AndorSDK3
-from collections import deque
 from Mocks.MockCamera import MockCamera 
+from Utils.StorageDTypes import (
+    SUPPORTED_FLOAT_STORAGE_DTYPES,
+    canonicalize_float_storage_dtype_name,
+    get_float_storage_dtype,
+    quantize_to_float_storage_dtype,
+)
+from Utils.TypedDeque import TypedDeque
+
+
+SUPPORTED_STORAGE_DTYPES = SUPPORTED_FLOAT_STORAGE_DTYPES
 
 class Andor:
 
     max_acquisitions            = 200    
-    acquisitions                = deque(maxlen=max_acquisitions)    
-    filtered                    = deque(maxlen=max_acquisitions)
-    difference                  = deque(maxlen=max_acquisitions)
-    contrast                    = deque(maxlen=max_acquisitions)
-    timestamps                  = deque(maxlen=max_acquisitions)
+    acquisitions                = None
+    filtered                    = None
+    difference                  = None
+    contrast                    = None
+    timestamps                  = None
     frameIdx                    = 0
 
-    meanBuffer                  = deque(maxlen=max_acquisitions)
+    meanBuffer                  = None
 
     def __init__(self):
 
@@ -34,7 +43,7 @@ class Andor:
 
         try:
             self.camera         = self.sdk3.GetCamera(0)
-        except Exception as e:
+        except Exception:
             
             # Add the mock flag to show that no camera was found
             self.isMock = True
@@ -47,25 +56,57 @@ class Andor:
         frame_shape             = (self.camera.AOIHeight, self.camera.AOIWidth)
         frame_dtype             = np.dtype(f'u{self.camera.BitDepth//8}')
         self.frame_shape        = frame_shape
-        self.frame_dtype        = frame_dtype
+        self.sensor_dtype       = frame_dtype
         self.frame_max_value    = float((2 ** int(self.camera.BitDepth)) - 1)
-        self.acquisitions       = deque(maxlen=self.max_acquisitions)
-        self.filtered           = deque(maxlen=self.max_acquisitions)
-        self.difference         = deque(maxlen=self.max_acquisitions)
-        self.contrast           = deque(maxlen=self.max_acquisitions)
-        self.timestamps         = deque(maxlen=self.max_acquisitions)
-        self.meanBuffer         = deque(maxlen=self.max_acquisitions)
-        self.zero               = np.zeros(frame_shape, dtype=np.float32)
-        self.latest_frame       = np.zeros(frame_shape, dtype=frame_dtype)
-        self.latest_filtered    = np.zeros(frame_shape, dtype=frame_dtype)
-        self.latest_difference  = np.zeros(frame_shape, dtype=np.float16)
-        self.latest_contrast    = np.zeros(frame_shape, dtype=np.float16)
+        self.storage_dtype_name = "float16"
+        self.storage_dtype      = get_float_storage_dtype(self.storage_dtype_name)
+        self.acquisitions       = self._new_frame_buffer()
+        self.filtered           = self._new_frame_buffer()
+        self.difference         = self._new_frame_buffer()
+        self.contrast           = self._new_frame_buffer()
+        self.timestamps         = self._new_scalar_buffer(np.float64)
+        self.meanBuffer         = self._new_scalar_buffer(np.float64)
+        self.zero               = np.zeros(frame_shape, dtype=self.storage_dtype)
+        self.latest_frame       = np.zeros(frame_shape, dtype=self.storage_dtype)
+        self.latest_filtered    = np.zeros(frame_shape, dtype=self.storage_dtype)
+        self.latest_difference  = np.zeros(frame_shape, dtype=self.storage_dtype)
+        self.latest_contrast    = np.zeros(frame_shape, dtype=self.storage_dtype)
         self.lp_filter_enabled  = False
         self.lp_filter_cutoff_hz = min(10.0, max(0.5, self.get_frame_rate() * 0.1))
         self.zero_version       = 0
 
-    def _float_frame_to_storage(self, frame):
-        return np.clip(np.rint(frame), 0.0, self.frame_max_value).astype(self.frame_dtype)
+    def _new_frame_buffer(self, iterable=None):
+        return TypedDeque(iterable, maxlen=self.max_acquisitions, dtype=self.storage_dtype, shape=self.frame_shape)
+
+    def _new_scalar_buffer(self, dtype, iterable=None):
+        return TypedDeque(iterable, maxlen=self.max_acquisitions, dtype=dtype, shape=())
+
+    def _coerce_frame_to_storage(self, frame):
+        return quantize_to_float_storage_dtype(frame, self.storage_dtype_name)
+
+    def _empty_storage_frame(self):
+        return np.zeros(self.frame_shape, dtype=self.storage_dtype)
+
+    def set_storage_dtype(self, dtype_name):
+        normalized_dtype_name = canonicalize_float_storage_dtype_name(dtype_name)
+        normalized_dtype = get_float_storage_dtype(normalized_dtype_name)
+        if normalized_dtype_name not in SUPPORTED_STORAGE_DTYPES:
+            supported = ", ".join(SUPPORTED_STORAGE_DTYPES)
+            raise ValueError(f"Unsupported storage dtype '{dtype_name}'. Supported values: {supported}")
+
+        with self.frame_lock:
+            if normalized_dtype_name == self.storage_dtype_name:
+                return
+            existing_acquisitions = [
+                np.asarray(quantize_to_float_storage_dtype(frame, normalized_dtype_name), dtype=normalized_dtype)
+                for frame in self.acquisitions
+            ]
+            self.storage_dtype = normalized_dtype
+            self.storage_dtype_name = normalized_dtype_name
+            self.acquisitions = self._new_frame_buffer(existing_acquisitions)
+            self.zero = self._coerce_frame_to_storage(self.zero)
+            self._rebuild_processed_buffers_locked()
+            self.frame_ready_event.set()
 
     def _get_lp_filter_coefficients_locked(self):
         sample_rate_hz = max(float(self.get_frame_rate()), 1e-6)
@@ -83,29 +124,55 @@ class Andor:
         filtered = (b0 * current_input) + (b1 * previous_input) - (a1 * previous_output)
         return np.clip(filtered, 0.0, self.frame_max_value).astype(np.float32, copy=False)
 
-    def _get_processing_frames_locked(self):
-        if self.lp_filter_enabled:
-            return self.filtered
-        return self.acquisitions
+    def _compute_latest_filtered_locked(self):
+        if len(self.acquisitions) == 0:
+            return self._empty_storage_frame()
+
+        if not self.lp_filter_enabled:
+            return np.array(self.acquisitions[-1], copy=True)
+
+        coefficients = self._get_lp_filter_coefficients_locked()
+        previous_input = None
+        previous_output = None
+        filtered_output = None
+
+        for frame in self.acquisitions:
+            current_input = np.asarray(frame, dtype=np.float32)
+            filtered_output = self._apply_lp_filter_step(current_input, previous_input, previous_output, coefficients)
+            previous_input = current_input
+            previous_output = filtered_output
+
+        return self._coerce_frame_to_storage(filtered_output)
 
     def _compute_difference_frame(self, frame):
-        return (np.asarray(frame, dtype=np.float32) - self.zero).astype(np.float16)
+        difference_frame = np.asarray(frame, dtype=np.float32) - np.asarray(self.zero, dtype=np.float32)
+        return self._coerce_frame_to_storage(difference_frame)
 
     def _compute_contrast_frame(self, frame):
         frame_float = np.asarray(frame, dtype=np.float32)
-        difference_frame = frame_float - self.zero
+        zero_float = np.asarray(self.zero, dtype=np.float32)
+        difference_frame = frame_float - zero_float
         contrast_frame = np.zeros_like(frame_float, dtype=np.float32)
         np.divide(
             difference_frame,
-            self.zero,
+            zero_float,
             out=contrast_frame,
-            where=np.abs(self.zero) > 0.0,
+            where=np.abs(zero_float) > 0.0,
         )
         contrast_frame *= 100.0
-        return contrast_frame.astype(np.float16)
+        return self._coerce_frame_to_storage(contrast_frame)
 
     def _rebuild_processed_buffers_locked(self):
-        if self.lp_filter_enabled and len(self.acquisitions) > 0:
+        if len(self.acquisitions) == 0:
+            self.filtered = self._new_frame_buffer()
+            self.latest_filtered = self._empty_storage_frame()
+            self.difference = self._new_frame_buffer()
+            self.contrast = self._new_frame_buffer()
+            self.latest_difference = self._empty_storage_frame()
+            self.latest_contrast = self._empty_storage_frame()
+            return
+
+        if self.lp_filter_enabled:
             coefficients = self._get_lp_filter_coefficients_locked()
             previous_input = None
             previous_output = None
@@ -114,50 +181,28 @@ class Andor:
             for frame in self.acquisitions:
                 current_input = np.asarray(frame, dtype=np.float32)
                 filtered_output = self._apply_lp_filter_step(current_input, previous_input, previous_output, coefficients)
-                filtered_frame = self._float_frame_to_storage(filtered_output)
-                filtered_frames.append(filtered_frame)
+                filtered_frames.append(np.array(self._coerce_frame_to_storage(filtered_output), copy=True))
                 previous_input = current_input
                 previous_output = filtered_output
 
-            self.filtered = deque(filtered_frames, maxlen=self.max_acquisitions)
-            self.latest_filtered = np.array(self.filtered[-1], copy=True)
+            self.filtered = self._new_frame_buffer(filtered_frames)
         else:
-            self.filtered = deque(maxlen=self.max_acquisitions)
-            if len(self.acquisitions) > 0:
-                self.latest_filtered = np.array(self.acquisitions[-1], copy=True)
-            else:
-                self.latest_filtered = np.zeros(self.frame_shape, dtype=self.frame_dtype)
+            self.filtered = self._new_frame_buffer([np.array(frame, copy=True) for frame in self.acquisitions])
 
-        processing_frames = self._get_processing_frames_locked()
-        self.difference = deque(
-            [
-                self._compute_difference_frame(frame)
-                for frame in processing_frames
-            ],
-            maxlen=self.max_acquisitions,
-        )
-        self.contrast = deque(
-            [
-                self._compute_contrast_frame(frame)
-                for frame in processing_frames
-            ],
-            maxlen=self.max_acquisitions,
-        )
-        if len(self.difference) > 0:
-            self.latest_difference = np.array(self.difference[-1], copy=True)
-        else:
-            self.latest_difference = np.zeros(self.zero.shape, dtype=np.float16)
-        if len(self.contrast) > 0:
-            self.latest_contrast = np.array(self.contrast[-1], copy=True)
-        else:
-            self.latest_contrast = np.zeros(self.zero.shape, dtype=np.float16)
+        self.latest_filtered = np.array(self.filtered[-1], copy=True)
+        processing_frames = self.filtered if self.lp_filter_enabled else self.acquisitions
+        self.difference = self._new_frame_buffer([self._compute_difference_frame(frame) for frame in processing_frames])
+        self.contrast = self._new_frame_buffer([self._compute_contrast_frame(frame) for frame in processing_frames])
+        self.latest_frame = np.array(self.acquisitions[-1], copy=True)
+        self.latest_difference = np.array(self.difference[-1], copy=True)
+        self.latest_contrast = np.array(self.contrast[-1], copy=True)
 
     def set_zero_frame(self, frame):
         if frame is None:
             return
 
         with self.frame_lock:
-            self.zero = np.array(frame, dtype=np.float32, copy=True)
+            self.zero = np.array(self._coerce_frame_to_storage(frame), copy=True)
             self.zero_version += 1
             self._rebuild_processed_buffers_locked()
             self.frame_ready_event.set()
@@ -194,21 +239,31 @@ class Andor:
 
     def clear_buffers(self, *, reset_frame_index=True):
         frame_shape = (int(self.camera.AOIHeight), int(self.camera.AOIWidth))
-        frame_dtype = np.dtype(f'u{self.camera.BitDepth//8}')
+        zero_shape_changed = tuple(np.shape(self.zero)) != tuple(frame_shape)
+        self.frame_shape = frame_shape
         with self.frame_lock:
-            self.acquisitions = deque(maxlen=self.max_acquisitions)
-            self.filtered = deque(maxlen=self.max_acquisitions)
-            self.difference = deque(maxlen=self.max_acquisitions)
-            self.contrast = deque(maxlen=self.max_acquisitions)
-            self.timestamps = deque(maxlen=self.max_acquisitions)
-            self.meanBuffer = deque(maxlen=self.max_acquisitions)
-            self.latest_frame = np.zeros(frame_shape, dtype=frame_dtype)
-            self.latest_filtered = np.zeros(frame_shape, dtype=frame_dtype)
-            self.latest_difference = np.zeros(frame_shape, dtype=np.float16)
-            self.latest_contrast = np.zeros(frame_shape, dtype=np.float16)
+            self.acquisitions = self._new_frame_buffer()
+            self.filtered = self._new_frame_buffer()
+            self.difference = self._new_frame_buffer()
+            self.contrast = self._new_frame_buffer()
+            self.timestamps = self._new_scalar_buffer(np.float64)
+            self.meanBuffer = self._new_scalar_buffer(np.float64)
+            if zero_shape_changed:
+                self.zero = np.zeros(frame_shape, dtype=self.storage_dtype)
+                self.zero_version = 0
+            self.latest_frame = np.zeros(frame_shape, dtype=self.storage_dtype)
+            self.latest_filtered = np.zeros(frame_shape, dtype=self.storage_dtype)
+            self.latest_difference = np.zeros(frame_shape, dtype=self.storage_dtype)
+            self.latest_contrast = np.zeros(frame_shape, dtype=self.storage_dtype)
             if reset_frame_index:
                 self.frameIdx = 0
             self.frame_ready_event.clear()
+
+    def set_preview_max_frames(self, frame_count):
+        frame_count = max(1, int(frame_count))
+        self.default_max_acquisitions = frame_count
+        if not self.is_capturing:
+            self.max_acquisitions = frame_count
 
     def get_snapshot(self):
         with self.frame_lock:
@@ -223,6 +278,7 @@ class Andor:
                 "zero": np.array(self.zero, copy=True),
                 "latest_frame": np.array(self.latest_frame, copy=True),
                 "latest_filtered": np.array(self.latest_filtered, copy=True),
+                "storage_dtype": self.storage_dtype_name,
                 "lp_filter_enabled": bool(self.lp_filter_enabled),
                 "lp_filter_cutoff_hz": float(self.lp_filter_cutoff_hz),
             }
@@ -251,7 +307,7 @@ class Andor:
             previous_input = None
             previous_output = None
             lp_filter_was_enabled = False
-            while(True):
+            while True:
                 
                 # If using software trigger, trigger it
                 if soft_trigger:
@@ -263,11 +319,13 @@ class Andor:
 
                 # Update the latest frame in a thread-safe manner
                 with self.frame_lock:
+                    raw_frame = np.asarray(acq.image, dtype=self.sensor_dtype)
+                    storage_frame = np.array(self._coerce_frame_to_storage(raw_frame), copy=True)
 
                     # Store the acquisition and timestamp in the buffers
-                    self.acquisitions.append(acq.image)
+                    self.acquisitions.append(storage_frame)
                     self.timestamps.append(time.time())
-                    self.latest_frame = self.acquisitions[-1]
+                    self.latest_frame = np.array(storage_frame, copy=True)
 
                     lp_filter_enabled = bool(self.lp_filter_enabled)
                     if lp_filter_enabled != lp_filter_was_enabled:
@@ -278,26 +336,27 @@ class Andor:
                     source_frame = self.latest_frame
                     if lp_filter_enabled:
                         coefficients = self._get_lp_filter_coefficients_locked()
-                        current_input = np.asarray(self.latest_frame, dtype=np.float32)
+                        current_input = np.asarray(raw_frame, dtype=np.float32)
                         filtered_output = self._apply_lp_filter_step(current_input, previous_input, previous_output, coefficients)
-                        filtered_frame = self._float_frame_to_storage(filtered_output)
+                        filtered_frame = np.array(self._coerce_frame_to_storage(filtered_output), copy=True)
                         self.filtered.append(filtered_frame)
-                        self.latest_filtered = filtered_frame
+                        self.latest_filtered = np.array(filtered_frame, copy=True)
                         previous_input = current_input
                         previous_output = filtered_output
-                        source_frame = filtered_frame
+                        source_frame = self.latest_filtered
                     else:
                         self.latest_filtered = np.array(self.latest_frame, copy=True)
+                        self.filtered.append(np.array(self.latest_filtered, copy=True))
 
-                    difference_frame = self._compute_difference_frame(source_frame)
-                    contrast_frame = self._compute_contrast_frame(source_frame)
-                    self.difference.append(difference_frame)
-                    self.contrast.append(contrast_frame)
-                    self.latest_difference = difference_frame
-                    self.latest_contrast = contrast_frame
+                    processed_difference_frame = self._compute_difference_frame(source_frame)
+                    processed_contrast_frame = self._compute_contrast_frame(source_frame)
+                    self.difference.append(np.array(processed_difference_frame, copy=True))
+                    self.contrast.append(np.array(processed_contrast_frame, copy=True))
+                    self.latest_difference = np.array(processed_difference_frame, copy=True)
+                    self.latest_contrast = np.array(processed_contrast_frame, copy=True)
 
                     # calculate the mean intensity and update the mean buffer
-                    self.meanBuffer.append(np.mean(self.latest_frame))
+                    self.meanBuffer.append(float(np.mean(raw_frame, dtype=np.float64)))
 
                     # Signal that a new frame is ready
                     self.frame_ready_event.set()
@@ -308,10 +367,11 @@ class Andor:
                         break
 
                 # Re-add this buffer to the queue
-                cam.queue(acq._np_data, imgsize)
+                queue_buffer = getattr(acq, "buffer_data", getattr(acq, "_np_data"))
+                cam.queue(queue_buffer, imgsize)
 
                 # If the stop event is triggered, stop
-                if(self.stop_capture_event.is_set()):                        
+                if self.stop_capture_event.is_set():
                     break
 
         except Exception as e:
@@ -332,9 +392,6 @@ class Andor:
         if callback:
             callback(self.acquisitions)
 
-        return
-
-
     def start_capture_continuous(self, callback=None):
         self.max_acquisitions = self.default_max_acquisitions
         self.start_capture(continuous=True, callback=callback)
@@ -347,7 +404,11 @@ class Andor:
             return
             
         self.is_capturing   = True
-        self.capture_thread = threading.Thread(target=self._capture_loop, daemon=True, kwargs=dict(continuous=continuous, callback=callback))
+        self.capture_thread = threading.Thread(
+            target=self._capture_loop,
+            daemon=True,
+            kwargs={"continuous": continuous, "callback": callback},
+        )
         self.capture_thread.start()
 
     def start_capture_fixed(self, frame_count, callback=None):

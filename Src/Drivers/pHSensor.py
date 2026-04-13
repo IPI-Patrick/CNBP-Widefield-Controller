@@ -16,10 +16,13 @@ class pHSensor():
         self.buffer     = []
         self.timestamps = []
         self.frameNums  = []
+        self.ser        = None
+        self.pH         = 7.00
+        self.reading    = False
 
         self.mean_graph   = GraphWindow(
             name         = "pH Over Time",
-            id           = "pHGraph",
+            item_id      = "pHGraph",
             getYValues   = lambda: self.buffer,
             getXValues   = lambda: self.frameNums,
             xlabel       = "Time (s)",
@@ -30,7 +33,7 @@ class pHSensor():
 
 
     def connect(self, port, baudrate=19200, timeout=1):
-        if(self.ser):
+        if self.ser is not None:
             self.ser.close()
             self.ser = None
 
@@ -43,8 +46,6 @@ class pHSensor():
         
         self.pH += (0.05 - 0.1 * random.random())
         self.pH = max(0, min(14, self.pH))
-
-        # TODO: Implement actual reading from the pH sensor
 
         # self.ser.write(b'R\r\n')
         # time.sleep(0.1)

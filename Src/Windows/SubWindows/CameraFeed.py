@@ -3,8 +3,10 @@ import time
 
 import dearpygui.dearpygui as dpg
 import numpy as np
+from matplotlib import colormaps
+from matplotlib.colors import LinearSegmentedColormap, to_rgb
 
-from Utils.state_persistence import apply_window_state, capture_window_state, load_state_file, save_state_file
+from Utils.state_persistence import apply_window_state, capture_window_state, delete_state_file, list_state_files, load_state_file, save_state_file
 from Utils.themes import no_padding_theme, read_only_theme
 from Windows.SubWindows.FeedControlsWindow import FeedControlsWindow
 from Windows.SubWindows.ImageWindow import ImageWindow
@@ -18,6 +20,21 @@ class CameraFeedWindow:
     handle_half_size = 5
     edge_pick_threshold = 10
     difference_display_limit = float(np.finfo(np.float16).max)
+    single_sided_colormap_names = ("Viridis", "Plasma", "Inferno", "Cividis", "Terrain")
+    double_sided_colormap_names = ("Cividis", "Berlin", "Red Blue", "Tofino", "Vanimo")
+    colormap_lookup_names = {
+        "Viridis": "viridis",
+        "Plasma": "plasma",
+        "Inferno": "inferno",
+        "Cividis": "cividis",
+        "Berlin": "berlin",
+        "Vanimo": "vanimo",
+    }
+    custom_colormap_hex_scales = {
+        "Red Blue": ["#00FFFF", "#2662D9", "#142952", "#000000", "#521414", "#D98026", "#FFFF00"],
+        "Terrain": ["#021A4D", "#37D76C", "#FDFC97", "#8B5D50", "#FFFFFF"],
+        "Tofino": ["#ded9ff", "#4a6bac", "#000000", "#3f8144", "#dbe69b"],
+    }
 
     def __init__(self, parent, Andor):
 
@@ -37,14 +54,14 @@ class CameraFeedWindow:
         self.autoscale_grace_percent = 5.0
         self.display_mode = "Normal"
         self.mirrored_difference_scale = False
-        self.positive_difference_color = np.array([255.0, 0.0, 0.0], dtype=np.float32)
-        self.negative_difference_color = np.array([0.0, 0.0, 255.0], dtype=np.float32)
+        self.colormap_name = "Viridis"
         self.lp_filter_enabled = bool(getattr(self.Andor, "lp_filter_enabled", False))
         self.lp_filter_cutoff_hz = float(getattr(self.Andor, "lp_filter_cutoff_hz", 10.0))
+        self._colormap_lut_cache = {}
 
         self.image_width = int(self.Andor.camera.AOIWidth)
         self.image_height = int(self.Andor.camera.AOIHeight)
-        self.imageArray = self._process_frame(self.Andor.latest_frame)
+        self.imageArray = self._process_frame()
 
         self.rois = []
         self.roi_index = 0
@@ -63,6 +80,11 @@ class CameraFeedWindow:
         self.zero_preview_max_dimension = 512
         self.controls_window = None
         self.zero_reference_window = None
+        self.texture_id = None
+        self.image_draw_id = None
+        self.displayed_feed_fps = 0.0
+        self._display_fps_window_started_at = time.perf_counter()
+        self._display_fps_window_frame_count = 0
 
         with dpg.window(
             label=self.name,
@@ -97,6 +119,7 @@ class CameraFeedWindow:
                 dpg.add_mouse_release_handler(button=dpg.mvMouseButton_Left, callback=self._on_mouse_release)
                 dpg.add_mouse_release_handler(button=dpg.mvMouseButton_Middle, callback=self._on_mouse_release)
                 dpg.add_mouse_wheel_handler(callback=self._on_mouse_wheel)
+                dpg.add_key_press_handler(key=dpg.mvKey_Delete, callback=self._on_delete_key_pressed)
 
             with dpg.popup(self.canvas_id, mousebutton=dpg.mvMouseButton_Right):
                 dpg.add_button(label="Reset Zoom", width=120, callback=self._reset_zoom)
@@ -123,7 +146,7 @@ class CameraFeedWindow:
         self.image_height = int(self.Andor.camera.AOIHeight)
         self.display_max = (2 ** int(getattr(self.Andor.camera, "BitDepth", 16))) - 1
         self.scale_max = float(self.display_max)
-        self.imageArray = self._process_frame(self.Andor.latest_frame)
+        self.imageArray = self._process_frame()
         self._reset_zoom(redraw=False)
 
         if hasattr(self, "texture_id") and dpg.does_item_exist(self.texture_id):
@@ -155,6 +178,11 @@ class CameraFeedWindow:
         self._update_image_draw_transform()
         self._update_zero_window_texture_binding()
         self._redraw_overlay()
+
+    def reset_displayed_feed_fps(self):
+        self.displayed_feed_fps = 0.0
+        self._display_fps_window_started_at = time.perf_counter()
+        self._display_fps_window_frame_count = 0
 
     def _on_window_resize(self, sender=None, app_data=None):
         new_width, new_height = dpg.get_item_rect_size(self.window_id)
@@ -200,6 +228,8 @@ class CameraFeedWindow:
             dpg.bind_item_theme(self.controls_window.mirrored_difference_checkbox_id, None)
         else:
             dpg.bind_item_theme(self.controls_window.mirrored_difference_checkbox_id, read_only_theme if is_signed_zero_reference_mode else None)
+
+        self._update_colormap_controls_state()
 
         dpg.configure_item(self.controls_window.lp_filter_cutoff_input_id, enabled=self.lp_filter_enabled)
         dpg.bind_item_theme(self.controls_window.lp_filter_cutoff_input_id, None if self.lp_filter_enabled else read_only_theme)
@@ -270,6 +300,48 @@ class CameraFeedWindow:
     def _is_signed_zero_reference_mode_active(self):
         return self.display_mode in ("Difference", "Contrast")
 
+    def _get_colormap_mode_suffix(self):
+        if self._is_signed_zero_reference_mode_active():
+            return " (Double-Sided)"
+        return ""
+
+    def _get_available_colormap_names(self):
+        if self._is_signed_zero_reference_mode_active():
+            return self.double_sided_colormap_names
+        return self.single_sided_colormap_names
+
+    def _get_default_colormap_name(self):
+        if self._is_signed_zero_reference_mode_active():
+            return self.double_sided_colormap_names[0]
+        return self.single_sided_colormap_names[0]
+
+    def _ensure_valid_colormap_selection(self):
+        available_names = self._get_available_colormap_names()
+        if self.colormap_name not in available_names:
+            self.colormap_name = self._get_default_colormap_name()
+        return self.colormap_name
+
+    def get_available_colormap_labels(self):
+        suffix = self._get_colormap_mode_suffix()
+        return [f"{name}{suffix}" for name in self._get_available_colormap_names()]
+
+    def get_selected_colormap_label(self):
+        return f"{self._ensure_valid_colormap_selection()}{self._get_colormap_mode_suffix()}"
+
+    def _parse_colormap_label(self, label):
+        label = str(label or "").strip()
+        if label.endswith(" (Double-Sided)"):
+            label = label[: -len(" (Double-Sided)")]
+        if label in self.colormap_lookup_names or label in self.custom_colormap_hex_scales:
+            return label
+        return self._get_default_colormap_name()
+
+    def _update_colormap_controls_state(self):
+        self._ensure_valid_colormap_selection()
+        labels = self.get_available_colormap_labels()
+        dpg.configure_item(self.controls_window.color_scale_combo_id, items=labels)
+        dpg.set_value(self.controls_window.color_scale_combo_id, self.get_selected_colormap_label())
+
     def _get_signed_display_limit(self):
         if self._is_contrast_mode_active():
             return 200.0
@@ -277,26 +349,93 @@ class CameraFeedWindow:
 
     def _get_active_source_frame_locked(self):
         if self.lp_filter_enabled:
-            if len(self.Andor.filtered) == 0:
-                return self.Andor.latest_filtered
-            return self.Andor.filtered[-1]
+            return self.Andor.latest_filtered
 
         if self.Andor.latest_frame is None:
             return None
         return self.Andor.latest_frame
 
-    def _normalize_color_value(self, value):
-        color = np.array(value[:3], dtype=np.float32)
-        if np.max(color) <= 1.0:
-            color *= 255.0
-        return np.clip(color, 0.0, 255.0)
+    def _build_custom_colormap_lut(self, colormap_name, samples):
+        if colormap_name == "Cividis":
+            cividis_map = colormaps["cividis"]
+            custom_map = LinearSegmentedColormap.from_list(
+                "widefield_cividis_diverging",
+                [
+                    tuple(np.asarray(cividis_map(0.0), dtype=np.float32)[:3]),
+                    (0.94, 0.94, 0.91),
+                    tuple(np.asarray(cividis_map(1.0), dtype=np.float32)[:3]),
+                ],
+            )
+            return np.asarray(
+                custom_map(np.linspace(0.0, 1.0, int(samples), dtype=np.float32)),
+                dtype=np.float32,
+            )[..., :3]
+
+        custom_stops = [to_rgb(color) for color in self.custom_colormap_hex_scales[colormap_name]]
+        custom_map = LinearSegmentedColormap.from_list(
+            f"widefield_{colormap_name.lower()}_diverging",
+            custom_stops,
+        )
+        return np.asarray(
+            custom_map(np.linspace(0.0, 1.0, int(samples), dtype=np.float32)),
+            dtype=np.float32,
+        )[..., :3]
+
+    def _get_colormap_lut(self, double_sided=False, samples=512):
+        selected_colormap = self._ensure_valid_colormap_selection()
+        cache_key = (selected_colormap, bool(double_sided), int(samples))
+        cached = self._colormap_lut_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        if selected_colormap in self.custom_colormap_hex_scales or (double_sided and selected_colormap == "Cividis"):
+            lut = self._build_custom_colormap_lut(selected_colormap, samples)
+        else:
+            cmap_name = self.colormap_lookup_names[selected_colormap]
+            lut = np.asarray(
+                colormaps[cmap_name](np.linspace(0.0, 1.0, int(samples), dtype=np.float32)),
+                dtype=np.float32,
+            )[..., :3]
+
+        self._colormap_lut_cache[cache_key] = lut
+        return lut
+
+    def _apply_colormap(self, normalized, double_sided=False):
+        lut = self._get_colormap_lut(double_sided=double_sided)
+        indices = np.clip((normalized * (lut.shape[0] - 1)).astype(np.int32), 0, lut.shape[0] - 1)
+        rgba = np.empty((normalized.shape[0], normalized.shape[1], 4), dtype=np.float32)
+        rgba[..., :3] = lut[indices]
+        rgba[..., 3] = 1.0
+        return rgba.flatten()
+
+    def _normalize_double_sided_frame(self, frame, min_value, max_value):
+        normalized = np.full(frame.shape, 0.5, dtype=np.float32)
+        negative_extent = abs(float(min(min_value, 0.0)))
+        positive_extent = max(float(max_value), 0.0)
+
+        negative_mask = frame < 0.0
+        if negative_extent > 0.0 and np.any(negative_mask):
+            normalized[negative_mask] = 0.5 * (1.0 + (frame[negative_mask] / negative_extent))
+
+        positive_mask = frame > 0.0
+        if positive_extent > 0.0 and np.any(positive_mask):
+            normalized[positive_mask] = 0.5 + (0.5 * (frame[positive_mask] / positive_extent))
+
+        return np.clip(normalized, 0.0, 1.0)
 
     def _request_all_roi_rebuilds(self, clear_existing=False):
+        self.rois_window.invalidate_autoscale_cache(pending_tags=[roi.tag for roi in self.rois])
         for roi in self.rois:
             roi.request_trace_rebuild(clear_existing=clear_existing)
 
     def rebuild_roi_traces(self):
         self._request_all_roi_rebuilds(clear_existing=True)
+
+    def set_roi_history_capacity(self, max_points):
+        max_points = max(1, int(max_points))
+        for roi in self.rois:
+            with roi.data_lock:
+                roi.max_points = max_points
 
     def recalculate_rois(self):
         self._request_all_roi_rebuilds()
@@ -432,12 +571,7 @@ class CameraFeedWindow:
             max_value = min_value + 1.0
 
         scaled = np.clip((zero_frame - min_value) / (max_value - min_value), 0.0, 1.0)
-        rgba = np.empty((frame.shape[0], frame.shape[1], 4), dtype=np.float32)
-        rgba[..., 0] = scaled
-        rgba[..., 1] = scaled
-        rgba[..., 2] = scaled
-        rgba[..., 3] = 1.0
-        return rgba.flatten()
+        return self._apply_colormap(scaled, double_sided=False)
 
     def _downsample_preview_frame(self, frame):
         if frame is None:
@@ -461,13 +595,12 @@ class CameraFeedWindow:
             elif self._is_contrast_mode_active():
                 has_frames = len(self.Andor.contrast) > 0
                 acquisitions = [np.array(frame, copy=True) for frame in self.Andor.contrast] if include_history else None
+            elif self.lp_filter_enabled:
+                has_frames = len(self.Andor.filtered) > 0
+                acquisitions = [np.array(frame, copy=True) for frame in self.Andor.filtered] if include_history else None
             else:
-                if self.lp_filter_enabled:
-                    has_frames = len(self.Andor.filtered) > 0
-                    acquisitions = [np.array(frame, copy=True) for frame in self.Andor.filtered] if include_history else None
-                else:
-                    has_frames = len(self.Andor.acquisitions) > 0
-                    acquisitions = [np.array(frame, copy=True) for frame in self.Andor.acquisitions] if include_history else None
+                has_frames = len(self.Andor.acquisitions) > 0
+                acquisitions = [np.array(frame, copy=True) for frame in self.Andor.acquisitions] if include_history else None
 
         return latest_frame, current_frame_idx, has_frames, acquisitions
 
@@ -483,6 +616,7 @@ class CameraFeedWindow:
             self.mirrored_difference_scale = False
             dpg.set_value(self.controls_window.mirrored_difference_checkbox_id, False)
 
+        self._ensure_valid_colormap_selection()
         self._sync_scale_state_to_active_frame()
         self._request_zero_window_refresh()
         self._refresh_display_image()
@@ -491,9 +625,10 @@ class CameraFeedWindow:
         self._request_all_roi_rebuilds()
         self._update_zero_window()
 
-    def _on_difference_colors_changed(self, sender, app_data):
-        self.positive_difference_color = self._normalize_color_value(dpg.get_value(self.controls_window.positive_difference_color_id))
-        self.negative_difference_color = self._normalize_color_value(dpg.get_value(self.controls_window.negative_difference_color_id))
+    def _on_colormap_changed(self, sender, app_data):
+        self.colormap_name = self._parse_colormap_label(app_data)
+        self._ensure_valid_colormap_selection()
+        self._update_colormap_controls_state()
         self._request_zero_window_refresh()
         self._refresh_display_image()
         self._request_all_roi_rebuilds()
@@ -585,15 +720,8 @@ class CameraFeedWindow:
             if max_value <= min_value:
                 max_value = min_value + 1.0
 
-            normalized = ((signed_frame - min_value) / (max_value - min_value)) * 2.0 - 1.0
-            normalized = np.clip(normalized, -1.0, 1.0)
-            rgba = np.zeros((frame.shape[0], frame.shape[1], 4), dtype=np.float32)
-            positive = np.clip(normalized, 0.0, 1.0)
-            negative = np.clip(-normalized, 0.0, 1.0)
-            rgba[..., :3] += positive[..., None] * (self.positive_difference_color / 255.0)
-            rgba[..., :3] += negative[..., None] * (self.negative_difference_color / 255.0)
-            rgba[..., 3] = 1.0
-            return rgba.flatten()
+            normalized = self._normalize_double_sided_frame(signed_frame, min_value, max_value)
+            return self._apply_colormap(normalized, double_sided=True)
 
         if self.autoscale_enabled:
             data_min = float(np.min(frame))
@@ -614,15 +742,15 @@ class CameraFeedWindow:
             max_value = min_value + 1
 
         scaled = np.clip((frame.astype(np.float32) - min_value) / (max_value - min_value), 0.0, 1.0)
-        rgba = np.empty((frame.shape[0], frame.shape[1], 4), dtype=np.float32)
-        rgba[..., 0] = scaled
-        rgba[..., 1] = scaled
-        rgba[..., 2] = scaled
-        rgba[..., 3] = 1.0
-        return rgba.flatten()
+        return self._apply_colormap(scaled, double_sided=False)
 
-    def _process_frame(self, frame):
-        latest_frame, _, _, _ = self.get_analysis_snapshot(include_history=False)
+    def frame_to_rgba(self, frame):
+        return self._frame_to_rgba(frame)
+
+    def _process_frame(self, frame=None):
+        latest_frame = frame
+        if latest_frame is None:
+            latest_frame, _, _, _ = self.get_analysis_snapshot(include_history=False)
         return self._frame_to_rgba(self._prepare_analysis_frame(latest_frame))
 
     def get_roi_frame(self, bounds):
@@ -763,8 +891,6 @@ class CameraFeedWindow:
     def _square_bounds_from_resize(self, bounds, current_point, handle):
         x1, y1, x2, y2 = self._normalize_bounds(bounds)
         current_x, current_y = current_point
-        width = x2 - x1
-        height = y2 - y1
         center_x = (x1 + x2) / 2.0
         center_y = (y1 + y2) / 2.0
 
@@ -975,11 +1101,22 @@ class CameraFeedWindow:
         self.roi_index += 1
         self.rois.append(roi)
         self.selected_roi = roi
+        self.rois_window.invalidate_autoscale_cache(pending_tags=[roi.tag])
         roi.request_trace_rebuild()
         self.rois_window.rebuild_layout(self.rois)
         return roi
 
-    def _close_roi(self, tag):
+    def _roi_state_prefix(self):
+        return f"RegionOfInterest_{self.tag}_ROI_"
+
+    def _prune_stale_roi_state_files(self, active_state_names):
+        active_state_names = set(active_state_names)
+        for state_name in list_state_files(prefix=self._roi_state_prefix()):
+            if state_name in active_state_names:
+                continue
+            delete_state_file(state_name)
+
+    def _close_roi(self, tag, delete_state=True):
         roi_to_remove = None
         for roi in self.rois:
             if roi.tag == tag:
@@ -989,13 +1126,19 @@ class CameraFeedWindow:
         if roi_to_remove is None:
             return
 
+        if delete_state:
+            delete_state_file(roi_to_remove.state_name())
         roi_to_remove.close()
         self.rois.remove(roi_to_remove)
         self.rois_window.rebuild_layout(self.rois)
+        self.rois_window.invalidate_autoscale_cache()
         if self.selected_roi is roi_to_remove:
             self.selected_roi = None
         if self.hover_target is not None and self.hover_target[0] is roi_to_remove:
             self.hover_target = None
+
+    def close_roi(self, tag):
+        self._close_roi(tag)
         self._redraw_overlay()
 
     def _redraw_overlay(self):
@@ -1057,7 +1200,7 @@ class CameraFeedWindow:
 
             try:
                 if self.Andor.frame_ready_event.is_set():
-                    self.imageArray = self._process_frame(self.Andor.latest_frame)
+                    self.imageArray = self._process_frame()
                     self.image_dirty = True
                     self._request_zero_window_refresh()
                     self.Andor.frame_ready_event.clear()
@@ -1065,6 +1208,12 @@ class CameraFeedWindow:
                 if self.image_dirty and hasattr(self, "texture_id") and dpg.does_item_exist(self.texture_id):
                     dpg.set_value(self.texture_id, self.imageArray)
                     self.image_dirty = False
+                    self._display_fps_window_frame_count += 1
+                    elapsed_seconds = time.perf_counter() - self._display_fps_window_started_at
+                    if elapsed_seconds >= 0.5:
+                        self.displayed_feed_fps = self._display_fps_window_frame_count / elapsed_seconds
+                        self._display_fps_window_started_at = time.perf_counter()
+                        self._display_fps_window_frame_count = 0
 
             except Exception as e:
                 print("Error updating camera feed:")
@@ -1207,6 +1356,15 @@ class CameraFeedWindow:
 
         self._set_zoom_at_point(app_data, self._get_mouse_local())
 
+    def _on_delete_key_pressed(self, sender, app_data):
+        if self.selected_roi is None:
+            return
+        if not dpg.is_item_focused(self.window_id):
+            return
+
+        self._close_roi(self.selected_roi.tag)
+        self._redraw_overlay()
+
     def _state_name(self):
         return f"{type(self).__name__}_{self.tag}"
 
@@ -1214,7 +1372,7 @@ class CameraFeedWindow:
         roi_state_names = []
         for roi in self.rois:
             roi.SaveState()
-            roi_state_names.append(roi._state_name())
+            roi_state_names.append(roi.state_name())
 
         if self.controls_window is not None:
             self.controls_window.SaveState()
@@ -1233,8 +1391,7 @@ class CameraFeedWindow:
                 "autoscale_grace_percent": float(self.autoscale_grace_percent),
                 "display_mode": self.display_mode,
                 "mirrored_difference_scale": bool(self.mirrored_difference_scale),
-                "positive_difference_color": self.positive_difference_color.tolist(),
-                "negative_difference_color": self.negative_difference_color.tolist(),
+                "colormap_name": self.colormap_name,
                 "lp_filter_enabled": bool(self.lp_filter_enabled),
                 "lp_filter_cutoff_hz": float(self.lp_filter_cutoff_hz),
                 "zoom": float(self.zoom),
@@ -1267,8 +1424,8 @@ class CameraFeedWindow:
         self.autoscale_grace_percent = float(state.get("autoscale_grace_percent", self.autoscale_grace_percent))
         self.display_mode = str(state.get("display_mode", self.display_mode))
         self.mirrored_difference_scale = bool(state.get("mirrored_difference_scale", self.mirrored_difference_scale))
-        self.positive_difference_color = self._normalize_color_value(state.get("positive_difference_color", self.positive_difference_color.tolist()))
-        self.negative_difference_color = self._normalize_color_value(state.get("negative_difference_color", self.negative_difference_color.tolist()))
+        self.colormap_name = self._parse_colormap_label(state.get("colormap_name", self.colormap_name))
+        self._ensure_valid_colormap_selection()
         self.lp_filter_enabled = bool(state.get("lp_filter_enabled", self.lp_filter_enabled))
         self.lp_filter_cutoff_hz = float(state.get("lp_filter_cutoff_hz", self.lp_filter_cutoff_hz))
         self.zoom = float(state.get("zoom", self.zoom))
@@ -1285,8 +1442,7 @@ class CameraFeedWindow:
         dpg.set_value(self.controls_window.autoscale_grace_input_id, self.autoscale_grace_percent)
         dpg.set_value(self.controls_window.display_mode_combo_id, self.display_mode)
         dpg.set_value(self.controls_window.mirrored_difference_checkbox_id, self.mirrored_difference_scale)
-        dpg.set_value(self.controls_window.positive_difference_color_id, self.positive_difference_color.tolist())
-        dpg.set_value(self.controls_window.negative_difference_color_id, self.negative_difference_color.tolist())
+        dpg.set_value(self.controls_window.color_scale_combo_id, self.get_selected_colormap_label())
         dpg.set_value(self.controls_window.lp_filter_checkbox_id, self.lp_filter_enabled)
         dpg.set_value(self.controls_window.lp_filter_cutoff_input_id, self.lp_filter_cutoff_hz)
 
@@ -1298,8 +1454,9 @@ class CameraFeedWindow:
         self._update_zero_window()
 
         for roi in list(self.rois):
-            self._close_roi(roi.tag)
+            self._close_roi(roi.tag, delete_state=False)
 
+        active_roi_state_names = []
         for roi_state_name in state.get("roi_state_names", []):
             roi_state = load_state_file(roi_state_name)
             bounds = roi_state.get("bounds") if isinstance(roi_state, dict) else None
@@ -1308,12 +1465,14 @@ class CameraFeedWindow:
             roi = self._create_roi(bounds)
             if roi is not None:
                 roi.LoadState(roi_state_name)
+                active_roi_state_names.append(roi_state_name)
+
+        self._prune_stale_roi_state_files(active_roi_state_names)
 
         self._redraw_overlay()
 
 
     def render(self):
-        dpg.set_item_height(self.window_id, self.width)
         self.zero_reference_window.render()
         self.rois_window.rebuild_layout(self.rois)
         self.rois_window.render()
