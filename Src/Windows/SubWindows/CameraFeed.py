@@ -47,7 +47,7 @@ class CameraFeedWindow:
 
         self.name = "Camera Feed"
         self.tag = "CameraFeed"
-        self.display_max = (2 ** int(getattr(self.Andor.camera, "BitDepth", 16))) - 1
+        self.display_max = (2 ** self.Andor.bit_depth) - 1
         self.scale_min = 0.0
         self.scale_max = float(self.display_max)
         self.autoscale_enabled = True
@@ -144,7 +144,7 @@ class CameraFeedWindow:
     def reset_texture(self):
         self.image_width = int(self.Andor.camera.AOIWidth)
         self.image_height = int(self.Andor.camera.AOIHeight)
-        self.display_max = (2 ** int(getattr(self.Andor.camera, "BitDepth", 16))) - 1
+        self.display_max = (2 ** self.Andor.bit_depth) - 1
         self.scale_max = float(self.display_max)
         self.imageArray = self._process_frame()
         self._reset_zoom(redraw=False)

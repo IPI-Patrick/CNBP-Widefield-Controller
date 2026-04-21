@@ -737,7 +737,7 @@ class CameraSystem:
             float(dpg.get_value(self.acquisition_awg_start_after_input_id)),
             int(getattr(self.camera, "AOIWidth", 0)),
             int(getattr(self.camera, "AOIHeight", 0)),
-            int(getattr(self.camera, "BitDepth", 16)),
+            self.Andor.bit_depth,
             bool(getattr(self.Andor, "lp_filter_enabled", False)),
             tuple(scope_settings["enabled_channels"]),
             str(dpg.get_value(self.hardware_drive_combo_id) or ""),
@@ -791,7 +791,7 @@ class CameraSystem:
         frame_height = max(1, int(getattr(self.camera, "AOIHeight", 1)))
         frame_width = max(1, int(getattr(self.camera, "AOIWidth", 1)))
         frame_pixels = frame_height * frame_width
-        sensor_frame_dtype = np.dtype(f"u{max(1, int(getattr(self.camera, 'BitDepth', 16)) // 8)}")
+        sensor_frame_dtype = np.dtype(f"u{max(1, self.Andor.bit_depth // 8)}")
         storage_dtype_name = canonicalize_float_storage_dtype_name(
             dpg.get_value(self.settings_storage_dtype_combo_id) or self.Andor.storage_dtype_name,
             fallback=self.Andor.storage_dtype_name,

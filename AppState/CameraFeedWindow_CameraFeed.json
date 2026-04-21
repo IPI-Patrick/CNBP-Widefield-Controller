@@ -1,20 +1,20 @@
 {
   "autoscale_enabled": true,
   "autoscale_grace_percent": 1.0,
-  "colormap_name": "Tofino",
-  "display_mode": "Contrast",
+  "colormap_name": "Inferno",
+  "display_mode": "Normal",
   "lp_filter_cutoff_hz": 1.0,
   "lp_filter_enabled": false,
-  "mirrored_difference_scale": true,
-  "roi_index": 195,
+  "mirrored_difference_scale": false,
+  "roi_index": 197,
   "roi_state_names": [
-    "RegionOfInterest_CameraFeed_ROI_193",
-    "RegionOfInterest_CameraFeed_ROI_194"
+    "RegionOfInterest_CameraFeed_ROI_195",
+    "RegionOfInterest_CameraFeed_ROI_196"
   ],
-  "scale_max": 45.274375,
-  "scale_min": -45.274375,
-  "view_center_x": 128.0,
-  "view_center_y": 128.0,
+  "scale_max": 4095.0,
+  "scale_min": 0.0,
+  "view_center_x": 512.0,
+  "view_center_y": 512.0,
   "window": {
     "show": true
   },

@@ -54,10 +54,10 @@ class Andor:
             print("Error: No camera found. Running in development mode.")
 
         frame_shape             = (self.camera.AOIHeight, self.camera.AOIWidth)
-        frame_dtype             = np.dtype(f'u{self.camera.BitDepth//8}')
+        frame_dtype             = np.dtype(f'u{self.bit_depth//8}')
         self.frame_shape        = frame_shape
         self.sensor_dtype       = frame_dtype
-        self.frame_max_value    = float((2 ** int(self.camera.BitDepth)) - 1)
+        self.frame_max_value    = float((2 ** self.bit_depth) - 1)
         self.storage_dtype_name = "float16"
         self.storage_dtype      = get_float_storage_dtype(self.storage_dtype_name)
         self.acquisitions       = self._new_frame_buffer()
@@ -86,6 +86,11 @@ class Andor:
 
     def _empty_storage_frame(self):
         return np.zeros(self.frame_shape, dtype=self.storage_dtype)
+
+    @property
+    def bit_depth(self):
+        """Return the camera bit depth as an integer (e.g. 12 from '12 Bit')."""
+        return int(str(self.camera.BitDepth).split()[0])
 
     def set_storage_dtype(self, dtype_name):
         normalized_dtype_name = canonicalize_float_storage_dtype_name(dtype_name)
