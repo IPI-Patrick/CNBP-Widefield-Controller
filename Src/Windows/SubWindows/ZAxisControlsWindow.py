@@ -182,12 +182,6 @@ class ZAxisControlsWindow:
             dpg.add_item_deactivated_handler(callback=lambda: self._on_move_button_released(1))
         dpg.bind_item_handler_registry(self.positive_move_button_id, f"{self.tag_prefix}_MoveUpHandlers")
 
-        with dpg.handler_registry(tag=f"{self.tag_prefix}_KeyHandlers"):
-            dpg.add_key_press_handler(key=dpg.mvKey_Up, callback=lambda: self._on_hotkey_pressed(1))
-            dpg.add_key_release_handler(key=dpg.mvKey_Up, callback=lambda: self._on_hotkey_released(1))
-            dpg.add_key_press_handler(key=dpg.mvKey_Down, callback=lambda: self._on_hotkey_pressed(-1))
-            dpg.add_key_release_handler(key=dpg.mvKey_Down, callback=lambda: self._on_hotkey_released(-1))
-
         self._update_controls()
         self._sync_jog_inputs_from_steps(int(dpg.get_value(self.jog_steps_input_id)))
 
@@ -299,20 +293,6 @@ class ZAxisControlsWindow:
             self._button_up_active = False
         else:
             self._button_down_active = False
-        self._apply_requested_motion()
-
-    def _on_hotkey_pressed(self, direction):
-        if direction > 0:
-            self._key_up_active = True
-        else:
-            self._key_down_active = True
-        self._apply_requested_motion()
-
-    def _on_hotkey_released(self, direction):
-        if direction > 0:
-            self._key_up_active = False
-        else:
-            self._key_down_active = False
         self._apply_requested_motion()
 
     def _apply_requested_motion(self):

@@ -1,8 +1,0 @@
-{
-  "laser_com_port": "COM1",
-  "pm1000_device": "USB0::0x1313::0x807B::::INSTR",
-  "target_power_mw": 25.0,
-  "window": {
-    "show": true
-  }
-}

@@ -6,6 +6,7 @@ import numpy as np
 from matplotlib import colormaps
 from matplotlib.colors import LinearSegmentedColormap, to_rgb
 
+from Utils.StorageDTypes import get_raw_storage_max_value
 from Utils.state_persistence import apply_window_state, capture_window_state, delete_state_file, list_state_files, load_state_file, save_state_file
 from Utils.themes import no_padding_theme, read_only_theme
 from Windows.SubWindows.FeedControlsWindow import FeedControlsWindow
@@ -47,7 +48,7 @@ class CameraFeedWindow:
 
         self.name = "Camera Feed"
         self.tag = "CameraFeed"
-        self.display_max = (2 ** self.Andor.bit_depth) - 1
+        self.display_max = self._get_normal_display_max()
         self.scale_min = 0.0
         self.scale_max = float(self.display_max)
         self.autoscale_enabled = True
@@ -141,11 +142,54 @@ class CameraFeedWindow:
         self._update_settings_controls_state()
         threading.Thread(target=self._process_camera_feed, daemon=True).start()
 
+    def _get_scale_limit_for_mode(self):
+        if self._is_signed_zero_reference_mode_active():
+            return float(self._get_signed_display_limit())
+        return float(self.display_max)
+
+    def _get_scale_percent_bounds(self):
+        if self._is_signed_zero_reference_mode_active():
+            return -100, 100
+        return 0, 100
+
+    def _scale_value_to_percent(self, value):
+        scale_limit = max(self._get_scale_limit_for_mode(), 1.0)
+        percent = int(round((float(value) / scale_limit) * 100.0))
+        min_percent, max_percent = self._get_scale_percent_bounds()
+        return int(np.clip(percent, min_percent, max_percent))
+
+    def _scale_percent_to_value(self, percent):
+        min_percent, max_percent = self._get_scale_percent_bounds()
+        normalized_percent = int(np.clip(int(round(float(percent))), min_percent, max_percent))
+        return (normalized_percent / 100.0) * self._get_scale_limit_for_mode()
+
+    def get_scale_min_percent(self):
+        return self._scale_value_to_percent(self.scale_min)
+
+    def get_scale_max_percent(self):
+        return self._scale_value_to_percent(self.scale_max)
+
+    def _sync_scale_inputs_from_values(self):
+        dpg.set_value(self.controls_window.scale_min_input_id, self.get_scale_min_percent())
+        dpg.set_value(self.controls_window.scale_max_input_id, self.get_scale_max_percent())
+
     def reset_texture(self):
+        if self.controls_window is not None:
+            preserved_scale_min_percent = self.get_scale_min_percent()
+            preserved_scale_max_percent = self.get_scale_max_percent()
+        else:
+            preserved_scale_min_percent = None
+            preserved_scale_max_percent = None
+
         self.image_width = int(self.Andor.camera.AOIWidth)
         self.image_height = int(self.Andor.camera.AOIHeight)
-        self.display_max = (2 ** self.Andor.bit_depth) - 1
-        self.scale_max = float(self.display_max)
+        self.display_max = self._get_normal_display_max()
+        if preserved_scale_min_percent is not None and preserved_scale_max_percent is not None:
+            self.scale_min = float(self._scale_percent_to_value(preserved_scale_min_percent))
+            self.scale_max = float(self._scale_percent_to_value(preserved_scale_max_percent))
+        else:
+            self.scale_min = 0.0
+            self.scale_max = float(self.display_max)
         self.imageArray = self._process_frame()
         self._reset_zoom(redraw=False)
 
@@ -177,6 +221,8 @@ class CameraFeedWindow:
 
         self._update_image_draw_transform()
         self._update_zero_window_texture_binding()
+        if self.controls_window is not None:
+            self._update_settings_controls_state()
         self._redraw_overlay()
 
     def reset_displayed_feed_fps(self):
@@ -200,12 +246,10 @@ class CameraFeedWindow:
 
     def _update_settings_controls_state(self):
         is_signed_zero_reference_mode = self._is_signed_zero_reference_mode_active()
-        signed_display_limit = self._get_signed_display_limit()
-
-        slider_min = -signed_display_limit if is_signed_zero_reference_mode else 0.0
-        slider_max = signed_display_limit if is_signed_zero_reference_mode else float(self.display_max)
-        dpg.configure_item(self.controls_window.scale_min_input_id, min_value=slider_min, max_value=slider_max)
-        dpg.configure_item(self.controls_window.scale_max_input_id, min_value=slider_min, max_value=slider_max)
+        input_min, input_max = self._get_scale_percent_bounds()
+        dpg.configure_item(self.controls_window.scale_min_input_id, min_value=input_min, max_value=input_max)
+        dpg.configure_item(self.controls_window.scale_max_input_id, min_value=input_min, max_value=input_max)
+        self._sync_scale_inputs_from_values()
 
         if self.autoscale_enabled:
             dpg.configure_item(self.controls_window.scale_min_input_id, enabled=False)
@@ -240,8 +284,8 @@ class CameraFeedWindow:
         self._refresh_display_image()
 
     def _on_scale_limits_changed(self, sender, app_data):
-        scale_min = float(dpg.get_value(self.controls_window.scale_min_input_id))
-        scale_max = float(dpg.get_value(self.controls_window.scale_max_input_id))
+        scale_min = float(self._scale_percent_to_value(dpg.get_value(self.controls_window.scale_min_input_id)))
+        scale_max = float(self._scale_percent_to_value(dpg.get_value(self.controls_window.scale_max_input_id)))
 
         if self._is_signed_zero_reference_mode_active():
             signed_display_limit = self._get_signed_display_limit()
@@ -255,8 +299,7 @@ class CameraFeedWindow:
 
         self.scale_min = scale_min
         self.scale_max = scale_max
-        dpg.set_value(self.controls_window.scale_min_input_id, self.scale_min)
-        dpg.set_value(self.controls_window.scale_max_input_id, self.scale_max)
+        self._sync_scale_inputs_from_values()
         self._refresh_display_image()
 
     def _on_autoscale_grace_changed(self, sender, app_data):
@@ -271,8 +314,7 @@ class CameraFeedWindow:
                 amplitude = 1.0
             self.scale_min = -amplitude
             self.scale_max = amplitude
-            dpg.set_value(self.controls_window.scale_min_input_id, self.scale_min)
-            dpg.set_value(self.controls_window.scale_max_input_id, self.scale_max)
+            self._sync_scale_inputs_from_values()
         self._refresh_display_image()
 
     def _on_lp_filter_enabled_changed(self, sender, app_data):
@@ -346,6 +388,9 @@ class CameraFeedWindow:
         if self._is_contrast_mode_active():
             return 200.0
         return self.difference_display_limit
+
+    def _get_normal_display_max(self):
+        return get_raw_storage_max_value(self.Andor.storage_dtype_name)
 
     def _get_active_source_frame_locked(self):
         if self.lp_filter_enabled:
@@ -500,8 +545,7 @@ class CameraFeedWindow:
 
     def _sync_scale_state_to_active_frame(self):
         self.scale_min, self.scale_max = self._compute_display_bounds()
-        dpg.set_value(self.controls_window.scale_min_input_id, self.scale_min)
-        dpg.set_value(self.controls_window.scale_max_input_id, self.scale_max)
+        self._sync_scale_inputs_from_values()
 
     def _set_zero_reference_frame(self, frame):
         if frame is None:
@@ -1388,6 +1432,8 @@ class CameraFeedWindow:
                 "autoscale_enabled": bool(self.autoscale_enabled),
                 "scale_min": float(self.scale_min),
                 "scale_max": float(self.scale_max),
+                "scale_min_percent": int(self.get_scale_min_percent()),
+                "scale_max_percent": int(self.get_scale_max_percent()),
                 "autoscale_grace_percent": float(self.autoscale_grace_percent),
                 "display_mode": self.display_mode,
                 "mirrored_difference_scale": bool(self.mirrored_difference_scale),
@@ -1419,13 +1465,19 @@ class CameraFeedWindow:
         self._on_window_resize()
 
         self.autoscale_enabled = bool(state.get("autoscale_enabled", self.autoscale_enabled))
-        self.scale_min = float(state.get("scale_min", self.scale_min))
-        self.scale_max = float(state.get("scale_max", self.scale_max))
         self.autoscale_grace_percent = float(state.get("autoscale_grace_percent", self.autoscale_grace_percent))
         self.display_mode = str(state.get("display_mode", self.display_mode))
         self.mirrored_difference_scale = bool(state.get("mirrored_difference_scale", self.mirrored_difference_scale))
         self.colormap_name = self._parse_colormap_label(state.get("colormap_name", self.colormap_name))
         self._ensure_valid_colormap_selection()
+
+        if "scale_min_percent" in state and "scale_max_percent" in state:
+            self.scale_min = float(self._scale_percent_to_value(state.get("scale_min_percent", self.get_scale_min_percent())))
+            self.scale_max = float(self._scale_percent_to_value(state.get("scale_max_percent", self.get_scale_max_percent())))
+        else:
+            self.scale_min = float(state.get("scale_min", self.scale_min))
+            self.scale_max = float(state.get("scale_max", self.scale_max))
+
         self.lp_filter_enabled = bool(state.get("lp_filter_enabled", self.lp_filter_enabled))
         self.lp_filter_cutoff_hz = float(state.get("lp_filter_cutoff_hz", self.lp_filter_cutoff_hz))
         self.zoom = float(state.get("zoom", self.zoom))
@@ -1437,8 +1489,7 @@ class CameraFeedWindow:
         self.Andor.set_lp_filter_enabled(self.lp_filter_enabled)
 
         dpg.set_value(self.controls_window.autoscale_checkbox_id, self.autoscale_enabled)
-        dpg.set_value(self.controls_window.scale_min_input_id, self.scale_min)
-        dpg.set_value(self.controls_window.scale_max_input_id, self.scale_max)
+        self._sync_scale_inputs_from_values()
         dpg.set_value(self.controls_window.autoscale_grace_input_id, self.autoscale_grace_percent)
         dpg.set_value(self.controls_window.display_mode_combo_id, self.display_mode)
         dpg.set_value(self.controls_window.mirrored_difference_checkbox_id, self.mirrored_difference_scale)

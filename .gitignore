@@ -177,3 +177,4 @@ cython_debug/
 node_modules/
 Lib/
 Scripts/
+AppState/

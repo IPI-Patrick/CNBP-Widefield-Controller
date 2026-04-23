@@ -7,7 +7,7 @@ import numpy as np
 import dearpygui.dearpygui as dpg
 from Drivers.Andor import Andor, SUPPORTED_STORAGE_DTYPES
 from Drivers.PicoScope import CHANNEL_NAMES, SUPPORTED_AWG_WAVEFORMS
-from Utils.StorageDTypes import canonicalize_float_storage_dtype_name, get_float_storage_bytes, get_float_storage_dtype
+from Utils.StorageDTypes import canonicalize_storage_bit_depth_name, get_raw_storage_bytes, get_signed_storage_bytes
 from Utils import diskspeed
 from Windows.SubWindows.CameraFeed import CameraFeedWindow
 from Windows.SubWindows.ZAxisControlsWindow import ZAxisControlsWindow
@@ -25,7 +25,7 @@ class CameraSystem:
         self.acquisition_duration_seconds = 2.0
         self.acquisition_frame_rate_hz = 0.0
         self.acquisition_scope_sample_rate_hz = 1000.0
-        self.acquisition_storage_dtype_name = "float16"
+        self.acquisition_storage_dtype_name = "16"
         self.acquisition_zero_on_start = False
         self.acquisition_set_awg_on_start = False
         self.acquisition_awg_waveform = "dc"
@@ -54,6 +54,7 @@ class CameraSystem:
         self._acquisition_scope_fallback_snapshot = None
         self._acquisition_lock = threading.Lock()
         self.preview_zero_reference_pending = False
+        self.aoi_auto_center_enabled = False
         self.preview_max_frames = int(getattr(Andor, "max_acquisitions", 200))
         self._storage_devices = []
         self._drive_write_speed_cache = {}
@@ -86,6 +87,14 @@ class CameraSystem:
             self.started        = False
             self.acquisition_frame_rate_hz = float(self.Andor.get_frame_rate())
             self.acquisition_storage_dtype_name = self.Andor.storage_dtype_name
+            self.cooler_supported = bool(
+                self.Andor.supports_sensor_cooling() or self.Andor.get_sensor_temperature_c() is not None
+            )
+            self.temperature_setpoint_supported = bool(self.Andor.supports_temperature_setpoint())
+            self.temperature_setpoint_min_c = -10.0
+            self.temperature_setpoint_max_c = 10.0
+            self.temperature_setpoint_options = self._get_temperature_setpoint_items()
+            self.temperature_setpoint_value = self.temperature_setpoint_options[0] if self.temperature_setpoint_options else ""
 
             # Set up the Preview Window
             self.camera_feed   = CameraFeedWindow(
@@ -141,6 +150,30 @@ class CameraSystem:
                 callback        = lambda: self.setprop("TriggerMode", self.settings_trigger_mode)
             )
 
+            self.settings_cooler_checkbox_id = dpg.add_checkbox(
+                label="Cooler",
+                default_value=bool(self.Andor.get_sensor_cooling_enabled() or False),
+                callback=self._on_camera_cooler_changed,
+                enabled=self.cooler_supported,
+            )
+
+            self.settings_temp_set_input_id = dpg.add_combo(
+                label="Temp Set",
+                width=-110,
+                items=self.temperature_setpoint_options,
+                default_value=self.temperature_setpoint_value,
+                callback=self._on_camera_temp_set_changed,
+                enabled=self.temperature_setpoint_supported,
+            )
+
+            self.cooler_temperature_input_id = dpg.add_input_float(
+                label="Temperature",
+                width=-110,
+                default_value=float(self.Andor.get_sensor_temperature_c() or 0.0),
+                format="%.1f C",
+                enabled=False,
+            )
+
             dpg.add_spacer(height=20)
             dpg.add_text("Frame Settings")
             dpg.add_separator()
@@ -189,8 +222,14 @@ class CameraSystem:
                 callback        = lambda: self.setprop("AOITop", self.settings_image_top),
             )
 
+            self.settings_aoi_auto_center_checkbox_id = dpg.add_checkbox(
+                label="Auto Center",
+                default_value=self.aoi_auto_center_enabled,
+                callback=self._on_aoi_auto_center_changed,
+            )
+
             self.settings_storage_dtype_combo_id = dpg.add_combo(
-                label="Data Type",
+                label="Bitness",
                 width=-110,
                 items=list(SUPPORTED_STORAGE_DTYPES),
                 default_value=self.acquisition_storage_dtype_name,
@@ -211,6 +250,8 @@ class CameraSystem:
                 step=10,
                 callback=self._on_preview_max_frames_changed,
             )
+
+            self._refresh_aoi_controls_from_camera()
 
             # Add the start/stop button
             self.start_button_id = dpg.add_button(
@@ -459,6 +500,7 @@ class CameraSystem:
         self._refresh_storage_devices()
         self._set_acquisition_progress(0.0, "Idle")
         self._refresh_hardware_requirements(force=True)
+        self._sync_camera_cooler_readout()
 
     @property
     def settings(self):
@@ -481,6 +523,41 @@ class CameraSystem:
     def _on_preview_max_frames_changed(self, sender=None, app_data=None, user_data=None):
         self._apply_preview_max_frames(dpg.get_value(self.settings_preview_max_frames))
         self._refresh_hardware_requirements(force=True)
+
+    def _clamp_temperature_setpoint_c(self, temperature_c):
+        return float(np.clip(float(temperature_c), self.temperature_setpoint_min_c, self.temperature_setpoint_max_c))
+
+    def _get_temperature_setpoint_items(self):
+        filtered_items = []
+        for option in self.Andor.get_temperature_setpoint_options():
+            try:
+                option_value_c = float(option)
+            except (TypeError, ValueError):
+                continue
+            if self.temperature_setpoint_min_c <= option_value_c <= self.temperature_setpoint_max_c:
+                filtered_items.append(str(option))
+        return filtered_items
+
+    def _sync_camera_cooler_readout(self):
+        cooler_enabled = self.Andor.get_sensor_cooling_enabled()
+        if cooler_enabled is not None:
+            dpg.set_value(self.settings_cooler_checkbox_id, bool(cooler_enabled))
+
+        temperature_c = self.Andor.get_sensor_temperature_c()
+        if temperature_c is not None:
+            dpg.set_value(self.cooler_temperature_input_id, float(temperature_c))
+
+    def _on_camera_cooler_changed(self, sender, app_data, user_data=None):
+        self.Andor.set_sensor_cooling_enabled(bool(app_data))
+        self._sync_camera_cooler_readout()
+
+    def _on_camera_temp_set_changed(self, sender, app_data, user_data=None):
+        requested_option = str(app_data)
+        if requested_option not in self.temperature_setpoint_options:
+            return
+        self.temperature_setpoint_value = requested_option
+        dpg.set_value(self.settings_temp_set_input_id, requested_option)
+        self.Andor.set_temperature_setpoint_option(requested_option)
 
     def _update_preview_button_state(self):
         if self.started:
@@ -559,7 +636,7 @@ class CameraSystem:
         }
 
     def _on_camera_storage_dtype_changed(self, sender, app_data, user_data=None):
-        selected_dtype = canonicalize_float_storage_dtype_name(app_data, fallback=self.Andor.storage_dtype_name)
+        selected_dtype = canonicalize_storage_bit_depth_name(app_data, fallback=self.Andor.storage_dtype_name)
         self.Andor.set_storage_dtype(selected_dtype)
         self.acquisition_storage_dtype_name = self.Andor.storage_dtype_name
         dpg.set_value(self.settings_storage_dtype_combo_id, self.acquisition_storage_dtype_name)
@@ -791,29 +868,31 @@ class CameraSystem:
         frame_height = max(1, int(getattr(self.camera, "AOIHeight", 1)))
         frame_width = max(1, int(getattr(self.camera, "AOIWidth", 1)))
         frame_pixels = frame_height * frame_width
-        sensor_frame_dtype = np.dtype(f"u{max(1, self.Andor.bit_depth // 8)}")
-        storage_dtype_name = canonicalize_float_storage_dtype_name(
+        sensor_frame_dtype = np.dtype(f"u{max(1, (self.Andor.bit_depth + 7) // 8)}")
+        storage_dtype_name = canonicalize_storage_bit_depth_name(
             dpg.get_value(self.settings_storage_dtype_combo_id) or self.Andor.storage_dtype_name,
             fallback=self.Andor.storage_dtype_name,
         )
         camera_frame_bytes = frame_pixels * sensor_frame_dtype.itemsize
-        stored_frame_bytes = frame_pixels * get_float_storage_bytes(storage_dtype_name)
+        raw_frame_bytes = frame_pixels * get_raw_storage_bytes(storage_dtype_name)
+        signed_frame_bytes = frame_pixels * get_signed_storage_bytes(storage_dtype_name)
 
         scope_settings = self._get_scope_capture_settings()
         scope_channel_count = len(scope_settings["enabled_channels"])
         scope_sample_bytes = paired_scope_samples * np.dtype(np.float16).itemsize
         scope_timestamp_bytes = paired_scope_samples * np.dtype(np.float64).itemsize
         scope_pair_timestamp_bytes = paired_scope_samples * np.dtype(np.float64).itemsize
-        camera_history_bytes = target_frames * stored_frame_bytes
+        raw_history_bytes = target_frames * raw_frame_bytes
+        signed_history_bytes = target_frames * signed_frame_bytes
 
         disk_bytes = 0
-        disk_bytes += camera_history_bytes
-        disk_bytes += camera_history_bytes
-        disk_bytes += camera_history_bytes
-        disk_bytes += camera_history_bytes
+        disk_bytes += raw_history_bytes
+        disk_bytes += raw_history_bytes
+        disk_bytes += signed_history_bytes
+        disk_bytes += signed_history_bytes
         disk_bytes += target_frames * np.dtype(np.float64).itemsize
         disk_bytes += target_frames * np.dtype(np.float64).itemsize
-        disk_bytes += stored_frame_bytes
+        disk_bytes += raw_frame_bytes
         disk_bytes += scope_timestamp_bytes
         disk_bytes += scope_pair_timestamp_bytes
         disk_bytes += scope_channel_count * scope_sample_bytes
@@ -825,34 +904,35 @@ class CameraSystem:
         disk_bytes += np.asarray(["float16"]).nbytes
 
         ram_bytes = 0
-        ram_bytes += camera_history_bytes
-        ram_bytes += camera_history_bytes
-        ram_bytes += camera_history_bytes
-        ram_bytes += camera_history_bytes
+        ram_bytes += raw_history_bytes
+        ram_bytes += raw_history_bytes
+        ram_bytes += signed_history_bytes
+        ram_bytes += signed_history_bytes
         ram_bytes += target_frames * np.dtype(np.float64).itemsize
         ram_bytes += target_frames * np.dtype(np.float64).itemsize
-        ram_bytes += stored_frame_bytes
-        ram_bytes += stored_frame_bytes
-        ram_bytes += stored_frame_bytes
-        ram_bytes += stored_frame_bytes
-        ram_bytes += stored_frame_bytes
+        ram_bytes += raw_frame_bytes
+        ram_bytes += raw_frame_bytes
+        ram_bytes += signed_frame_bytes
+        ram_bytes += signed_frame_bytes
+        ram_bytes += raw_frame_bytes
         ram_bytes += scope_timestamp_bytes
         ram_bytes += scope_pair_timestamp_bytes
         ram_bytes += scope_channel_count * scope_sample_bytes
 
-        camera_bits_per_second = stored_frame_bytes * acquisition_fps * 8.0
+        camera_bits_per_second = raw_frame_bytes * acquisition_fps * 8.0
 
         total_write_bits_per_second = 0.0
-        total_write_bits_per_second += stored_frame_bytes * acquisition_fps * 8.0
-        total_write_bits_per_second += stored_frame_bytes * acquisition_fps * 8.0
-        total_write_bits_per_second += stored_frame_bytes * acquisition_fps * 8.0
-        total_write_bits_per_second += stored_frame_bytes * acquisition_fps * 8.0 
+        total_write_bits_per_second += raw_frame_bytes * acquisition_fps * 8.0
+        total_write_bits_per_second += raw_frame_bytes * acquisition_fps * 8.0
+        total_write_bits_per_second += signed_frame_bytes * acquisition_fps * 8.0
+        total_write_bits_per_second += signed_frame_bytes * acquisition_fps * 8.0 
         total_write_bits_per_second += np.dtype(np.float64).itemsize * acquisition_fps * 8.0
         total_write_bits_per_second += np.dtype(np.float64).itemsize * acquisition_fps * 8.0
         total_write_bits_per_second += acquisition_fps * np.dtype(np.float64).itemsize * 8.0
         total_write_bits_per_second += scope_channel_count * acquisition_fps * np.dtype(np.float16).itemsize * 8.0
 
         additional_bits_per_second = max(0.0, total_write_bits_per_second - camera_bits_per_second)
+        camera_bytes_per_frame = (2.0 * raw_frame_bytes) + (2.0 * signed_frame_bytes)
 
         selected_label = str(dpg.get_value(self.hardware_drive_combo_id) or "").strip()
         drive_speed_bps = self._drive_write_speed_cache.get(selected_label)
@@ -868,7 +948,7 @@ class CameraSystem:
             "ram_bytes": ram_bytes,
             "disk_bytes": disk_bytes,
             "camera_bits_per_second": camera_bits_per_second,
-            "camera_bytes_per_frame": stored_frame_bytes,
+            "camera_bytes_per_frame": camera_bytes_per_frame,
             "acquisition_fps": acquisition_fps,
             "additional_bits_per_second": additional_bits_per_second,
             "total_bits_per_second": total_write_bits_per_second,
@@ -1148,7 +1228,7 @@ class CameraSystem:
         acquisition_seconds = max(0.01, float(dpg.get_value(self.acquisition_duration_input_id)))
         acquisition_fps = max(0.1, float(dpg.get_value(self.acquisition_frame_rate_input_id)))
         scope_sample_rate = max(0.1, float(dpg.get_value(self.acquisition_scope_rate_input_id)))
-        storage_dtype_name = canonicalize_float_storage_dtype_name(
+        storage_dtype_name = canonicalize_storage_bit_depth_name(
             dpg.get_value(self.settings_storage_dtype_combo_id) or self.Andor.storage_dtype_name,
             fallback=self.Andor.storage_dtype_name,
         )
@@ -1300,7 +1380,141 @@ class CameraSystem:
             self.Andor.start_capture_continuous()
             self._update_preview_button_state()
 
+    def _get_camera_aoi_limits(self):
+        return {
+            "width_min": max(1, int(getattr(self.camera, "min_AOIWidth", 1))),
+            "width_max": max(1, int(getattr(self.camera, "max_AOIWidth", getattr(self.camera, "AOIWidth", 1)))),
+            "height_min": max(1, int(getattr(self.camera, "min_AOIHeight", 1))),
+            "height_max": max(1, int(getattr(self.camera, "max_AOIHeight", getattr(self.camera, "AOIHeight", 1)))),
+            "left_min": max(1, int(getattr(self.camera, "min_AOILeft", 1))),
+            "top_min": max(1, int(getattr(self.camera, "min_AOITop", 1))),
+        }
+
+    def _get_current_aoi_settings(self):
+        return {
+            "width": int(getattr(self.camera, "AOIWidth", 1)),
+            "height": int(getattr(self.camera, "AOIHeight", 1)),
+            "left": int(getattr(self.camera, "AOILeft", 1)),
+            "top": int(getattr(self.camera, "AOITop", 1)),
+        }
+
+    def _get_requested_aoi_settings_from_widgets(self):
+        return {
+            "width": int(dpg.get_value(self.settings_image_width)),
+            "height": int(dpg.get_value(self.settings_image_height)),
+            "left": int(dpg.get_value(self.settings_image_left)),
+            "top": int(dpg.get_value(self.settings_image_top)),
+        }
+
+    def _get_centered_aoi_position(self, width, height, limits=None):
+        limits = limits or self._get_camera_aoi_limits()
+        left_max = max(limits["left_min"], limits["width_max"] - width + 1)
+        top_max = max(limits["top_min"], limits["height_max"] - height + 1)
+        left = limits["left_min"] + max(0, int(round((left_max - limits["left_min"]) / 2.0)))
+        top = limits["top_min"] + max(0, int(round((top_max - limits["top_min"]) / 2.0)))
+        return int(left), int(top)
+
+    def _normalize_aoi_settings(self, requested):
+        limits = self._get_camera_aoi_limits()
+        width = int(np.clip(int(requested["width"]), limits["width_min"], limits["width_max"]))
+        height = int(np.clip(int(requested["height"]), limits["height_min"], limits["height_max"]))
+
+        left_max = max(limits["left_min"], limits["width_max"] - width + 1)
+        top_max = max(limits["top_min"], limits["height_max"] - height + 1)
+        left = int(np.clip(int(requested["left"]), limits["left_min"], left_max))
+        top = int(np.clip(int(requested["top"]), limits["top_min"], top_max))
+
+        width_max = max(limits["width_min"], limits["width_max"] - left + 1)
+        height_max = max(limits["height_min"], limits["height_max"] - top + 1)
+        width = int(np.clip(width, limits["width_min"], width_max))
+        height = int(np.clip(height, limits["height_min"], height_max))
+
+        left_max = max(limits["left_min"], limits["width_max"] - width + 1)
+        top_max = max(limits["top_min"], limits["height_max"] - height + 1)
+        left = int(np.clip(left, limits["left_min"], left_max))
+        top = int(np.clip(top, limits["top_min"], top_max))
+
+        if self.aoi_auto_center_enabled:
+            left, top = self._get_centered_aoi_position(width, height, limits)
+
+        return {
+            "width": width,
+            "height": height,
+            "left": left,
+            "top": top,
+        }
+
+    def _update_aoi_control_state(self):
+        left_top_enabled = (not self.Andor.is_capturing) and (not self.aoi_auto_center_enabled)
+        dpg.configure_item(self.settings_image_left, enabled=left_top_enabled)
+        dpg.configure_item(self.settings_image_top, enabled=left_top_enabled)
+        dpg.bind_item_theme(self.settings_image_left, None if left_top_enabled else read_only_theme)
+        dpg.bind_item_theme(self.settings_image_top, None if left_top_enabled else read_only_theme)
+
+    def _sync_aoi_widgets(self, aoi_settings=None):
+        settings = aoi_settings or self._get_current_aoi_settings()
+        normalized = self._normalize_aoi_settings(settings)
+        limits = self._get_camera_aoi_limits()
+
+        width_max = max(limits["width_min"], limits["width_max"] - normalized["left"] + 1)
+        height_max = max(limits["height_min"], limits["height_max"] - normalized["top"] + 1)
+        left_max = max(limits["left_min"], limits["width_max"] - normalized["width"] + 1)
+        top_max = max(limits["top_min"], limits["height_max"] - normalized["height"] + 1)
+
+        dpg.configure_item(self.settings_image_width, min_value=limits["width_min"], max_value=width_max)
+        dpg.configure_item(self.settings_image_height, min_value=limits["height_min"], max_value=height_max)
+        dpg.configure_item(self.settings_image_left, min_value=limits["left_min"], max_value=left_max)
+        dpg.configure_item(self.settings_image_top, min_value=limits["top_min"], max_value=top_max)
+
+        dpg.set_value(self.settings_image_width, normalized["width"])
+        dpg.set_value(self.settings_image_height, normalized["height"])
+        dpg.set_value(self.settings_image_left, normalized["left"])
+        dpg.set_value(self.settings_image_top, normalized["top"])
+        dpg.set_value(self.settings_aoi_auto_center_checkbox_id, self.aoi_auto_center_enabled)
+        self._update_aoi_control_state()
+
+    def _refresh_aoi_controls_from_camera(self):
+        self._sync_aoi_widgets(self._get_current_aoi_settings())
+
+    def _on_aoi_auto_center_changed(self, sender=None, app_data=None, user_data=None):
+        self.aoi_auto_center_enabled = bool(dpg.get_value(self.settings_aoi_auto_center_checkbox_id))
+        self._apply_aoi_settings()
+        self._refresh_hardware_requirements(force=True)
+
+    def _apply_aoi_settings(self, requested_settings=None):
+        normalized = self._normalize_aoi_settings(requested_settings or self._get_requested_aoi_settings_from_widgets())
+        try:
+            self.camera.AOIWidth = normalized["width"]
+            self.camera.AOIHeight = normalized["height"]
+            self.camera.AOILeft = normalized["left"]
+            self.camera.AOITop = normalized["top"]
+        except Exception:
+            self._refresh_aoi_controls_from_camera()
+            raise
+
+        self._refresh_aoi_controls_from_camera()
+        self.Andor.clear_buffers(reset_frame_index=True)
+        self.camera_feed.reset_texture()
+        self.camera_feed.rebuild_roi_traces()
+
     def setprop(self, prop, setting):
+        if prop in {"AOIWidth", "AOIHeight", "AOILeft", "AOITop"}:
+            self._apply_aoi_settings()
+            self._refresh_hardware_requirements(force=True)
+            return
+
+        if prop == "AOIBinning":
+            requested_value = dpg.get_value(setting)
+            try:
+                setattr(self.camera, prop, requested_value)
+            except Exception:
+                dpg.set_value(setting, getattr(self.camera, prop))
+                raise
+
+            self._apply_aoi_settings()
+            self._refresh_hardware_requirements(force=True)
+            return
+
         setattr(self.camera, prop, dpg.get_value(setting))
         self._refresh_hardware_requirements(force=True)
 
@@ -1308,6 +1522,7 @@ class CameraSystem:
     def render(self):
         self.camera_feed.render()
         self.z_axis_controls.render()
+        self._sync_camera_cooler_readout()
 
         if self.started and self.preview_zero_reference_pending and self.Andor.frameIdx > 0:
             self.preview_zero_reference_pending = not self.camera_feed.ensure_zero_reference_from_latest_frame()
@@ -1340,6 +1555,14 @@ class CameraSystem:
                 dpg.configure_item(setting, enabled=True)
                 dpg.bind_item_theme(setting, None)
 
+        self._update_aoi_control_state()
+
+        dpg.configure_item(
+            self.settings_cooler_checkbox_id,
+            enabled=(not self.Andor.is_capturing and self.cooler_supported),
+        )
+        dpg.configure_item(self.cooler_temperature_input_id, enabled=False)
+
         acquisition_inputs = (
             self.acquisition_duration_input_id,
             self.acquisition_frame_rate_input_id,
@@ -1368,11 +1591,14 @@ class CameraSystem:
                 "window": capture_window_state(self.window_id),
                 "exposure_time": float(dpg.get_value(self.settings_exposure_time)),
                 "trigger_mode": str(dpg.get_value(self.settings_trigger_mode)),
+                "cooler_enabled": bool(dpg.get_value(self.settings_cooler_checkbox_id)),
+                "temperature_setpoint": str(self.temperature_setpoint_value),
                 "pixel_binning": str(dpg.get_value(self.settings_pixel_binning)),
                 "image_width": int(dpg.get_value(self.settings_image_width)),
                 "image_height": int(dpg.get_value(self.settings_image_height)),
                 "image_left": int(dpg.get_value(self.settings_image_left)),
                 "image_top": int(dpg.get_value(self.settings_image_top)),
+                "image_auto_center": bool(dpg.get_value(self.settings_aoi_auto_center_checkbox_id)),
                 "frame_storage_dtype": str(dpg.get_value(self.settings_storage_dtype_combo_id) or self.Andor.storage_dtype_name),
                 "preview_max_frames": int(dpg.get_value(self.settings_preview_max_frames)),
                 "acquisition_duration_seconds": float(dpg.get_value(self.acquisition_duration_input_id)),
@@ -1410,10 +1636,6 @@ class CameraSystem:
                 ("exposure_time", "ExposureTime", self.settings_exposure_time),
                 ("trigger_mode", "TriggerMode", self.settings_trigger_mode),
                 ("pixel_binning", "AOIBinning", self.settings_pixel_binning),
-                ("image_width", "AOIWidth", self.settings_image_width),
-                ("image_height", "AOIHeight", self.settings_image_height),
-                ("image_left", "AOILeft", self.settings_image_left),
-                ("image_top", "AOITop", self.settings_image_top),
             )
             for state_key, camera_property, widget_id in property_map:
                 if state_key not in state:
@@ -1421,10 +1643,41 @@ class CameraSystem:
                 dpg.set_value(widget_id, state[state_key])
                 setattr(self.camera, camera_property, dpg.get_value(widget_id))
 
+            self.aoi_auto_center_enabled = bool(state.get("image_auto_center", self.aoi_auto_center_enabled))
+            dpg.set_value(self.settings_aoi_auto_center_checkbox_id, self.aoi_auto_center_enabled)
+
+            requested_aoi = self._get_current_aoi_settings()
+            if "image_width" in state:
+                requested_aoi["width"] = int(state["image_width"])
+            if "image_height" in state:
+                requested_aoi["height"] = int(state["image_height"])
+            if "image_left" in state:
+                requested_aoi["left"] = int(state["image_left"])
+            if "image_top" in state:
+                requested_aoi["top"] = int(state["image_top"])
+            self._apply_aoi_settings(requested_aoi)
+
+            if "cooler_enabled" in state:
+                self.Andor.set_sensor_cooling_enabled(bool(state["cooler_enabled"]))
+            if "temperature_setpoint" in state:
+                requested_option = str(state["temperature_setpoint"])
+                if requested_option in self.temperature_setpoint_options:
+                    self.temperature_setpoint_value = requested_option
+                    dpg.set_value(self.settings_temp_set_input_id, requested_option)
+                    self.Andor.set_temperature_setpoint_option(requested_option)
+            elif "temperature_setpoint_c" in state:
+                requested_option = self.Andor._resolve_temperature_setpoint_option(
+                    self._clamp_temperature_setpoint_c(state["temperature_setpoint_c"])
+                )
+                if requested_option in self.temperature_setpoint_options:
+                    self.temperature_setpoint_value = requested_option
+                    dpg.set_value(self.settings_temp_set_input_id, requested_option)
+                    self.Andor.set_temperature_setpoint_option(requested_option)
+
             if "frame_storage_dtype" in state:
-                dpg.set_value(self.settings_storage_dtype_combo_id, canonicalize_float_storage_dtype_name(state["frame_storage_dtype"], fallback=self.Andor.storage_dtype_name))
+                dpg.set_value(self.settings_storage_dtype_combo_id, canonicalize_storage_bit_depth_name(state["frame_storage_dtype"], fallback=self.Andor.storage_dtype_name))
             elif "acquisition_storage_dtype" in state:
-                dpg.set_value(self.settings_storage_dtype_combo_id, canonicalize_float_storage_dtype_name(state["acquisition_storage_dtype"], fallback=self.Andor.storage_dtype_name))
+                dpg.set_value(self.settings_storage_dtype_combo_id, canonicalize_storage_bit_depth_name(state["acquisition_storage_dtype"], fallback=self.Andor.storage_dtype_name))
 
             self._apply_preview_max_frames(int(state.get("preview_max_frames", self.preview_max_frames)))
 
@@ -1469,7 +1722,7 @@ class CameraSystem:
             self.acquisition_duration_seconds = float(dpg.get_value(self.acquisition_duration_input_id))
             self.acquisition_frame_rate_hz = float(dpg.get_value(self.acquisition_frame_rate_input_id))
             self.acquisition_scope_sample_rate_hz = float(dpg.get_value(self.acquisition_scope_rate_input_id))
-            self.Andor.set_storage_dtype(canonicalize_float_storage_dtype_name(dpg.get_value(self.settings_storage_dtype_combo_id), fallback=self.Andor.storage_dtype_name))
+            self.Andor.set_storage_dtype(canonicalize_storage_bit_depth_name(dpg.get_value(self.settings_storage_dtype_combo_id), fallback=self.Andor.storage_dtype_name))
             self.acquisition_storage_dtype_name = self.Andor.storage_dtype_name
             self.acquisition_zero_on_start = bool(dpg.get_value(self.acquisition_zero_on_start_checkbox_id))
             self.acquisition_set_awg_on_start = bool(dpg.get_value(self.acquisition_set_awg_on_start_checkbox_id))
@@ -1486,6 +1739,7 @@ class CameraSystem:
             self.spool_write_contrast = bool(dpg.get_value(self.spool_write_contrast_checkbox_id))
             self.spool_write_scope = bool(dpg.get_value(self.spool_write_scope_checkbox_id))
             self.spool_write_power = bool(dpg.get_value(self.spool_write_power_checkbox_id))
+            self._sync_camera_cooler_readout()
             self._update_acquisition_awg_visibility()
             self._update_spool_to_disk_controls()
             self._refresh_hardware_requirements(force=True)

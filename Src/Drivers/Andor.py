@@ -5,15 +5,15 @@ import threading
 from pyAndorSDK3 import AndorSDK3
 from Mocks.MockCamera import MockCamera 
 from Utils.StorageDTypes import (
-    SUPPORTED_FLOAT_STORAGE_DTYPES,
-    canonicalize_float_storage_dtype_name,
-    get_float_storage_dtype,
-    quantize_to_float_storage_dtype,
+    SUPPORTED_STORAGE_DTYPES,
+    canonicalize_storage_bit_depth_name,
+    get_raw_storage_dtype,
+    get_signed_storage_dtype,
+    quantize_to_raw_storage_dtype,
+    quantize_to_signed_storage_dtype,
 )
 from Utils.TypedDeque import TypedDeque
 
-
-SUPPORTED_STORAGE_DTYPES = SUPPORTED_FLOAT_STORAGE_DTYPES
 
 class Andor:
 
@@ -54,47 +54,151 @@ class Andor:
             print("Error: No camera found. Running in development mode.")
 
         frame_shape             = (self.camera.AOIHeight, self.camera.AOIWidth)
-        frame_dtype             = np.dtype(f'u{self.bit_depth//8}')
+        frame_dtype             = np.dtype(f'u{max(1, (self.bit_depth + 7)//8)}')
         self.frame_shape        = frame_shape
         self.sensor_dtype       = frame_dtype
         self.frame_max_value    = float((2 ** self.bit_depth) - 1)
-        self.storage_dtype_name = "float16"
-        self.storage_dtype      = get_float_storage_dtype(self.storage_dtype_name)
-        self.acquisitions       = self._new_frame_buffer()
-        self.filtered           = self._new_frame_buffer()
-        self.difference         = self._new_frame_buffer()
-        self.contrast           = self._new_frame_buffer()
+        self.storage_dtype_name = "16"
+        self.raw_storage_dtype  = get_raw_storage_dtype(self.storage_dtype_name)
+        self.signed_storage_dtype = get_signed_storage_dtype(self.storage_dtype_name)
+        self.storage_dtype      = self.raw_storage_dtype
+        self.acquisitions       = self._new_raw_frame_buffer()
+        self.filtered           = self._new_raw_frame_buffer()
+        self.difference         = self._new_signed_frame_buffer()
+        self.contrast           = self._new_signed_frame_buffer()
         self.timestamps         = self._new_scalar_buffer(np.float64)
         self.meanBuffer         = self._new_scalar_buffer(np.float64)
-        self.zero               = np.zeros(frame_shape, dtype=self.storage_dtype)
-        self.latest_frame       = np.zeros(frame_shape, dtype=self.storage_dtype)
-        self.latest_filtered    = np.zeros(frame_shape, dtype=self.storage_dtype)
-        self.latest_difference  = np.zeros(frame_shape, dtype=self.storage_dtype)
-        self.latest_contrast    = np.zeros(frame_shape, dtype=self.storage_dtype)
+        self.zero               = np.zeros(frame_shape, dtype=self.raw_storage_dtype)
+        self.latest_frame       = np.zeros(frame_shape, dtype=self.raw_storage_dtype)
+        self.latest_filtered    = np.zeros(frame_shape, dtype=self.raw_storage_dtype)
+        self.latest_difference  = np.zeros(frame_shape, dtype=self.signed_storage_dtype)
+        self.latest_contrast    = np.zeros(frame_shape, dtype=self.signed_storage_dtype)
         self.lp_filter_enabled  = False
         self.lp_filter_cutoff_hz = min(10.0, max(0.5, self.get_frame_rate() * 0.1))
         self.zero_version       = 0
 
-    def _new_frame_buffer(self, iterable=None):
-        return TypedDeque(iterable, maxlen=self.max_acquisitions, dtype=self.storage_dtype, shape=self.frame_shape)
+    def _new_raw_frame_buffer(self, iterable=None):
+        return TypedDeque(iterable, maxlen=self.max_acquisitions, dtype=self.raw_storage_dtype, shape=self.frame_shape)
+
+    def _new_signed_frame_buffer(self, iterable=None):
+        return TypedDeque(iterable, maxlen=self.max_acquisitions, dtype=self.signed_storage_dtype, shape=self.frame_shape)
 
     def _new_scalar_buffer(self, dtype, iterable=None):
         return TypedDeque(iterable, maxlen=self.max_acquisitions, dtype=dtype, shape=())
 
-    def _coerce_frame_to_storage(self, frame):
-        return quantize_to_float_storage_dtype(frame, self.storage_dtype_name)
+    def _coerce_raw_frame_to_storage(self, frame):
+        return quantize_to_raw_storage_dtype(frame, self.storage_dtype_name, source_max_value=self.frame_max_value)
 
-    def _empty_storage_frame(self):
-        return np.zeros(self.frame_shape, dtype=self.storage_dtype)
+    def _coerce_signed_frame_to_storage(self, frame):
+        return quantize_to_signed_storage_dtype(frame, self.storage_dtype_name)
+
+    def _empty_raw_storage_frame(self):
+        return np.zeros(self.frame_shape, dtype=self.raw_storage_dtype)
+
+    def _empty_signed_storage_frame(self):
+        return np.zeros(self.frame_shape, dtype=self.signed_storage_dtype)
 
     @property
     def bit_depth(self):
         """Return the camera bit depth as an integer (e.g. 12 from '12 Bit')."""
         return int(str(self.camera.BitDepth).split()[0])
 
+    def supports_sensor_cooling(self):
+        return hasattr(self.camera, "SensorCooling")
+
+    def get_sensor_cooling_enabled(self):
+        if not self.supports_sensor_cooling():
+            return None
+        try:
+            return bool(getattr(self.camera, "SensorCooling"))
+        except Exception:
+            return None
+
+    def set_sensor_cooling_enabled(self, enabled):
+        if not self.supports_sensor_cooling():
+            print("Camera cooler control is not supported by the active camera.")
+            return False
+        cooler_state = "ON" if bool(enabled) else "OFF"
+        print(f"Sending camera cooler command: {cooler_state}")
+        try:
+            setattr(self.camera, "SensorCooling", bool(enabled))
+            print(f"Camera cooler command applied: {cooler_state}")
+            return True
+        except Exception as exc:
+            print(f"Failed to set camera cooler state to {cooler_state}: {exc}")
+            return False
+
+    def get_sensor_temperature_c(self):
+        if not hasattr(self.camera, "SensorTemperature"):
+            return None
+        try:
+            return float(getattr(self.camera, "SensorTemperature"))
+        except Exception:
+            return None
+
+    def supports_temperature_setpoint(self):
+        return hasattr(self.camera, "TemperatureControl")
+
+    def get_temperature_setpoint_c(self):
+        if not self.supports_temperature_setpoint():
+            return None
+        try:
+            return float(getattr(self.camera, "TemperatureControl"))
+        except Exception:
+            return None
+
+    def get_temperature_setpoint_options(self):
+        options = getattr(self.camera, "available_options_TemperatureControl", None)
+        if options is None:
+            return []
+        return [str(option) for option in options]
+
+    def get_temperature_setpoint_options_c(self):
+        parsed_options = []
+        for option in self.get_temperature_setpoint_options():
+            try:
+                parsed_options.append(float(option))
+            except (TypeError, ValueError):
+                continue
+        return parsed_options
+
+    def _resolve_temperature_setpoint_option(self, temperature_c):
+        target_temperature_c = float(temperature_c)
+        parsed_options = []
+        for option in self.get_temperature_setpoint_options():
+            try:
+                parsed_options.append((float(option), option))
+            except (TypeError, ValueError):
+                continue
+
+        if not parsed_options:
+            return str(temperature_c)
+
+        _, option_label = min(parsed_options, key=lambda item: abs(item[0] - target_temperature_c))
+        return option_label
+
+    def set_temperature_setpoint_option(self, option_label):
+        if not self.supports_temperature_setpoint():
+            print("Camera temperature setpoint control is not supported by the active camera.")
+            return False
+
+        target_option_label = str(option_label)
+        print(f"Sending camera temperature setpoint command: {target_option_label} C")
+        try:
+            setattr(self.camera, "TemperatureControl", target_option_label)
+            print(f"Camera temperature setpoint command applied: {target_option_label} C")
+            return True
+        except Exception as exc:
+            print(f"Failed to set camera temperature setpoint to {target_option_label} C: {exc}")
+            return False
+
+    def set_temperature_setpoint_c(self, temperature_c):
+        return self.set_temperature_setpoint_option(self._resolve_temperature_setpoint_option(temperature_c))
+
     def set_storage_dtype(self, dtype_name):
-        normalized_dtype_name = canonicalize_float_storage_dtype_name(dtype_name)
-        normalized_dtype = get_float_storage_dtype(normalized_dtype_name)
+        normalized_dtype_name = canonicalize_storage_bit_depth_name(dtype_name)
+        normalized_raw_dtype = get_raw_storage_dtype(normalized_dtype_name)
+        normalized_signed_dtype = get_signed_storage_dtype(normalized_dtype_name)
         if normalized_dtype_name not in SUPPORTED_STORAGE_DTYPES:
             supported = ", ".join(SUPPORTED_STORAGE_DTYPES)
             raise ValueError(f"Unsupported storage dtype '{dtype_name}'. Supported values: {supported}")
@@ -103,13 +207,18 @@ class Andor:
             if normalized_dtype_name == self.storage_dtype_name:
                 return
             existing_acquisitions = [
-                np.asarray(quantize_to_float_storage_dtype(frame, normalized_dtype_name), dtype=normalized_dtype)
+                np.asarray(
+                    quantize_to_raw_storage_dtype(frame, normalized_dtype_name, source_max_value=self.frame_max_value),
+                    dtype=normalized_raw_dtype,
+                )
                 for frame in self.acquisitions
             ]
-            self.storage_dtype = normalized_dtype
+            self.raw_storage_dtype = normalized_raw_dtype
+            self.signed_storage_dtype = normalized_signed_dtype
+            self.storage_dtype = self.raw_storage_dtype
             self.storage_dtype_name = normalized_dtype_name
-            self.acquisitions = self._new_frame_buffer(existing_acquisitions)
-            self.zero = self._coerce_frame_to_storage(self.zero)
+            self.acquisitions = self._new_raw_frame_buffer(existing_acquisitions)
+            self.zero = self._coerce_raw_frame_to_storage(self.zero)
             self._rebuild_processed_buffers_locked()
             self.frame_ready_event.set()
 
@@ -131,7 +240,7 @@ class Andor:
 
     def _compute_latest_filtered_locked(self):
         if len(self.acquisitions) == 0:
-            return self._empty_storage_frame()
+            return self._empty_raw_storage_frame()
 
         if not self.lp_filter_enabled:
             return np.array(self.acquisitions[-1], copy=True)
@@ -147,11 +256,11 @@ class Andor:
             previous_input = current_input
             previous_output = filtered_output
 
-        return self._coerce_frame_to_storage(filtered_output)
+        return self._coerce_raw_frame_to_storage(filtered_output)
 
     def _compute_difference_frame(self, frame):
         difference_frame = np.asarray(frame, dtype=np.float32) - np.asarray(self.zero, dtype=np.float32)
-        return self._coerce_frame_to_storage(difference_frame)
+        return self._coerce_signed_frame_to_storage(difference_frame)
 
     def _compute_contrast_frame(self, frame):
         frame_float = np.asarray(frame, dtype=np.float32)
@@ -165,16 +274,16 @@ class Andor:
             where=np.abs(zero_float) > 0.0,
         )
         contrast_frame *= 100.0
-        return self._coerce_frame_to_storage(contrast_frame)
+        return self._coerce_signed_frame_to_storage(contrast_frame)
 
     def _rebuild_processed_buffers_locked(self):
         if len(self.acquisitions) == 0:
-            self.filtered = self._new_frame_buffer()
-            self.latest_filtered = self._empty_storage_frame()
-            self.difference = self._new_frame_buffer()
-            self.contrast = self._new_frame_buffer()
-            self.latest_difference = self._empty_storage_frame()
-            self.latest_contrast = self._empty_storage_frame()
+            self.filtered = self._new_raw_frame_buffer()
+            self.latest_filtered = self._empty_raw_storage_frame()
+            self.difference = self._new_signed_frame_buffer()
+            self.contrast = self._new_signed_frame_buffer()
+            self.latest_difference = self._empty_signed_storage_frame()
+            self.latest_contrast = self._empty_signed_storage_frame()
             return
 
         if self.lp_filter_enabled:
@@ -186,18 +295,18 @@ class Andor:
             for frame in self.acquisitions:
                 current_input = np.asarray(frame, dtype=np.float32)
                 filtered_output = self._apply_lp_filter_step(current_input, previous_input, previous_output, coefficients)
-                filtered_frames.append(np.array(self._coerce_frame_to_storage(filtered_output), copy=True))
+                filtered_frames.append(np.array(self._coerce_raw_frame_to_storage(filtered_output), copy=True))
                 previous_input = current_input
                 previous_output = filtered_output
 
-            self.filtered = self._new_frame_buffer(filtered_frames)
+            self.filtered = self._new_raw_frame_buffer(filtered_frames)
         else:
-            self.filtered = self._new_frame_buffer([np.array(frame, copy=True) for frame in self.acquisitions])
+            self.filtered = self._new_raw_frame_buffer([np.array(frame, copy=True) for frame in self.acquisitions])
 
         self.latest_filtered = np.array(self.filtered[-1], copy=True)
         processing_frames = self.filtered if self.lp_filter_enabled else self.acquisitions
-        self.difference = self._new_frame_buffer([self._compute_difference_frame(frame) for frame in processing_frames])
-        self.contrast = self._new_frame_buffer([self._compute_contrast_frame(frame) for frame in processing_frames])
+        self.difference = self._new_signed_frame_buffer([self._compute_difference_frame(frame) for frame in processing_frames])
+        self.contrast = self._new_signed_frame_buffer([self._compute_contrast_frame(frame) for frame in processing_frames])
         self.latest_frame = np.array(self.acquisitions[-1], copy=True)
         self.latest_difference = np.array(self.difference[-1], copy=True)
         self.latest_contrast = np.array(self.contrast[-1], copy=True)
@@ -207,7 +316,7 @@ class Andor:
             return
 
         with self.frame_lock:
-            self.zero = np.array(self._coerce_frame_to_storage(frame), copy=True)
+            self.zero = np.array(self._coerce_raw_frame_to_storage(frame), copy=True)
             self.zero_version += 1
             self._rebuild_processed_buffers_locked()
             self.frame_ready_event.set()
@@ -247,19 +356,19 @@ class Andor:
         zero_shape_changed = tuple(np.shape(self.zero)) != tuple(frame_shape)
         self.frame_shape = frame_shape
         with self.frame_lock:
-            self.acquisitions = self._new_frame_buffer()
-            self.filtered = self._new_frame_buffer()
-            self.difference = self._new_frame_buffer()
-            self.contrast = self._new_frame_buffer()
+            self.acquisitions = self._new_raw_frame_buffer()
+            self.filtered = self._new_raw_frame_buffer()
+            self.difference = self._new_signed_frame_buffer()
+            self.contrast = self._new_signed_frame_buffer()
             self.timestamps = self._new_scalar_buffer(np.float64)
             self.meanBuffer = self._new_scalar_buffer(np.float64)
             if zero_shape_changed:
-                self.zero = np.zeros(frame_shape, dtype=self.storage_dtype)
+                self.zero = np.zeros(frame_shape, dtype=self.raw_storage_dtype)
                 self.zero_version = 0
-            self.latest_frame = np.zeros(frame_shape, dtype=self.storage_dtype)
-            self.latest_filtered = np.zeros(frame_shape, dtype=self.storage_dtype)
-            self.latest_difference = np.zeros(frame_shape, dtype=self.storage_dtype)
-            self.latest_contrast = np.zeros(frame_shape, dtype=self.storage_dtype)
+            self.latest_frame = np.zeros(frame_shape, dtype=self.raw_storage_dtype)
+            self.latest_filtered = np.zeros(frame_shape, dtype=self.raw_storage_dtype)
+            self.latest_difference = np.zeros(frame_shape, dtype=self.signed_storage_dtype)
+            self.latest_contrast = np.zeros(frame_shape, dtype=self.signed_storage_dtype)
             if reset_frame_index:
                 self.frameIdx = 0
             self.frame_ready_event.clear()
@@ -325,7 +434,7 @@ class Andor:
                 # Update the latest frame in a thread-safe manner
                 with self.frame_lock:
                     raw_frame = np.asarray(acq.image, dtype=self.sensor_dtype)
-                    storage_frame = np.array(self._coerce_frame_to_storage(raw_frame), copy=True)
+                    storage_frame = np.array(self._coerce_raw_frame_to_storage(raw_frame), copy=True)
 
                     # Store the acquisition and timestamp in the buffers
                     self.acquisitions.append(storage_frame)
@@ -343,7 +452,7 @@ class Andor:
                         coefficients = self._get_lp_filter_coefficients_locked()
                         current_input = np.asarray(raw_frame, dtype=np.float32)
                         filtered_output = self._apply_lp_filter_step(current_input, previous_input, previous_output, coefficients)
-                        filtered_frame = np.array(self._coerce_frame_to_storage(filtered_output), copy=True)
+                        filtered_frame = np.array(self._coerce_raw_frame_to_storage(filtered_output), copy=True)
                         self.filtered.append(filtered_frame)
                         self.latest_filtered = np.array(filtered_frame, copy=True)
                         previous_input = current_input

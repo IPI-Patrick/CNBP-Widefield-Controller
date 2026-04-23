@@ -27,21 +27,23 @@ class FeedControlsWindow:
                 callback=self.parent._on_autoscale_changed,
             )
 
-            self.scale_min_input_id = dpg.add_slider_float(
-                label="Min Z",
+            self.scale_min_input_id = dpg.add_input_int(
+                label="Min Z (%)",
                 width=-120,
-                default_value=self.parent.scale_min,
+                default_value=self.parent.get_scale_min_percent(),
                 min_value=0.0,
-                max_value=float(self.parent.display_max),
+                max_value=100,
+                step=1,
                 callback=self.parent._on_scale_limits_changed,
             )
 
-            self.scale_max_input_id = dpg.add_slider_float(
-                label="Max Z",
+            self.scale_max_input_id = dpg.add_input_int(
+                label="Max Z (%)",
                 width=-120,
-                default_value=self.parent.scale_max,
+                default_value=self.parent.get_scale_max_percent(),
                 min_value=0.0,
-                max_value=float(self.parent.display_max),
+                max_value=100,
+                step=1,
                 callback=self.parent._on_scale_limits_changed,
             )
 

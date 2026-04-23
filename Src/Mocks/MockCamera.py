@@ -21,6 +21,7 @@ class MockCamera:
     options_CycleMode       = ["Continuous", "Single"]
     options_TriggerMode     = ["Internal", "Software", "External"]
     options_AOIBinning      = ["1x1", "2x2", "4x4"]
+    available_options_TemperatureControl = ["-25", "-20", "-15", "-10", "-5", "0", "5", "10"]
     AOIBinning              = "1x1"
     AOILeft                 = 1
     AOITop                  = 1
@@ -32,6 +33,33 @@ class MockCamera:
 
     def __init__(self):
         self._mock_blob_state = None
+        self._sensor_cooling = False
+        self._temperature_control = "-20"
+
+    @property
+    def SensorCooling(self):
+        return self._sensor_cooling
+
+    @SensorCooling.setter
+    def SensorCooling(self, enabled):
+        self._sensor_cooling = bool(enabled)
+
+    @property
+    def SensorTemperature(self):
+        if self._sensor_cooling:
+            return float(self._temperature_control)
+        return 24.0
+
+    @property
+    def TemperatureControl(self):
+        return self._temperature_control
+
+    @TemperatureControl.setter
+    def TemperatureControl(self, value):
+        requested_value = float(value)
+        options = [float(option) for option in self.available_options_TemperatureControl]
+        nearest_value = min(options, key=lambda option: abs(option - requested_value))
+        self._temperature_control = str(int(nearest_value) if nearest_value.is_integer() else nearest_value)
 
     @property
     def ImageSizeBytes(self):
