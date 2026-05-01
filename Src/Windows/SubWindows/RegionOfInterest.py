@@ -1,3 +1,4 @@
+from collections import deque
 import threading
 import time
 
@@ -26,8 +27,6 @@ class RegionOfInterest:
         self.pending_plot_data = ([], [])
         self.pending_version = 0
         self.applied_version = -1
-        self.series_x = []
-        self.series_y = []
         self.last_frame_idx = -1
         self.trace_min_value = 0.0
         self.trace_max_value = 0.0
@@ -65,8 +64,6 @@ class RegionOfInterest:
     def request_trace_rebuild(self, clear_existing=False):
         if clear_existing:
             with self.data_lock:
-                self.series_x = []
-                self.series_y = []
                 self.last_frame_idx = -1
                 self.pending_plot_data = ([], [])
                 self.trace_min_value = 0.0
@@ -80,47 +77,94 @@ class RegionOfInterest:
     def close(self):
         self.stop_event.set()
 
-    def _build_history_trace(self, bounds, acquisitions, current_frame_idx):
+    def _normalize_plot_timestamps(self, timestamps):
+        if not timestamps:
+            return []
+
+        start_timestamp = float(timestamps[0])
+        return [float(timestamp) - start_timestamp for timestamp in timestamps]
+
+    def _build_history_trace(self, bounds, acquisitions, timestamps, current_frame_idx):
         start_frame_idx = max(0, current_frame_idx - len(acquisitions))
         series = []
 
-        for index, frame in enumerate(acquisitions, start=start_frame_idx + 1):
+        for local_index, frame in enumerate(acquisitions):
+            frame_number = start_frame_idx + local_index + 1
             crop = self.parent.extract_roi_frame(frame, bounds)
             if crop is None or crop.size == 0:
                 continue
-            series.append((index, self.rois_window.compute_trace_value(crop)))
+            if timestamps and len(timestamps) > local_index:
+                x_value = float(timestamps[local_index])
+            else:
+                x_value = float(frame_number)
+            series.append((x_value, self.rois_window.compute_trace_value(crop)))
 
         x_axis = [point[0] for point in series][-self.max_points:]
         y_axis = [point[1] for point in series][-self.max_points:]
         return x_axis, y_axis
 
-    def _queue_update(self, crop, frame_idx, x_axis, y_axis, trace_min_value, trace_max_value):
+    def _queue_update(self, crop, frame_idx, timestamps, y_axis, trace_min_value, trace_max_value):
+        plot_x_axis = self._normalize_plot_timestamps(timestamps)
         with self.data_lock:
-            self.series_x = list(x_axis)
-            self.series_y = list(y_axis)
             self.last_frame_idx = frame_idx
             self.trace_min_value = float(trace_min_value)
             self.trace_max_value = float(trace_max_value)
             if crop is not None and crop.size > 0:
                 self.pending_image_shape = crop.shape
                 self.pending_image_rgba = self._frame_to_rgba(crop)
-            self.pending_plot_data = (list(x_axis), list(y_axis))
+            self.pending_plot_data = (plot_x_axis, list(y_axis))
             self.pending_version += 1
+
+    def _append_trace_points_from_history(self, bounds, acquisitions, timestamps, current_frame_idx, processed_frame_idx, x_axis, y_axis, trace_min_value, trace_max_value):
+        if not acquisitions:
+            return x_axis, y_axis, trace_min_value, trace_max_value, None
+
+        start_frame_idx = max(0, int(current_frame_idx) - len(acquisitions))
+        first_available_frame_number = start_frame_idx + 1
+        next_frame_number = max(int(processed_frame_idx) + 1, first_available_frame_number)
+        start_offset = max(0, next_frame_number - first_available_frame_number)
+        latest_valid_crop = None
+
+        for local_index, frame in enumerate(acquisitions[start_offset:], start=start_offset):
+            frame_number = start_frame_idx + local_index + 1
+            crop = self.parent.extract_roi_frame(frame, bounds)
+            if crop is None or crop.size == 0:
+                continue
+            latest_valid_crop = crop
+            x_value = float(timestamps[local_index]) if timestamps and len(timestamps) > local_index else float(frame_number)
+            y_value = self.rois_window.compute_trace_value(crop)
+            x_axis.append(x_value)
+            y_axis.append(y_value)
+            if len(y_axis) == 1:
+                trace_min_value = y_value
+                trace_max_value = y_value
+            else:
+                trace_min_value = min(trace_min_value, y_value)
+                trace_max_value = max(trace_max_value, y_value)
+
+        return x_axis, y_axis, trace_min_value, trace_max_value, latest_valid_crop
 
     def _worker_loop(self):
         processed_frame_idx = -1
+        x_axis = deque(maxlen=self.max_points)
+        y_axis = deque(maxlen=self.max_points)
+        trace_min_value = 0.0
+        trace_max_value = 0.0
 
         while not self.stop_event.is_set():
             rebuild_requested = self.rebuild_event.is_set()
-            latest_frame, current_frame_idx, has_acquisitions, acquisitions = self.parent.get_analysis_snapshot(
-                include_history=rebuild_requested
+            latest_frame, current_frame_idx, has_acquisitions, acquisitions, timestamps = self.parent.get_analysis_snapshot(
+                include_history=rebuild_requested,
+                include_timestamps=True,
             )
 
             bounds = self.get_bounds()
 
             if rebuild_requested:
                 self.rebuild_event.clear()
-                x_axis, y_axis = self._build_history_trace(bounds, acquisitions or [], current_frame_idx)
+                rebuilt_x_axis, rebuilt_y_axis = self._build_history_trace(bounds, acquisitions or [], timestamps or [], current_frame_idx)
+                x_axis = deque(rebuilt_x_axis, maxlen=self.max_points)
+                y_axis = deque(rebuilt_y_axis, maxlen=self.max_points)
                 trace_min_value = min(y_axis) if y_axis else 0.0
                 trace_max_value = max(y_axis) if y_axis else 0.0
                 crop = self.parent.extract_roi_frame(latest_frame, bounds)
@@ -130,21 +174,25 @@ class RegionOfInterest:
                 processed_frame_idx = current_frame_idx
 
             elif has_acquisitions and latest_frame is not None and current_frame_idx != processed_frame_idx:
-                crop = self.parent.extract_roi_frame(latest_frame, bounds)
-                if crop is not None and crop.size > 0:
-                    with self.data_lock:
-                        x_axis = list(self.series_x)
-                        y_axis = list(self.series_y)
-                        trace_min_value = float(self.trace_min_value)
-                        trace_max_value = float(self.trace_max_value)
-                    latest_value = self.rois_window.compute_trace_value(crop)
-                    x_axis.append(current_frame_idx)
-                    y_axis.append(latest_value)
-                    x_axis = x_axis[-self.max_points:]
-                    y_axis = y_axis[-self.max_points:]
-                    trace_min_value = min(trace_min_value, latest_value)
-                    trace_max_value = max(trace_max_value, latest_value)
-                    self._queue_update(crop, current_frame_idx, x_axis, y_axis, trace_min_value, trace_max_value)
+                latest_frame, current_frame_idx, has_acquisitions, acquisitions, timestamps = self.parent.get_analysis_snapshot(
+                    include_history=True,
+                    include_timestamps=True,
+                    history_start_frame_idx=processed_frame_idx,
+                )
+                if has_acquisitions:
+                    x_axis, y_axis, trace_min_value, trace_max_value, crop = self._append_trace_points_from_history(
+                        bounds,
+                        acquisitions or [],
+                        timestamps or [],
+                        current_frame_idx,
+                        processed_frame_idx,
+                        x_axis,
+                        y_axis,
+                        trace_min_value,
+                        trace_max_value,
+                    )
+                    if crop is not None and crop.size > 0:
+                        self._queue_update(crop, current_frame_idx, x_axis, y_axis, trace_min_value, trace_max_value)
                     processed_frame_idx = current_frame_idx
 
             time.sleep(0.01)

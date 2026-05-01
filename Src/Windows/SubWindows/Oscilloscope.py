@@ -1,6 +1,7 @@
 import os
 
 import dearpygui.dearpygui as dpg
+import numpy as np
 
 from Utils.state_persistence import apply_window_state, capture_window_state, load_state_file, save_state_file
 from Utils.themes import no_padding_theme
@@ -8,8 +9,12 @@ from Utils.themes import no_padding_theme
 
 class OscilloscopeWindow:
 
-	def __init__(self, get_traces, *, width=880, height=420, pos=(625, 825)):
-		self._get_traces = get_traces
+	def __init__(self, trace_getters, *, title="Oscilloscope", channel_headers=None, width=880, height=420, pos=(625, 825), state_name=None, tag=None):
+		self._title = str(title)
+		self._trace_getters = list(trace_getters)
+		self._channel_headers = list(channel_headers or [])
+		self._state_name = str(state_name or type(self).__name__)
+		self._tag = str(tag or f"#{self._state_name}")
 		self._trace_items = {}
 		self._trace_layout = ()
 		self._subplots_id = None
@@ -27,8 +32,8 @@ class OscilloscopeWindow:
 			self.channel_label_font = dpg.add_font(label_font_path, 18)
 
 		with dpg.window(
-			label="Oscilloscope",
-			tag="#Oscilloscope",
+			label=self._title,
+			tag=self._tag,
 			width=width,
 			height=height,
 			pos=pos,
@@ -42,13 +47,63 @@ class OscilloscopeWindow:
 			with dpg.child_window(border=False, autosize_x=True, autosize_y=True):
 				self.content_container_id = dpg.last_item()
 
-		with dpg.handler_registry(tag="OscilloscopeMouseHandlers"):
+		handler_tag = f"{self._state_name}_MouseHandlers"
+		with dpg.handler_registry(tag=handler_tag):
 			dpg.add_mouse_down_handler(button=dpg.mvMouseButton_Middle, callback=self._on_middle_mouse_down)
 			dpg.add_mouse_move_handler(callback=self._on_mouse_move)
 			dpg.add_mouse_release_handler(button=dpg.mvMouseButton_Middle, callback=self._on_mouse_release)
 			dpg.add_mouse_wheel_handler(callback=self._on_mouse_wheel)
 
 		self._rebuild_layout([])
+
+	def _default_trace_color(self, index):
+		palette = (
+			(86, 180, 233, 255),
+			(230, 159, 0, 255),
+			(0, 158, 115, 255),
+			(204, 121, 167, 255),
+			(213, 94, 0, 255),
+			(0, 114, 178, 255),
+			(240, 228, 66, 255),
+			(128, 128, 128, 255),
+		)
+		return list(palette[index % len(palette)])
+
+	def _normalize_trace_payload(self, payload, index):
+		if payload is None:
+			payload = {}
+
+		panel_id = str(payload.get("panel_id", index)) 
+		label = payload.get(
+			"label",
+			self._channel_headers[index] if index < len(self._channel_headers) else f"Channel {index + 1}",
+		)
+		x_values = np.asarray(payload.get("x_values", []), dtype=np.float64)
+		y_values = np.asarray(payload.get("y_values", []), dtype=np.float32)
+		color = list(payload.get("color", self._default_trace_color(index)))
+		abs_last_x = float(payload.get("abs_last_x", x_values[-1] if x_values.size > 0 else 0.0))
+		return {
+			"panel_id": panel_id,
+			"label": str(label),
+			"x_values": x_values,
+			"y_values": y_values,
+			"color": color,
+			"abs_last_x": abs_last_x,
+		}
+
+	def is_visible(self):
+		return dpg.does_item_exist(self.window_id) and dpg.is_item_shown(self.window_id)
+
+	def _get_traces(self):
+		traces = []
+		for index, getter in enumerate(self._trace_getters):
+			if getter is None:
+				continue
+			payload = getter()
+			if payload is None:
+				continue
+			traces.append(self._normalize_trace_payload(payload, index))
+		return traces
 
 	def _apply_y_limits(self):
 		for trace_items in self._trace_items.values():
@@ -152,6 +207,7 @@ class OscilloscopeWindow:
 						"theme_id": None,
 						"color": None,
 						"label_text": trace["label"],
+						"data_signature": None,
 					}
 					self._apply_trace_color(self._trace_items[trace["panel_id"]], trace["color"])
 
@@ -266,7 +322,10 @@ class OscilloscopeWindow:
 		self._apply_y_limits()
 
 	def render(self):
-		traces = list(self._get_traces())
+		if not self.is_visible():
+			return
+
+		traces = self._get_traces()
 		active_panel_ids = {trace["panel_id"] for trace in traces}
 		self._remove_trace_items(active_panel_ids)
 		trace_layout = tuple(trace["panel_id"] for trace in traces)
@@ -278,14 +337,25 @@ class OscilloscopeWindow:
 
 		for trace in traces:
 			trace_items = self._ensure_trace_items(trace)
-			x_values = list(trace["x_values"])
-			y_values = list(trace["y_values"])
-			dpg.set_value(trace_items["line_series_id"], [x_values, y_values])
+			x_values = trace["x_values"]
+			y_values = trace["y_values"]
+			point_count = int(x_values.size)
+			if point_count > 0:
+				data_signature = (
+					point_count,
+					float(trace["abs_last_x"]),
+					float(y_values[-1]),
+				)
+			else:
+				data_signature = (0,)
+			if data_signature != trace_items.get("data_signature"):
+				dpg.set_value(trace_items["line_series_id"], [x_values.tolist(), y_values.tolist()])
+				trace_items["data_signature"] = data_signature
 			self._apply_trace_color(trace_items, trace["color"])
 
-			if x_values:
-				current_min = min(x_values)
-				current_max = max(x_values)
+			if point_count > 0:
+				current_min = float(x_values[0])
+				current_max = float(x_values[-1])
 				x_min = current_min if x_min is None else min(x_min, current_min)
 				x_max = current_max if x_max is None else max(x_max, current_max)
 
@@ -321,7 +391,7 @@ class OscilloscopeWindow:
 
 	def SaveState(self):
 		save_state_file(
-			type(self).__name__,
+			self._state_name,
 			{
 				"window": capture_window_state(self.window_id),
 				"y_half_range_volts": float(self._y_half_range_volts),
@@ -330,7 +400,7 @@ class OscilloscopeWindow:
 		)
 
 	def LoadState(self):
-		state = load_state_file(type(self).__name__)
+		state = load_state_file(self._state_name)
 		if not state:
 			return
 

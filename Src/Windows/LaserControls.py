@@ -234,7 +234,6 @@ class LaserControls:
                 self._connect_pm1000_selected_device()
         except Exception:
             self.pm1000_connected = False
-        self._sync_pm1000_ui()
 
     def _pm1000_refresh_devices(self, sender=None, app_data=None, user_data=None):
         try:
@@ -258,7 +257,6 @@ class LaserControls:
                 self._connect_pm1000_selected_device()
             except Exception:
                 self.pm1000_connected = False
-        self._sync_pm1000_ui()
 
     def _sync_pm1000_ui(self):
         connected = self.pm1000_connected
@@ -271,24 +269,20 @@ class LaserControls:
 
     def _on_port_selected(self, sender, app_data, user_data):
         self.laser.COMPort = app_data
-        self._sync_ui_with_driver()
 
     def _refresh_ports(self, sender=None, app_data=None, user_data=None):
         ports = self.laser.refresh_ports()
         dpg.configure_item(self.laser_com_port_id, items=ports or ["Not Found"])
         dpg.set_value(self.laser_com_port_id, self.laser.COMPort if self.laser.COMPort else "Not Found")
-        self._sync_ui_with_driver()
 
     def _toggle_connection(self, sender=None, app_data=None, user_data=None):
         if self.laser.is_connected():
             self.laser.disconnect()
         else:
             self.laser.connect(dpg.get_value(self.laser_com_port_id))
-        self._sync_ui_with_driver()
 
     def _toggle_emission(self, sender=None, app_data=None, user_data=None):
         self.laser.set_laser_state(not self.laser.get_laser_state())
-        self._sync_ui_with_driver()
 
     def _sync_ui_with_driver(self):
         status = self.laser.get_status()
@@ -361,12 +355,12 @@ class LaserControls:
 
     def render(self):
         self._sync_ui_with_driver()
+        self._sync_pm1000_ui()
         self._update_power_history(self.laser.get_laser_power())
         self._update_pm1000_history()
 
     def request_laser_power(self, sender, app_data, user_data):
         self.laser.set_laser_power(app_data)
-        self._sync_ui_with_driver()
 
     def SaveState(self):
         save_state_file(

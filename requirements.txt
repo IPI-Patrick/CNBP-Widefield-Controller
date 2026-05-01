@@ -3,6 +3,9 @@ dearpygui==2.2.0
 numpy==2.2.6
 pyserial==3.5
 
+# Dev tools
+py-mon
+
 # Bundled hardware SDK wrappers
 ./src/APIs/pyAndorSDK3
 ./src/APIs/picosdk

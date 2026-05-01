@@ -84,20 +84,38 @@ class TypedDeque:
         self._length = 0
         self._buffer.fill(0)
 
-    def to_array(self, copy=True):
+    def range_array(self, start=0, count=None, copy=True):
         if self._length == 0:
             return np.zeros((0,) + self.shape, dtype=self.dtype)
 
-        if self._start + self._length <= self.maxlen:
-            view = self._buffer[self._start:self._start + self._length]
+        start = max(0, int(start))
+        if start >= self._length:
+            return np.zeros((0,) + self.shape, dtype=self.dtype)
+
+        if count is None:
+            count = self._length - start
+        count = max(0, min(int(count), self._length - start))
+        if count == 0:
+            return np.zeros((0,) + self.shape, dtype=self.dtype)
+
+        buffer_start = (self._start + start) % self.maxlen
+        if buffer_start + count <= self.maxlen:
+            view = self._buffer[buffer_start:buffer_start + count]
         else:
-            first = self._buffer[self._start:]
-            second = self._buffer[:(self._start + self._length) % self.maxlen]
+            first = self._buffer[buffer_start:]
+            second = self._buffer[:(buffer_start + count) % self.maxlen]
             view = np.concatenate((first, second), axis=0)
 
         if copy:
             return np.array(view, copy=True)
         return view
+
+    def tail_array(self, count, copy=True):
+        count = max(0, min(int(count), self._length))
+        return self.range_array(self._length - count, count, copy=copy)
+
+    def to_array(self, copy=True):
+        return self.range_array(0, None, copy=copy)
 
     def copy(self):
         return TypedDeque(self, maxlen=self.maxlen, dtype=self.dtype, shape=self.shape)

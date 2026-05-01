@@ -2,6 +2,7 @@
 import time
 import numpy as np
 import threading
+from collections import deque
 from pyAndorSDK3 import AndorSDK3
 from Mocks.MockCamera import MockCamera 
 from Utils.StorageDTypes import (
@@ -37,6 +38,7 @@ class Andor:
         self.frame_ready_event  = threading.Event()        
         self.stop_capture_event = threading.Event()
         self.default_max_acquisitions = int(type(self).max_acquisitions)
+        self._capture_fps_times = deque(maxlen=60)
 
         # Set up the camera
         self.sdk3               = AndorSDK3()
@@ -76,6 +78,12 @@ class Andor:
         self.lp_filter_enabled  = False
         self.lp_filter_cutoff_hz = min(10.0, max(0.5, self.get_frame_rate() * 0.1))
         self.zero_version       = 0
+        self.scope_frame_mean_channels = ()
+        self.scope_frame_mean_capacity = 0
+        self.scope_frame_mean_buffers = {}
+        self.scope_frame_mean_source = None
+        self.scope_frame_mean_calculate_mean = True
+        self.scope_frame_mean_last_scope_sample_count = 0
 
     def _new_raw_frame_buffer(self, iterable=None):
         return TypedDeque(iterable, maxlen=self.max_acquisitions, dtype=self.raw_storage_dtype, shape=self.frame_shape)
@@ -85,6 +93,12 @@ class Andor:
 
     def _new_scalar_buffer(self, dtype, iterable=None):
         return TypedDeque(iterable, maxlen=self.max_acquisitions, dtype=dtype, shape=())
+
+    def _new_scope_frame_mean_buffers(self):
+        return {
+            channel_name: TypedDeque(maxlen=self.scope_frame_mean_capacity, dtype=np.float16, shape=())
+            for channel_name in self.scope_frame_mean_channels
+        }
 
     def _coerce_raw_frame_to_storage(self, frame):
         return quantize_to_raw_storage_dtype(frame, self.storage_dtype_name, source_max_value=self.frame_max_value)
@@ -362,6 +376,8 @@ class Andor:
             self.contrast = self._new_signed_frame_buffer()
             self.timestamps = self._new_scalar_buffer(np.float64)
             self.meanBuffer = self._new_scalar_buffer(np.float64)
+            self.scope_frame_mean_buffers = self._new_scope_frame_mean_buffers()
+            self.scope_frame_mean_last_scope_sample_count = 0
             if zero_shape_changed:
                 self.zero = np.zeros(frame_shape, dtype=self.raw_storage_dtype)
                 self.zero_version = 0
@@ -371,13 +387,144 @@ class Andor:
             self.latest_contrast = np.zeros(frame_shape, dtype=self.signed_storage_dtype)
             if reset_frame_index:
                 self.frameIdx = 0
+            self._capture_fps_times.clear()
             self.frame_ready_event.clear()
+
+    def get_capture_loop_fps(self):
+        with self.frame_lock:
+            if len(self._capture_fps_times) < 2:
+                return 0.0
+            elapsed = float(self._capture_fps_times[-1] - self._capture_fps_times[0])
+            if elapsed <= 0.0:
+                return 0.0
+            return float((len(self._capture_fps_times) - 1) / elapsed)
 
     def set_preview_max_frames(self, frame_count):
         frame_count = max(1, int(frame_count))
         self.default_max_acquisitions = frame_count
         if not self.is_capturing:
             self.max_acquisitions = frame_count
+
+    def configure_scope_frame_mean_buffers(self, channel_names, frame_count):
+        normalized_channels = tuple(
+            sorted(
+                {
+                    str(channel_name).upper()
+                    for channel_name in channel_names
+                    if str(channel_name).strip()
+                }
+            )
+        )
+        frame_count = max(0, int(frame_count))
+
+        with self.frame_lock:
+            self.scope_frame_mean_channels = normalized_channels
+            self.scope_frame_mean_capacity = frame_count
+            self.scope_frame_mean_buffers = self._new_scope_frame_mean_buffers()
+            self.scope_frame_mean_last_scope_sample_count = 0
+
+    def set_scope_frame_mean_source(self, scope_source, *, calculate_mean=True):
+        with self.frame_lock:
+            self.scope_frame_mean_source = scope_source
+            self.scope_frame_mean_calculate_mean = bool(calculate_mean)
+            self.scope_frame_mean_last_scope_sample_count = 0
+
+    def disable_scope_frame_mean_buffers(self):
+        with self.frame_lock:
+            self.scope_frame_mean_channels = ()
+            self.scope_frame_mean_capacity = 0
+            self.scope_frame_mean_buffers = {}
+            self.scope_frame_mean_source = None
+            self.scope_frame_mean_last_scope_sample_count = 0
+
+    def append_scope_frame_mean_values(self, channel_values):
+        with self.frame_lock:
+            for channel_name in self.scope_frame_mean_channels:
+                value = float(channel_values.get(channel_name, np.nan))
+                self.scope_frame_mean_buffers[channel_name].append(np.float16(value))
+
+    def _append_scope_frame_values_from_source_locked(self):
+        if not self.scope_frame_mean_channels or self.scope_frame_mean_source is None:
+            return
+
+        try:
+            scope_snapshot = self.scope_frame_mean_source.get_buffer_snapshot(channel_names=self.scope_frame_mean_channels)
+        except Exception:
+            return
+
+        scope_timestamps = np.asarray(scope_snapshot.get("timestamps", []), dtype=np.float64)
+        total_samples_received = int(scope_snapshot.get("total_samples_received", 0))
+        if scope_timestamps.size <= 0 or total_samples_received <= 0:
+            for channel_name in self.scope_frame_mean_channels:
+                self.scope_frame_mean_buffers[channel_name].append(np.float16(np.nan))
+            return
+
+        oldest_retained_sample_index = max(0, total_samples_received - int(scope_timestamps.size))
+        start_sample_index = max(int(self.scope_frame_mean_last_scope_sample_count), oldest_retained_sample_index)
+        start_offset = max(0, start_sample_index - oldest_retained_sample_index)
+        self.scope_frame_mean_last_scope_sample_count = total_samples_received
+
+        frame_values = {}
+        for channel_name in self.scope_frame_mean_channels:
+            raw_samples = np.asarray(scope_snapshot.get("channels", {}).get(channel_name, []), dtype=np.float32)
+            if raw_samples.size <= 0:
+                frame_values[channel_name] = np.nan
+                continue
+
+            if self.scope_frame_mean_calculate_mean:
+                recent_samples = raw_samples[start_offset:]
+                if recent_samples.size <= 0:
+                    recent_samples = raw_samples[-1:]
+                voltage_samples = self.scope_frame_mean_source.convert_samples_to_volts(channel_name, recent_samples)
+                frame_values[channel_name] = float(np.mean(voltage_samples, dtype=np.float64))
+            else:
+                latest_sample = raw_samples[-1:]
+                voltage_samples = self.scope_frame_mean_source.convert_samples_to_volts(channel_name, latest_sample)
+                frame_values[channel_name] = float(voltage_samples[-1])
+
+        for channel_name in self.scope_frame_mean_channels:
+            value = float(frame_values.get(channel_name, np.nan))
+            self.scope_frame_mean_buffers[channel_name].append(np.float16(value))
+
+    def get_scope_frame_mean_channels(self):
+        with self.frame_lock:
+            return tuple(self.scope_frame_mean_channels)
+
+    def get_scope_frame_mean_count(self):
+        with self.frame_lock:
+            if not self.scope_frame_mean_buffers:
+                return 0
+            first_channel = next(iter(self.scope_frame_mean_buffers.values()))
+            return len(first_channel)
+
+    def get_scope_frame_mean_snapshot(self, *, start_index=0):
+        with self.frame_lock:
+            if not self.scope_frame_mean_buffers:
+                scope_frame_mean_count = 0
+            else:
+                first_channel = next(iter(self.scope_frame_mean_buffers.values()))
+                scope_frame_mean_count = len(first_channel)
+
+            start_index = max(0, min(int(start_index), scope_frame_mean_count))
+            sample_count = max(0, scope_frame_mean_count - start_index)
+
+            if scope_frame_mean_count > 0 and len(self.timestamps) >= scope_frame_mean_count:
+                timestamp_start_index = max(0, len(self.timestamps) - scope_frame_mean_count + start_index)
+                timestamps = self.timestamps.range_array(timestamp_start_index, sample_count, copy=True)
+            else:
+                timestamps = self.timestamps.range_array(start_index, sample_count, copy=True)
+
+            return {
+                "timestamps": timestamps,
+                "scope_frame_mean_count": int(scope_frame_mean_count),
+                "scope_frame_mean_start_index": int(start_index),
+                "scope_frame_mean_channels": list(self.scope_frame_mean_channels),
+                "scope_frame_mean_capacity": int(self.scope_frame_mean_capacity),
+                "scope_frame_mean_buffers": {
+                    channel_name: buffer.range_array(start_index, sample_count, copy=True)
+                    for channel_name, buffer in self.scope_frame_mean_buffers.items()
+                },
+            }
 
     def get_snapshot(self):
         with self.frame_lock:
@@ -395,6 +542,12 @@ class Andor:
                 "storage_dtype": self.storage_dtype_name,
                 "lp_filter_enabled": bool(self.lp_filter_enabled),
                 "lp_filter_cutoff_hz": float(self.lp_filter_cutoff_hz),
+                "scope_frame_mean_channels": list(self.scope_frame_mean_channels),
+                "scope_frame_mean_capacity": int(self.scope_frame_mean_capacity),
+                "scope_frame_mean_buffers": {
+                    channel_name: np.asarray(buffer, dtype=np.float16)
+                    for channel_name, buffer in self.scope_frame_mean_buffers.items()
+                },
             }
     
 
@@ -408,6 +561,8 @@ class Andor:
         soft_trigger                = cam.TriggerMode == "Software"
         cam.CycleMode               = "Continuous"
         buffer_count                = 10
+        # last_frame_delivery_time    = None
+        # last_frame_ready_time       = None
 
         self.clear_buffers(reset_frame_index=True)
 
@@ -421,8 +576,8 @@ class Andor:
             previous_input = None
             previous_output = None
             lp_filter_was_enabled = False
-            while True:
-                
+            while True:            
+
                 # If using software trigger, trigger it
                 if soft_trigger:
                     cam.SoftwareTrigger()
@@ -430,6 +585,20 @@ class Andor:
                 # Wait until the next frame is ready in the buffer
                 acq = cam.wait_buffer(timeout)
 
+                # current_delivery_time = time.time()
+                # current_ready_time = getattr(acq, "frame_ready_timestamp", None)
+                # if current_ready_time is not None and last_frame_ready_time is not None:
+                #     print(
+                #         "Time:",
+                #         float(current_ready_time) - float(last_frame_ready_time),
+                #         "| Delivery:",
+                #         current_delivery_time - (last_frame_delivery_time or current_delivery_time),
+                #     )
+                # else:
+                #     print("Time: ", current_delivery_time - (last_frame_delivery_time or current_delivery_time))
+                # last_frame_delivery_time = current_delivery_time
+                # if current_ready_time is not None:
+                    # last_frame_ready_time = float(current_ready_time)
 
                 # Update the latest frame in a thread-safe manner
                 with self.frame_lock:
@@ -437,8 +606,10 @@ class Andor:
                     storage_frame = np.array(self._coerce_raw_frame_to_storage(raw_frame), copy=True)
 
                     # Store the acquisition and timestamp in the buffers
+                    frame_timestamp = float(getattr(acq, "frame_ready_timestamp", time.time()))
                     self.acquisitions.append(storage_frame)
-                    self.timestamps.append(time.time())
+                    self.timestamps.append(frame_timestamp)
+                    self._capture_fps_times.append(time.time())
                     self.latest_frame = np.array(storage_frame, copy=True)
 
                     lp_filter_enabled = bool(self.lp_filter_enabled)
@@ -471,6 +642,7 @@ class Andor:
 
                     # calculate the mean intensity and update the mean buffer
                     self.meanBuffer.append(float(np.mean(raw_frame, dtype=np.float64)))
+                    self._append_scope_frame_values_from_source_locked()
 
                     # Signal that a new frame is ready
                     self.frame_ready_event.set()

@@ -9,6 +9,7 @@ class ROIsWindow:
 
     ROW_HEIGHT = 120
     XAXIS_ROW_HEIGHT = 30
+    XAXIS_DEBUG_VISIBLE_HEIGHT = 40
     ROI_IMAGE_SIZE = ROW_HEIGHT
     ROI_IMAGE_VERTICAL_OFFSET = 5
     ROI_IMAGE_DISPLAY_SIZE = ROW_HEIGHT - (ROI_IMAGE_VERTICAL_OFFSET * 2) - 9
@@ -16,6 +17,7 @@ class ROIsWindow:
     OVERLAY_WHEEL_SCROLL_STEP = 24
     ROI_CLOSE_BUTTON_SIZE = 20
     TRACE_METRIC_OPTIONS = ("Mean", "Max", "Max & Min")
+    DEFAULT_Y_SCALE_GRACE_PERCENT = 5.0
     
 
     def __init__(self):
@@ -31,6 +33,7 @@ class ROIsWindow:
         self.y_scale_max = 1.0
         self.y_scale_auto = True
         self.y_scale_mirrored = False
+        self.y_scale_grace_percent = self.DEFAULT_Y_SCALE_GRACE_PERCENT
         self.trace_metric = "Mean"
         self._y_axis_limits_dirty = True
         self._autoscale_dirty = True
@@ -45,6 +48,10 @@ class ROIsWindow:
                 dpg.add_theme_style(dpg.mvStyleVar_FramePadding, 2, 1)
                 dpg.add_theme_style(dpg.mvStyleVar_ItemSpacing, 0, 0)
                 dpg.add_theme_style(dpg.mvStyleVar_ButtonTextAlign, 0.5, 0.5)
+
+        with dpg.theme() as self._xaxis_debug_y_axis_theme:
+            with dpg.theme_component(dpg.mvAll):
+                dpg.add_theme_color(dpg.mvPlotCol_AxisText, [255, 255, 255, 24], category=dpg.mvThemeCat_Plots)
 
         with dpg.window(
             label=self.name,
@@ -63,19 +70,19 @@ class ROIsWindow:
                 self.trace_metric_combo_id = dpg.add_combo(
                     items=list(self.TRACE_METRIC_OPTIONS),
                     label="Metric",
-                    width=-30,
+                    width=-60,
                     default_value=self.trace_metric,
                     callback=self._on_trace_metric_changed,
                 )
                 self.y_scale_min_input_id = dpg.add_input_float(
                     label="Min",
-                    width=-30,
+                    width=-60,
                     default_value=self.y_scale_min,
                     callback=self._on_y_scale_min_changed,
                 )
                 self.y_scale_max_input_id = dpg.add_input_float(
                     label="Max",
-                    width=-30,
+                    width=-60,
                     default_value=self.y_scale_max,
                     callback=self._on_y_scale_max_changed,
                 )
@@ -83,6 +90,12 @@ class ROIsWindow:
                     label="Auto",
                     default_value=self.y_scale_auto,
                     callback=self._on_y_scale_auto_changed,
+                )
+                self.y_scale_grace_input_id = dpg.add_input_float(
+                    label="Grace (%)",
+                    width=-60,
+                    default_value=self.y_scale_grace_percent,
+                    callback=self._on_y_scale_grace_changed,
                 )
                 self.y_scale_mirrored_checkbox_id = dpg.add_checkbox(
                     label="Mirrored",
@@ -110,6 +123,9 @@ class ROIsWindow:
                 dpg.add_mouse_wheel_handler(callback=self._on_overlay_mouse_wheel)
 
         self._sync_y_scale_inputs()
+
+    def is_visible(self):
+        return dpg.does_item_exist(self.window_id) and dpg.is_item_shown(self.window_id)
 
     def _on_close_roi_clicked(self, sender, app_data, user_data):
         tag, parent = user_data
@@ -154,14 +170,18 @@ class ROIsWindow:
         self._mark_y_axis_limits_dirty()
 
     def _on_y_scale_max_changed(self, sender, app_data, user_data=None):
-        self.y_scale_max = max(float(app_data), 0.0)
-        if self.y_scale_mirrored:
-            self.y_scale_min = -self.y_scale_max
-            dpg.set_value(self.y_scale_min_input_id, self.y_scale_min)
-        elif self.y_scale_max < self.y_scale_min:
+        self.y_scale_max = float(app_data)
+        if self.y_scale_max < self.y_scale_min:
             self.y_scale_min = self.y_scale_max
             dpg.set_value(self.y_scale_min_input_id, self.y_scale_min)
         self._mark_y_axis_limits_dirty()
+
+    def _on_y_scale_grace_changed(self, sender, app_data, user_data=None):
+        self.y_scale_grace_percent = max(float(app_data), 0.0)
+        dpg.set_value(self.y_scale_grace_input_id, self.y_scale_grace_percent)
+        if self.y_scale_auto:
+            self.invalidate_autoscale_cache()
+            self._recalculate_y_scale()
 
     def _on_y_scale_auto_changed(self, sender, app_data, user_data=None):
         self.y_scale_auto = bool(app_data)
@@ -176,10 +196,12 @@ class ROIsWindow:
         self._recalculate_y_scale()
 
     def _sync_y_scale_inputs(self):
-        min_enabled = not self.y_scale_auto and not self.y_scale_mirrored
+        min_enabled = not self.y_scale_auto
         max_enabled = not self.y_scale_auto
+        grace_enabled = self.y_scale_auto
         dpg.configure_item(self.y_scale_min_input_id, enabled=min_enabled)
         dpg.configure_item(self.y_scale_max_input_id, enabled=max_enabled)
+        dpg.configure_item(self.y_scale_grace_input_id, enabled=grace_enabled)
 
     def _mark_y_axis_limits_dirty(self):
         self._y_axis_limits_dirty = True
@@ -196,41 +218,49 @@ class ROIsWindow:
             self._autoscale_dirty = False
             return
 
-        if self.y_scale_mirrored:
-            mirrored_limit = max(abs(self.y_scale_min), abs(self.y_scale_max), 1.0)
-            self.y_scale_min = -mirrored_limit
-            self.y_scale_max = mirrored_limit
-            dpg.set_value(self.y_scale_min_input_id, self.y_scale_min)
-            dpg.set_value(self.y_scale_max_input_id, self.y_scale_max)
-
         self._mark_y_axis_limits_dirty()
 
     def _compute_global_trace_limits(self):
-        trace_min_value = 0.0
-        trace_max_value = 0.0
+        trace_min_value = None
+        trace_max_value = None
         for roi in self._rois:
             with roi.data_lock:
-                trace_min_value = min(trace_min_value, float(roi.trace_min_value))
-                trace_max_value = max(trace_max_value, float(roi.trace_max_value))
+                roi_trace_min = float(roi.trace_min_value)
+                roi_trace_max = float(roi.trace_max_value)
+            trace_min_value = roi_trace_min if trace_min_value is None else min(trace_min_value, roi_trace_min)
+            trace_max_value = roi_trace_max if trace_max_value is None else max(trace_max_value, roi_trace_max)
+
+        if trace_min_value is None or trace_max_value is None:
+            return 0.0, 1.0
+
         return trace_min_value, trace_max_value
 
     def _set_y_scale_auto_limits(self, scale_min, scale_max):
         scale_min = float(scale_min)
         scale_max = float(scale_max)
+        grace_fraction = max(self.y_scale_grace_percent, 0.0) / 100.0
+
+        if scale_max < scale_min:
+            scale_min, scale_max = scale_max, scale_min
+
+        data_range = scale_max - scale_min
+        if data_range == 0.0:
+            baseline = abs(scale_min)
+            data_range = baseline if baseline > 0.0 else 1.0
+
+        padding = data_range * grace_fraction
+
         if self.y_scale_mirrored:
-            mirrored_limit = max(abs(scale_min), abs(scale_max), 1.0)
-            self.y_scale_min = -mirrored_limit
-            self.y_scale_max = mirrored_limit
+            midpoint = (scale_min + scale_max) * 0.5
+            half_range = max(scale_max - midpoint, midpoint - scale_min)
+            if half_range == 0.0:
+                half_range = data_range * 0.5
+            half_range += padding
+            self.y_scale_min = midpoint - half_range
+            self.y_scale_max = midpoint + half_range
         else:
-            if scale_min == scale_max:
-                if scale_min == 0.0:
-                    scale_max = 1.0
-                else:
-                    padding = max(abs(scale_min) * 0.05, 1.0)
-                    scale_min -= padding
-                    scale_max += padding
-            self.y_scale_min = scale_min
-            self.y_scale_max = scale_max
+            self.y_scale_min = scale_min - padding
+            self.y_scale_max = scale_max + padding
 
         dpg.set_value(self.y_scale_min_input_id, self.y_scale_min)
         dpg.set_value(self.y_scale_max_input_id, self.y_scale_max)
@@ -249,7 +279,7 @@ class ROIsWindow:
         if not self._y_axis_limits_dirty:
             return
 
-        y_min = -self.y_scale_max if self.y_scale_mirrored else self.y_scale_min
+        y_min = self.y_scale_min
         y_max = self.y_scale_max
         if y_max <= y_min:
             y_max = y_min + 1.0
@@ -259,7 +289,16 @@ class ROIsWindow:
             if y_axis_id and dpg.does_item_exist(y_axis_id):
                 dpg.set_axis_limits(y_axis_id, y_min, y_max)
 
+        if self._xaxis_ui:
+            xaxis_y = self._xaxis_ui.get("y_axis_id")
+            if xaxis_y and dpg.does_item_exist(xaxis_y):
+                dpg.set_axis_limits(xaxis_y, y_min, y_max)
+
         self._y_axis_limits_dirty = False
+
+    def _get_xaxis_alignment_value(self):
+        trace_min_value, trace_max_value = self._compute_global_trace_limits()
+        return max(abs(float(trace_min_value)), abs(float(trace_max_value)), 1.0)
 
     def _get_item_rects(self, item_id):
         if not item_id or not dpg.does_item_exist(item_id):
@@ -486,13 +525,14 @@ class ROIsWindow:
                         "x_axis_id": x_axis_id,
                         "y_axis_id": y_axis_id,
                         "series_id": series_id,
+                        "x_range": None,
                     })
 
             # Extra row: duplicate last ROI's x-axis data with visible axis
             with dpg.table_row():
                 dpg.add_spacer(height=self.XAXIS_ROW_HEIGHT)
                 with dpg.plot(
-                    height=self.XAXIS_ROW_HEIGHT,
+                    height=self.XAXIS_DEBUG_VISIBLE_HEIGHT,
                     width=-1,
                     no_title=True,
                     no_menus=True,
@@ -503,14 +543,16 @@ class ROIsWindow:
                         dpg.mvXAxis, label="", no_label=True,
                         auto_fit=True,
                     )
-                    xaxis_y_id = dpg.add_plot_axis(dpg.mvYAxis, label="", no_label=True, no_tick_labels=True, no_tick_marks=True, opposite=True)
+                    xaxis_y_id = dpg.add_plot_axis(dpg.mvYAxis, label="", no_label=True, opposite=True)
                     xaxis_series_id = dpg.add_line_series([], [], label="", parent=xaxis_y_id)
+                    dpg.bind_item_theme(xaxis_y_id, self._xaxis_debug_y_axis_theme)
 
                 dpg.bind_item_theme(xaxis_plot_id, transparent_plot_theme)
 
                 self._xaxis_ui = {
                     "plot_id": xaxis_plot_id,
                     "x_axis_id": xaxis_x_id,
+                    "y_axis_id": xaxis_y_id,
                     "series_id": xaxis_series_id,
                 }
 
@@ -537,6 +579,8 @@ class ROIsWindow:
         self._update_overlay_positions()
 
     def render(self):
+        if not self.is_visible():
+            return
         self._refresh_autoscale_if_ready()
         self._apply_shared_y_axis_limits()
         self._update_overlay_positions()
@@ -549,24 +593,26 @@ class ROIsWindow:
         # Find global x range from all ROIs
         x_min = float('inf')
         x_max = float('-inf')
-        last_x = []
+        have_points = False
         for ui in self._roi_ui.values():
-            series_id = ui.get("series_id")
-            if series_id and dpg.does_item_exist(series_id):
-                data = dpg.get_value(series_id)
-                if data and len(data) >= 2 and data[0]:
-                    x_vals = data[0]
-                    x_min = min(x_min, x_vals[0])
-                    x_max = max(x_max, x_vals[-1])
-                    last_x = data[0]
+            x_range = ui.get("x_range")
+            if x_range is None:
+                continue
+            x_min = min(x_min, float(x_range[0]))
+            x_max = max(x_max, float(x_range[1]))
+            have_points = True
 
         # Set the x-axis series to match the last ROI so axis range matches
         xaxis_series = self._xaxis_ui["series_id"]
-        if dpg.does_item_exist(xaxis_series):
-            dpg.set_value(xaxis_series, [last_x, [0.0] * len(last_x)])
+        if have_points and dpg.does_item_exist(xaxis_series):
+            alignment_value = self._get_xaxis_alignment_value()
+            if x_min == x_max:
+                xaxis_values = [x_min, x_min + 1.0]
+            else:
+                xaxis_values = [x_min, x_max]
+            dpg.set_value(xaxis_series, [xaxis_values, [alignment_value, alignment_value]])
 
-        # Sync all ROI x-axes and the bottom axis to the same range
-        if x_min < x_max:
+        if have_points:
             for ui in self._roi_ui.values():
                 x_id = ui.get("x_axis_id")
                 if x_id and dpg.does_item_exist(x_id):
@@ -597,6 +643,10 @@ class ROIsWindow:
                 dpg.configure_item(ui["image_id"], uv_min=uv_min, uv_max=uv_max)
             if dpg.does_item_exist(ui["series_id"]):
                 dpg.set_value(ui["series_id"], [pending_plot_x, pending_plot_y])
+                if pending_plot_x:
+                    ui["x_range"] = (float(pending_plot_x[0]), float(pending_plot_x[-1]))
+                else:
+                    ui["x_range"] = None
             if roi.tag in self._autoscale_pending_tags:
                 self._autoscale_pending_tags.discard(roi.tag)
             if self.y_scale_auto and not self._autoscale_dirty:
@@ -646,6 +696,7 @@ class ROIsWindow:
                 "y_scale_max": self.y_scale_max,
                 "y_scale_auto": self.y_scale_auto,
                 "y_scale_mirrored": self.y_scale_mirrored,
+                "y_scale_grace_percent": self.y_scale_grace_percent,
             },
         )
 
@@ -657,15 +708,18 @@ class ROIsWindow:
         if self.trace_metric not in self.TRACE_METRIC_OPTIONS:
             self.trace_metric = self.TRACE_METRIC_OPTIONS[0]
         self.y_scale_min = float(state.get("y_scale_min", self.y_scale_min))
-        self.y_scale_max = max(float(state.get("y_scale_max", self.y_scale_max)), 1.0)
+        self.y_scale_max = float(state.get("y_scale_max", self.y_scale_max))
         self.y_scale_auto = bool(state.get("y_scale_auto", self.y_scale_auto))
         self.y_scale_mirrored = bool(state.get("y_scale_mirrored", self.y_scale_mirrored))
-        if self.y_scale_mirrored:
-            self.y_scale_min = -abs(self.y_scale_max)
+        self.y_scale_grace_percent = max(
+            float(state.get("y_scale_grace_percent", self.y_scale_grace_percent)),
+            0.0,
+        )
         dpg.set_value(self.trace_metric_combo_id, self.trace_metric)
         dpg.set_value(self.y_scale_min_input_id, self.y_scale_min)
         dpg.set_value(self.y_scale_max_input_id, self.y_scale_max)
         dpg.set_value(self.y_scale_auto_checkbox_id, self.y_scale_auto)
+        dpg.set_value(self.y_scale_grace_input_id, self.y_scale_grace_percent)
         dpg.set_value(self.y_scale_mirrored_checkbox_id, self.y_scale_mirrored)
         self._sync_y_scale_inputs()
         self._mark_y_axis_limits_dirty()

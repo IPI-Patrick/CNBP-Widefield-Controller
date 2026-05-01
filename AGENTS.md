@@ -126,8 +126,8 @@ The normal live path is:
 1. `CameraControls.toggle_preview()` starts `Andor.start_capture_continuous()`.
 2. `Andor._capture_loop()` runs in a background thread and appends raw and derived frames under `frame_lock`.
 3. The driver sets `frame_ready_event` whenever a new frame is available.
-4. `CameraFeedWindow._process_camera_feed()` watches that event and refreshes the main texture payload.
-5. `CameraFeedWindow.render()` handles Dear PyGui-facing work such as zero-window updates, ROI window layout, and overlay drawing.
+4. `CameraFeedWindow._process_camera_feed()` watches that event, computes the next display payload, and stores it in window-owned shared state.
+5. `CameraFeedWindow.render()` is the only place that uploads the pending texture to Dear PyGui and performs other visible UI work such as zero-window updates, ROI window layout, and overlay drawing.
 
 The active display source is selected in `CameraFeedWindow`:
 
@@ -232,17 +232,20 @@ This app stays responsive by separating hardware acquisition, frame analysis, an
 
 ### Concurrency Caveats
 
-The repo currently mixes background computation with some Dear PyGui updates outside the main render path. That may work in practice but should be treated as fragile.
+The thread model to preserve is now stricter than the older ad hoc pattern: background threads may collect hardware data, transform it, and publish the latest snapshots or pending payloads, but they should not directly mutate Dear PyGui items.
 
 Safe guideline for future changes:
 
 - keep hardware I/O, numeric processing, and snapshot construction on worker threads
-- keep item creation, widget layout, and most `dpg.configure_item` / `dpg.set_value` UI mutations on the main render path when practical
+- keep item creation, widget layout, and all visible `dpg.configure_item` / `dpg.set_value` / `dpg.bind_item_theme` UI mutations on the main render path
+- treat each window's `render()` method as the frontend commit point for that window; callbacks and worker threads should update only backend state, flags, queues, or pending payload fields that `render()` consumes
+- if a worker needs to signal freshness, use events, dirty flags, version counters, or snapshot replacement; do not use that signal as permission to call Dear PyGui from the worker
 
 If you introduce a new high-rate feature, prefer this pattern:
 
-- worker thread computes or snapshots data
-- main render loop applies the latest payload to Dear PyGui items
+- worker thread computes or snapshots data into shared/window-owned state
+- the owning window `render()` reads the latest state and applies it to Dear PyGui items
+- if intermediate worker outputs would pile up, keep only the newest pending payload rather than queueing unbounded UI work
 
 ## Subwindow Inventory
 
@@ -295,7 +298,9 @@ If you introduce a new high-rate feature, prefer this pattern:
 4. Preserve `SaveState()` and `LoadState()` behavior when changing windows. This app expects persistent layout and settings.
 5. Be careful when changing capture startup and stop paths. Camera preview, fixed acquisition, PicoScope collection, and AWG timing are coupled in `CameraControls.py`.
 6. Prefer buffer rebuilds and event-based invalidation over ad hoc recomputation inside `render()`.
-7. Validate both hardware-present and hardware-absent startup paths. When no Andor camera is present, the app falls back to `Mocks.MockCamera`.
+7. Keep the render-thread boundary explicit: worker threads and control callbacks can update shared model state, but frontend re-renders and visible widget mutations should happen from the owning window `render()` only.
+8. When refactoring threaded code, move the smallest useful unit toward a `worker publishes state -> render consumes state` shape instead of adding more callback-driven UI synchronization.
+9. Validate both hardware-present and hardware-absent startup paths. When no Andor camera is present, the app falls back to `Mocks.MockCamera`.
 
 ## Suggested Entry Points For Common Tasks
 

@@ -2,10 +2,12 @@ import dearpygui.dearpygui as dpg
 import numpy as np
 import threading
 
-from Drivers.PicoScope import CHANNEL_NAMES, PicoScope as PicoScopeDriver, SUPPORTED_AWG_WAVEFORMS
+from Drivers.PicoScope import PicoScope as PicoScope4000Driver
+from Drivers.PicoScope2000 import PicoScope2000
 from Utils.fonts import get_segmdl2_icon_font
 from Utils.state_persistence import apply_window_state, capture_window_state, load_state_file, save_state_file
-from Utils.themes import red_green_button_disabled, red_green_button_enabled
+from Utils.themes import red_green_button_enabled, red_green_button_disabled
+from Windows.SubWindows.FunctionGenerator import FunctionGeneratorWindow
 from Windows.SubWindows.Oscilloscope import OscilloscopeWindow
 
 
@@ -20,15 +22,22 @@ CHANNEL_PANEL_SPECS = (
     {"panel_id": "H", "title": "Channel 8", "source_channel": "H", "default_enabled": False, "default_color": [128, 128, 128, 255]},
 )
 
+DRIVER_FACTORIES = {
+    "ps4000a": PicoScope4000Driver,
+    "ps2000": PicoScope2000,
+}
+
 
 class PicoScopeControl:
 
     def __init__(self):
-        self.driver = PicoScopeDriver()
+        self.driver_family = "ps4000a"
+        self.driver = self._create_driver(self.driver_family)
         self.channel_panels = []
         self.status_message = "Idle"
         self._last_error_message = None
         self._loaded_device_serial = ""
+        self._loaded_device_driver_family = self.driver_family
         self.available_devices = []
         self._device_refresh_thread = None
         self._device_refresh_pending = None
@@ -36,7 +45,8 @@ class PicoScopeControl:
         self._device_refresh_in_progress = False
         self._device_refresh_requested = False
         self.oscilloscope_window = None
-        self._awg_enabled = False
+        self.function_generator_window = None
+        self._oscilloscope_render_snapshot = None
 
         mdl = get_segmdl2_icon_font()
 
@@ -99,8 +109,8 @@ class PicoScopeControl:
             self.sample_rate_input_id = dpg.add_input_float(
                 label="Sample Rate",
                 width=-120,
-                default_value=self.driver.sample_rate_hz,
-                min_value=0.1,
+                default_value=max(1000.0, self.driver.sample_rate_hz),
+                min_value=1000.0,
                 step=100.0,
                 callback=self._on_sample_rate_changed,
             )
@@ -122,17 +132,67 @@ class PicoScopeControl:
         for channel_spec in CHANNEL_PANEL_SPECS:
             self._create_channel_panel(channel_spec)
 
-        self._create_awg_panel()
-
-        self.oscilloscope_window = OscilloscopeWindow(self._get_oscilloscope_traces)
+        self.oscilloscope_window = OscilloscopeWindow(
+            [self._make_oscilloscope_trace_getter(panel["id"]) for panel in self.channel_panels],
+            title="Oscilloscope Buffer",
+            channel_headers=[panel["display_name"] for panel in self.channel_panels],
+            state_name="OscilloscopeWindow",
+            tag="#Oscilloscope",
+        )
+        self.function_generator_window = FunctionGeneratorWindow(
+            lambda: self.driver,
+            lambda error_message: self._set_status(self.status_message, error=error_message),
+        )
         self._refresh_available_devices()
         self._sync_driver_channels()
         self._refresh_status_labels()
 
+    def _create_driver(self, driver_family):
+        driver_class = DRIVER_FACTORIES.get(driver_family, PicoScope4000Driver)
+        return driver_class()
+
+    def _current_awg_settings(self):
+        if self.function_generator_window is not None:
+            return self.function_generator_window.get_awg_settings()
+
+        return {
+            "waveform_type": self.driver.awg_config["waveform_type"],
+            "frequency_hz": float(self.driver.awg_config["frequency_hz"]),
+            "amplitude_vpp_volts": float(self.driver.awg_config["amplitude_vpp_volts"]),
+            "offset_volts": float(self.driver.awg_config["offset_volts"]),
+        }
+
+    def _get_selected_device(self):
+        selected_label = dpg.get_value(self.device_combo_id)
+        return next((device for device in self.available_devices if device["label"] == selected_label), None)
+
+    def _swap_driver(self, driver_family, serial_number=""):
+        requested_family = str(driver_family or "ps4000a").strip().lower()
+        if requested_family not in DRIVER_FACTORIES:
+            requested_family = "ps4000a"
+
+        if self.driver.is_open or self.driver.is_collecting:
+            raise RuntimeError("Close the PicoScope before changing the device family.")
+
+        sample_rate_hz = float(dpg.get_value(self.sample_rate_input_id)) if hasattr(self, "sample_rate_input_id") else self.driver.sample_rate_hz
+        history_seconds = float(dpg.get_value(self.seconds_input_id)) if hasattr(self, "seconds_input_id") else self.driver.history_seconds
+        awg_settings = self._current_awg_settings()
+        awg_enabled = self.function_generator_window.get_awg_enabled() if self.function_generator_window is not None else False
+
+        new_driver = self._create_driver(requested_family)
+        new_driver.set_sample_capture_rate(sample_rate_hz)
+        new_driver.set_history_seconds(history_seconds)
+        new_driver.configure_awg(**awg_settings)
+        new_driver.set_awg_enabled(awg_enabled)
+        new_driver.set_serial_number(serial_number)
+
+        self.driver = new_driver
+        self.driver_family = requested_family
+        self._sync_driver_channels()
+
     def _set_status(self, message, error=None):
         self.status_message = message
         self._last_error_message = error
-        self._refresh_status_labels()
 
     def _refresh_status_labels(self):
         status_text = self.status_message
@@ -158,10 +218,26 @@ class PicoScopeControl:
         self._device_refresh_thread.start()
 
     def _refresh_available_devices_worker(self):
-        try:
-            self._device_refresh_pending = self.driver.list_available_devices()
-        except Exception as exc:
-            self._device_refresh_error = str(exc)
+        devices = []
+        errors = []
+
+        for driver_family, driver_class in DRIVER_FACTORIES.items():
+            probe_driver = driver_class(
+                sample_rate_hz=self.driver.sample_rate_hz,
+                history_seconds=self.driver.history_seconds,
+            )
+            try:
+                family_devices = probe_driver.list_available_devices()
+                for device in family_devices:
+                    candidate = dict(device)
+                    candidate["driver_family"] = driver_family
+                    devices.append(candidate)
+            except Exception as exc:
+                errors.append(f"{driver_family}: {exc}")
+
+        self._device_refresh_pending = devices
+        if errors and not devices:
+            self._device_refresh_error = "\n".join(errors)
 
     def _apply_available_devices(self, devices):
         self.available_devices = devices
@@ -178,22 +254,25 @@ class PicoScopeControl:
 
         if self.driver.serial_number:
             for device in self.available_devices:
-                if device["serial"] == self.driver.serial_number:
+                if device.get("driver_family") == self.driver_family and device["serial"] == self.driver.serial_number:
                     selected_label = device["label"]
                     break
 
         if selected_label is None and self._loaded_device_serial:
             for device in self.available_devices:
-                if device["serial"] == self._loaded_device_serial:
+                if device.get("driver_family") == self._loaded_device_driver_family and device["serial"] == self._loaded_device_serial:
                     selected_label = device["label"]
-                    self.driver.set_serial_number(device.get("serial", "") if device.get("has_verified_serial") else "")
+                    self._swap_driver(device.get("driver_family", self.driver_family), device.get("serial", "") if device.get("has_verified_serial") else "")
                     break
 
         if selected_label is None:
             selected_label = items[0]
             if self.available_devices:
                 selected_device = self.available_devices[0]
-                self.driver.set_serial_number(selected_device.get("serial", "") if selected_device.get("has_verified_serial") else "")
+                self._swap_driver(
+                    selected_device.get("driver_family", self.driver_family),
+                    selected_device.get("serial", "") if selected_device.get("has_verified_serial") else "",
+                )
 
         dpg.set_value(self.device_combo_id, selected_label)
         self._refresh_status_labels()
@@ -223,7 +302,7 @@ class PicoScopeControl:
             self._refresh_available_devices()
 
     def _sync_driver_channels(self):
-        enabled_channels = {channel_name: False for channel_name in CHANNEL_NAMES}
+        enabled_channels = {channel_name: False for channel_name in self.driver.available_channels}
         for panel in self.channel_panels:
             source_channel = panel["source_channel"]
             if source_channel in enabled_channels and panel["enabled"]:
@@ -284,100 +363,6 @@ class PicoScopeControl:
         self._update_panel_enabled_button(panel)
         self._sync_driver_channels()
 
-    def _create_awg_panel(self):
-        with dpg.group(parent=self.channels_container_id):
-            dpg.add_text("Signal Generator (AWG)")
-            dpg.add_separator()
-
-            self.awg_enabled_button_id = dpg.add_button(
-                label="Disabled",
-                width=-1,
-                callback=self._on_awg_enabled_toggled,
-            )
-            dpg.bind_item_theme(self.awg_enabled_button_id, red_green_button_disabled)
-
-            with dpg.group() as self.awg_settings_group_id:
-                self.awg_waveform_combo_id = dpg.add_combo(
-                    label="Waveform",
-                    width=-120,
-                    items=[w.title() for w in SUPPORTED_AWG_WAVEFORMS],
-                    default_value="Dc",
-                    callback=self._on_awg_waveform_changed,
-                )
-
-                self.awg_frequency_input_id = dpg.add_input_float(
-                    label="Frequency (Hz)",
-                    width=-120,
-                    default_value=self.driver.awg_config["frequency_hz"],
-                    min_value=0.0,
-                    step=100.0,
-                    callback=self._on_awg_setting_changed,
-                )
-
-                self.awg_amplitude_input_id = dpg.add_input_float(
-                    label="Amplitude (Vpp)",
-                    width=-120,
-                    default_value=self.driver.awg_config["amplitude_vpp_volts"],
-                    min_value=0.0,
-                    step=0.1,
-                    callback=self._on_awg_setting_changed,
-                )
-
-                self.awg_offset_input_id = dpg.add_input_float(
-                    label="Offset (V)",
-                    width=-120,
-                    default_value=self.driver.awg_config["offset_volts"],
-                    step=0.1,
-                    callback=self._on_awg_setting_changed,
-                )
-
-            self._update_awg_settings_visibility()
-
-            dpg.add_separator()
-            dpg.add_spacer(height=6)
-
-    def _update_awg_enabled_button(self):
-        label = "Enabled" if self._awg_enabled else "Disabled"
-        theme = red_green_button_enabled if self._awg_enabled else red_green_button_disabled
-        dpg.configure_item(self.awg_enabled_button_id, label=label)
-        dpg.bind_item_theme(self.awg_enabled_button_id, theme)
-
-    def _update_awg_settings_visibility(self):
-        waveform = dpg.get_value(self.awg_waveform_combo_id).lower()
-        is_periodic = waveform in ("sine", "square", "triangle")
-        dpg.configure_item(self.awg_frequency_input_id, show=is_periodic)
-        dpg.configure_item(self.awg_amplitude_input_id, show=is_periodic or waveform == "dc")
-        dpg.configure_item(self.awg_offset_input_id, show=True)
-
-    def _on_awg_enabled_toggled(self, sender=None, app_data=None, user_data=None):
-        self._awg_enabled = not self._awg_enabled
-        self._update_awg_enabled_button()
-        self._apply_awg_to_driver()
-
-    def _on_awg_waveform_changed(self, sender=None, app_data=None, user_data=None):
-        self._update_awg_settings_visibility()
-        self._apply_awg_to_driver()
-
-    def _on_awg_setting_changed(self, sender=None, app_data=None, user_data=None):
-        self._apply_awg_to_driver()
-
-    def _apply_awg_to_driver(self):
-        waveform = dpg.get_value(self.awg_waveform_combo_id).lower()
-        frequency = dpg.get_value(self.awg_frequency_input_id)
-        amplitude = dpg.get_value(self.awg_amplitude_input_id)
-        offset = dpg.get_value(self.awg_offset_input_id)
-
-        try:
-            self.driver.configure_awg(
-                waveform_type=waveform,
-                frequency_hz=frequency,
-                amplitude_vpp_volts=amplitude,
-                offset_volts=offset,
-            )
-            self.driver.set_awg_enabled(self._awg_enabled)
-        except Exception as exc:
-            self._set_status(self.status_message, error=str(exc))
-
     def _get_panel(self, panel_id):
         for panel in self.channel_panels:
             if panel["id"] == panel_id:
@@ -406,7 +391,10 @@ class PicoScopeControl:
             return
 
         def apply_selection():
-            self.driver.set_serial_number(selected_device.get("serial", "") if selected_device.get("has_verified_serial") else "")
+            self._swap_driver(
+                selected_device.get("driver_family", self.driver_family),
+                selected_device.get("serial", "") if selected_device.get("has_verified_serial") else "",
+            )
 
         if not self._apply_stopped_configuration(apply_selection):
             self._refresh_available_devices()
@@ -447,41 +435,46 @@ class PicoScopeControl:
         panel["color"] = [int(round(value)) for value in color_values[:4]]
         dpg.set_value(panel["color_edit_id"], panel["color"])
 
-    def _get_oscilloscope_traces(self):
-        snapshot = self.driver.get_snapshot()
-        timestamps = snapshot["timestamps"]
-        traces = []
+    def _make_oscilloscope_trace_getter(self, panel_id):
+        return lambda panel_id=panel_id: self._get_oscilloscope_trace(panel_id)
 
-        for panel in self.channel_panels:
-            if not panel["enabled"]:
-                continue
+    def _get_oscilloscope_trace(self, panel_id):
+        panel = self._get_panel(panel_id)
+        if not panel["enabled"]:
+            return None
 
-            channel_name = panel["source_channel"]
-            raw_samples = snapshot["channels"].get(channel_name, [])
-            if not raw_samples:
-                x_values = []
-                y_values = []
+        channel_name = panel["source_channel"]
+        if channel_name not in self.driver.available_channels:
+            return None
+
+        snapshot = self._oscilloscope_render_snapshot
+        if snapshot is None:
+            snapshot = self.driver.get_buffer_snapshot(channel_names=(channel_name,))
+        timestamps = np.asarray(snapshot.get("timestamps", []), dtype=np.float64)
+
+        raw_samples = np.asarray(snapshot.get("channels", {}).get(channel_name, []), dtype=np.float32)
+        if raw_samples.size <= 0:
+            x_values = np.zeros((0,), dtype=np.float64)
+            y_values = np.zeros((0,), dtype=np.float32)
+        else:
+            sample_count = int(raw_samples.size)
+            if timestamps.size >= sample_count:
+                x_array = timestamps[-sample_count:]
+                x_values = x_array - x_array[0]
             else:
-                sample_count = len(raw_samples)
-                if len(timestamps) >= sample_count:
-                    x_array = np.asarray(timestamps[-sample_count:], dtype=np.float64)
-                    x_values = (x_array - x_array[0]).tolist()
-                else:
-                    x_values = list(range(sample_count))
+                x_values = np.arange(sample_count, dtype=np.float64)
 
-                y_values = self.driver.convert_samples_to_volts(channel_name, raw_samples).astype(np.float32, copy=False).tolist()
+            y_values = self.driver.convert_samples_to_volts(channel_name, raw_samples).astype(np.float32, copy=False)
 
-            traces.append(
-                {
-                    "panel_id": panel["id"],
-                    "label": panel["display_name"],
-                    "color": list(panel["color"]),
-                    "x_values": x_values,
-                    "y_values": y_values,
-                }
-            )
-
-        return traces
+        abs_last_x = float(timestamps[-1]) if timestamps.size > 0 else 0.0
+        return {
+            "panel_id": panel["id"],
+            "label": panel["display_name"],
+            "color": list(panel["color"]),
+            "x_values": x_values,
+            "y_values": y_values,
+            "abs_last_x": abs_last_x,
+        }
 
     def _start_collection(self, sender=None, app_data=None, user_data=None):
         try:
@@ -499,10 +492,12 @@ class PicoScopeControl:
 
     def _open_device(self, sender=None, app_data=None, user_data=None):
         try:
-            selected_label = dpg.get_value(self.device_combo_id)
-            selected_device = next((device for device in self.available_devices if device["label"] == selected_label), None)
+            selected_device = self._get_selected_device()
             if selected_device is not None:
-                self.driver.set_serial_number(selected_device.get("serial", "") if selected_device.get("has_verified_serial") else "")
+                self._swap_driver(
+                    selected_device.get("driver_family", self.driver_family),
+                    selected_device.get("serial", "") if selected_device.get("has_verified_serial") else "",
+                )
             self.driver.open_device()
             self._set_status("Open", error=None)
         except Exception as exc:
@@ -534,19 +529,27 @@ class PicoScopeControl:
             dpg.configure_item(item_id, enabled=device_controls_enabled)
 
         for panel in self.channel_panels:
+            panel_enabled = config_enabled and panel["source_channel"] in self.driver.available_channels
             for item_id in (panel["name_input_id"], panel["enabled_button_id"], panel["color_edit_id"]):
-                dpg.configure_item(item_id, enabled=config_enabled)
+                dpg.configure_item(item_id, enabled=panel_enabled)
 
-        awg_config_enabled = is_open and not is_collecting
-        dpg.configure_item(self.awg_enabled_button_id, enabled=awg_config_enabled)
-        for item_id in (self.awg_waveform_combo_id, self.awg_frequency_input_id, self.awg_amplitude_input_id, self.awg_offset_input_id):
-            dpg.configure_item(item_id, enabled=awg_config_enabled)
+        if self.function_generator_window is not None:
+            self.function_generator_window.render(is_open=is_open, is_collecting=is_collecting)
 
         if self.driver.last_error is not None:
             self._last_error_message = self.driver.last_error.get("message", "Unknown PicoScope error")
 
-        if self.oscilloscope_window is not None:
-            self.oscilloscope_window.render()
+        if self.oscilloscope_window is not None and self.oscilloscope_window.is_visible():
+            enabled_channels = tuple(
+                panel["source_channel"]
+                for panel in self.channel_panels
+                if panel["enabled"] and panel["source_channel"] in self.driver.available_channels
+            )
+            self._oscilloscope_render_snapshot = self.driver.get_buffer_snapshot(channel_names=enabled_channels) if enabled_channels else None
+            try:
+                self.oscilloscope_window.render()
+            finally:
+                self._oscilloscope_render_snapshot = None
 
         self._refresh_status_labels()
 
@@ -565,21 +568,17 @@ class PicoScopeControl:
             type(self).__name__,
             {
                 "window": capture_window_state(self.window_id),
+                "device_driver_family": self.driver_family,
                 "device_serial": self.driver.serial_number,
                 "sample_rate_hz": float(dpg.get_value(self.sample_rate_input_id)),
                 "history_seconds": float(dpg.get_value(self.seconds_input_id)),
                 "panels": panel_states,
-                "awg": {
-                    "enabled": self._awg_enabled,
-                    "waveform": dpg.get_value(self.awg_waveform_combo_id),
-                    "frequency_hz": float(dpg.get_value(self.awg_frequency_input_id)),
-                    "amplitude_vpp_volts": float(dpg.get_value(self.awg_amplitude_input_id)),
-                    "offset_volts": float(dpg.get_value(self.awg_offset_input_id)),
-                },
             },
         )
         if self.oscilloscope_window is not None:
             self.oscilloscope_window.SaveState()
+        if self.function_generator_window is not None:
+            self.function_generator_window.SaveState()
 
     def LoadState(self):
         state = load_state_file(type(self).__name__)
@@ -588,10 +587,16 @@ class PicoScopeControl:
 
         apply_window_state(self.window_id, state.get("window"))
 
+        saved_driver_family = str(state.get("device_driver_family") or self.driver_family).strip().lower()
+        if saved_driver_family in DRIVER_FACTORIES:
+            self._swap_driver(saved_driver_family)
+            self._loaded_device_driver_family = saved_driver_family
+
         sample_rate_hz = state.get("sample_rate_hz")
         if sample_rate_hz is not None:
-            dpg.set_value(self.sample_rate_input_id, float(sample_rate_hz))
-            self.driver.set_sample_capture_rate(float(sample_rate_hz))
+            sample_rate_hz = max(1000.0, float(sample_rate_hz))
+            dpg.set_value(self.sample_rate_input_id, sample_rate_hz)
+            self.driver.set_sample_capture_rate(sample_rate_hz)
 
         history_seconds = state.get("history_seconds")
         if history_seconds is not None:
@@ -624,24 +629,9 @@ class PicoScopeControl:
                 panel["enabled"] = bool(panel_state["enabled"])
                 self._update_panel_enabled_button(panel)
 
-        awg_state = state.get("awg", {})
-        if awg_state:
-            waveform = str(awg_state.get("waveform", "Dc"))
-            dpg.set_value(self.awg_waveform_combo_id, waveform)
-
-            if "frequency_hz" in awg_state:
-                dpg.set_value(self.awg_frequency_input_id, float(awg_state["frequency_hz"]))
-            if "amplitude_vpp_volts" in awg_state:
-                dpg.set_value(self.awg_amplitude_input_id, float(awg_state["amplitude_vpp_volts"]))
-            if "offset_volts" in awg_state:
-                dpg.set_value(self.awg_offset_input_id, float(awg_state["offset_volts"]))
-
-            self._awg_enabled = bool(awg_state.get("enabled", False))
-            self._update_awg_enabled_button()
-            self._update_awg_settings_visibility()
-            self._apply_awg_to_driver()
-
         self._sync_driver_channels()
         self._refresh_status_labels()
         if self.oscilloscope_window is not None:
             self.oscilloscope_window.LoadState()
+        if self.function_generator_window is not None:
+            self.function_generator_window.LoadState(state.get("awg"))

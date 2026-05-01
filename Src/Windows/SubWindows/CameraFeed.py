@@ -9,6 +9,7 @@ from matplotlib.colors import LinearSegmentedColormap, to_rgb
 from Utils.StorageDTypes import get_raw_storage_max_value
 from Utils.state_persistence import apply_window_state, capture_window_state, delete_state_file, list_state_files, load_state_file, save_state_file
 from Utils.themes import no_padding_theme, read_only_theme
+from Utils.shared_state import class_objects
 from Windows.SubWindows.FeedControlsWindow import FeedControlsWindow
 from Windows.SubWindows.ImageWindow import ImageWindow
 from Windows.SubWindows.RegionOfInterest import RegionOfInterest
@@ -56,6 +57,11 @@ class CameraFeedWindow:
         self.display_mode = "Normal"
         self.mirrored_difference_scale = False
         self.colormap_name = "Viridis"
+        self._colormap_per_mode = {
+            "Normal": self.single_sided_colormap_names[0],
+            "Difference": self.double_sided_colormap_names[0],
+            "Contrast": self.double_sided_colormap_names[0],
+        }
         self.lp_filter_enabled = bool(getattr(self.Andor, "lp_filter_enabled", False))
         self.lp_filter_cutoff_hz = float(getattr(self.Andor, "lp_filter_cutoff_hz", 10.0))
         self._colormap_lut_cache = {}
@@ -76,9 +82,11 @@ class CameraFeedWindow:
         self.view_center_x = self.image_width / 2.0
         self.view_center_y = self.image_height / 2.0
         self.image_dirty = False
+        self._image_state_lock = threading.Lock()
         self.zero_window_refresh_requested = True
         self.zero_window_state_key = None
         self.zero_preview_max_dimension = 512
+        self.context_menu_roi = None
         self.controls_window = None
         self.zero_reference_window = None
         self.texture_id = None
@@ -116,6 +124,7 @@ class CameraFeedWindow:
             with dpg.handler_registry(tag=f"{self.tag}_MouseHandler"):
                 dpg.add_mouse_down_handler(button=dpg.mvMouseButton_Left, callback=self._on_left_mouse_down)
                 dpg.add_mouse_down_handler(button=dpg.mvMouseButton_Middle, callback=self._on_middle_mouse_down)
+                dpg.add_mouse_down_handler(button=dpg.mvMouseButton_Right, callback=self._on_right_mouse_down)
                 dpg.add_mouse_move_handler(callback=self._on_mouse_move)
                 dpg.add_mouse_release_handler(button=dpg.mvMouseButton_Left, callback=self._on_mouse_release)
                 dpg.add_mouse_release_handler(button=dpg.mvMouseButton_Middle, callback=self._on_mouse_release)
@@ -123,7 +132,9 @@ class CameraFeedWindow:
                 dpg.add_key_press_handler(key=dpg.mvKey_Delete, callback=self._on_delete_key_pressed)
 
             with dpg.popup(self.canvas_id, mousebutton=dpg.mvMouseButton_Right):
-                dpg.add_button(label="Reset Zoom", width=120, callback=self._reset_zoom)
+                self.canvas_popup_id = dpg.last_item()
+                self.set_frame_to_roi_button_id = dpg.add_button(label="Set Frame to ROI", width=140, callback=self._on_set_frame_to_roi)
+                dpg.add_button(label="Reset Zoom", width=140, callback=self._reset_zoom)
 
         self.controls_window = FeedControlsWindow(self)
         self.zero_reference_window = ImageWindow(
@@ -154,13 +165,13 @@ class CameraFeedWindow:
 
     def _scale_value_to_percent(self, value):
         scale_limit = max(self._get_scale_limit_for_mode(), 1.0)
-        percent = int(round((float(value) / scale_limit) * 100.0))
+        percent = (float(value) / scale_limit) * 100.0
         min_percent, max_percent = self._get_scale_percent_bounds()
-        return int(np.clip(percent, min_percent, max_percent))
+        return float(np.clip(percent, min_percent, max_percent))
 
     def _scale_percent_to_value(self, percent):
         min_percent, max_percent = self._get_scale_percent_bounds()
-        normalized_percent = int(np.clip(int(round(float(percent))), min_percent, max_percent))
+        normalized_percent = float(np.clip(float(percent), min_percent, max_percent))
         return (normalized_percent / 100.0) * self._get_scale_limit_for_mode()
 
     def get_scale_min_percent(self):
@@ -488,7 +499,7 @@ class CameraFeedWindow:
 
     def _compute_display_bounds(self, frame=None):
         if frame is None:
-            frame, _, _, _ = self.get_analysis_snapshot(include_history=False)
+            frame, _, _, _, _ = self.get_analysis_snapshot(include_history=False)
 
         if self._is_signed_zero_reference_mode_active():
             signed_display_limit = self._get_signed_display_limit()
@@ -629,24 +640,44 @@ class CameraFeedWindow:
         step = int(np.ceil(max_dimension / float(self.zero_preview_max_dimension)))
         return np.array(frame[::step, ::step], copy=True)
 
-    def get_analysis_snapshot(self, include_history=False):
+    def get_analysis_snapshot(self, include_history=False, include_timestamps=False, history_start_frame_idx=None):
         with self.Andor.frame_lock:
             latest_frame = self._get_active_frame_locked()
             current_frame_idx = int(self.Andor.frameIdx)
-            if self._is_difference_mode_active():
-                has_frames = len(self.Andor.difference) > 0
-                acquisitions = [np.array(frame, copy=True) for frame in self.Andor.difference] if include_history else None
-            elif self._is_contrast_mode_active():
-                has_frames = len(self.Andor.contrast) > 0
-                acquisitions = [np.array(frame, copy=True) for frame in self.Andor.contrast] if include_history else None
-            elif self.lp_filter_enabled:
-                has_frames = len(self.Andor.filtered) > 0
-                acquisitions = [np.array(frame, copy=True) for frame in self.Andor.filtered] if include_history else None
-            else:
-                has_frames = len(self.Andor.acquisitions) > 0
-                acquisitions = [np.array(frame, copy=True) for frame in self.Andor.acquisitions] if include_history else None
 
-        return latest_frame, current_frame_idx, has_frames, acquisitions
+            if self._is_difference_mode_active():
+                active_history = self.Andor.difference
+            elif self._is_contrast_mode_active():
+                active_history = self.Andor.contrast
+            elif self.lp_filter_enabled:
+                active_history = self.Andor.filtered
+            else:
+                active_history = self.Andor.acquisitions
+
+            has_frames = len(active_history) > 0
+            history_start_offset = 0
+            if include_history and history_start_frame_idx is not None:
+                first_available_frame_idx = max(0, current_frame_idx - len(active_history)) + 1
+                next_frame_idx = max(int(history_start_frame_idx) + 1, first_available_frame_idx)
+                history_start_offset = max(0, next_frame_idx - first_available_frame_idx)
+
+            timestamps = None
+            if include_timestamps:
+                if include_history:
+                    timestamp_count = len(self.Andor.timestamps)
+                    timestamp_start_offset = 0
+                    if history_start_frame_idx is not None:
+                        first_available_timestamp_frame_idx = max(0, current_frame_idx - timestamp_count) + 1
+                        next_timestamp_frame_idx = max(int(history_start_frame_idx) + 1, first_available_timestamp_frame_idx)
+                        timestamp_start_offset = max(0, next_timestamp_frame_idx - first_available_timestamp_frame_idx)
+                    timestamps = self.Andor.timestamps[timestamp_start_offset:]
+                elif len(self.Andor.timestamps) > 0:
+                    timestamps = [float(self.Andor.timestamps[-1])]
+                else:
+                    timestamps = []
+            acquisitions = active_history[history_start_offset:] if include_history else None
+
+        return latest_frame, current_frame_idx, has_frames, acquisitions, timestamps
 
     def _on_set_zero(self, sender=None, app_data=None, user_data=None):
         self.ensure_zero_reference_from_latest_frame()
@@ -660,6 +691,7 @@ class CameraFeedWindow:
             self.mirrored_difference_scale = False
             dpg.set_value(self.controls_window.mirrored_difference_checkbox_id, False)
 
+        self.colormap_name = self._colormap_per_mode.get(self.display_mode, self._get_default_colormap_name())
         self._ensure_valid_colormap_selection()
         self._sync_scale_state_to_active_frame()
         self._request_zero_window_refresh()
@@ -672,6 +704,7 @@ class CameraFeedWindow:
     def _on_colormap_changed(self, sender, app_data):
         self.colormap_name = self._parse_colormap_label(app_data)
         self._ensure_valid_colormap_selection()
+        self._colormap_per_mode[self.display_mode] = self.colormap_name
         self._update_colormap_controls_state()
         self._request_zero_window_refresh()
         self._refresh_display_image()
@@ -794,11 +827,11 @@ class CameraFeedWindow:
     def _process_frame(self, frame=None):
         latest_frame = frame
         if latest_frame is None:
-            latest_frame, _, _, _ = self.get_analysis_snapshot(include_history=False)
+            latest_frame, _, _, _, _ = self.get_analysis_snapshot(include_history=False)
         return self._frame_to_rgba(self._prepare_analysis_frame(latest_frame))
 
     def get_roi_frame(self, bounds):
-        latest_frame, frame_idx, _, _ = self.get_analysis_snapshot(include_history=False)
+        latest_frame, frame_idx, _, _, _ = self.get_analysis_snapshot(include_history=False)
         crop = self.extract_roi_frame(latest_frame, bounds)
 
         return crop, frame_idx
@@ -1244,20 +1277,12 @@ class CameraFeedWindow:
 
             try:
                 if self.Andor.frame_ready_event.is_set():
-                    self.imageArray = self._process_frame()
-                    self.image_dirty = True
+                    processed_image = self._process_frame()
+                    with self._image_state_lock:
+                        self.imageArray = processed_image
+                        self.image_dirty = True
                     self._request_zero_window_refresh()
                     self.Andor.frame_ready_event.clear()
-
-                if self.image_dirty and hasattr(self, "texture_id") and dpg.does_item_exist(self.texture_id):
-                    dpg.set_value(self.texture_id, self.imageArray)
-                    self.image_dirty = False
-                    self._display_fps_window_frame_count += 1
-                    elapsed_seconds = time.perf_counter() - self._display_fps_window_started_at
-                    if elapsed_seconds >= 0.5:
-                        self.displayed_feed_fps = self._display_fps_window_frame_count / elapsed_seconds
-                        self._display_fps_window_started_at = time.perf_counter()
-                        self._display_fps_window_frame_count = 0
 
             except Exception as e:
                 print("Error updating camera feed:")
@@ -1400,6 +1425,50 @@ class CameraFeedWindow:
 
         self._set_zoom_at_point(app_data, self._get_mouse_local())
 
+    def _on_right_mouse_down(self, sender, app_data):
+        if not self._is_canvas_hovered():
+            self.context_menu_roi = None
+            if hasattr(self, "set_frame_to_roi_button_id") and dpg.does_item_exist(self.set_frame_to_roi_button_id):
+                dpg.configure_item(self.set_frame_to_roi_button_id, show=False)
+            return
+
+        hit = self._hit_test(self._get_mouse_local())
+        self.context_menu_roi = hit[0] if hit is not None else None
+        if hasattr(self, "set_frame_to_roi_button_id") and dpg.does_item_exist(self.set_frame_to_roi_button_id):
+            dpg.configure_item(self.set_frame_to_roi_button_id, show=self.context_menu_roi is not None)
+
+    def _get_camera_system_controller(self):
+        for obj in class_objects:
+            if getattr(obj, "camera_feed", None) is self:
+                return obj
+        for obj in class_objects:
+            if getattr(obj, "Andor", None) is self.Andor and hasattr(obj, "_apply_aoi_settings"):
+                return obj
+        return None
+
+    def _on_set_frame_to_roi(self, sender=None, app_data=None, user_data=None):
+        roi = self.context_menu_roi
+        if roi is None:
+            return
+
+        controller = self._get_camera_system_controller()
+        if controller is None:
+            return
+
+        x1, y1, x2, y2 = roi.get_bounds()
+        requested_aoi = {
+            "width": max(1, int(x2 - x1)),
+            "height": max(1, int(y2 - y1)),
+            "left": int(x1) + 1,
+            "top": int(y1) + 1,
+        }
+
+        controller.aoi_auto_center_enabled = False
+        dpg.set_value(controller.settings_aoi_auto_center_checkbox_id, False)
+        controller._apply_aoi_settings(requested_aoi)
+        controller._refresh_hardware_requirements(force=True)
+        self.context_menu_roi = None
+
     def _on_delete_key_pressed(self, sender, app_data):
         if self.selected_roi is None:
             return
@@ -1432,12 +1501,13 @@ class CameraFeedWindow:
                 "autoscale_enabled": bool(self.autoscale_enabled),
                 "scale_min": float(self.scale_min),
                 "scale_max": float(self.scale_max),
-                "scale_min_percent": int(self.get_scale_min_percent()),
-                "scale_max_percent": int(self.get_scale_max_percent()),
+                "scale_min_percent": float(self.get_scale_min_percent()),
+                "scale_max_percent": float(self.get_scale_max_percent()),
                 "autoscale_grace_percent": float(self.autoscale_grace_percent),
                 "display_mode": self.display_mode,
                 "mirrored_difference_scale": bool(self.mirrored_difference_scale),
                 "colormap_name": self.colormap_name,
+                "colormap_per_mode": dict(self._colormap_per_mode),
                 "lp_filter_enabled": bool(self.lp_filter_enabled),
                 "lp_filter_cutoff_hz": float(self.lp_filter_cutoff_hz),
                 "zoom": float(self.zoom),
@@ -1469,6 +1539,13 @@ class CameraFeedWindow:
         self.display_mode = str(state.get("display_mode", self.display_mode))
         self.mirrored_difference_scale = bool(state.get("mirrored_difference_scale", self.mirrored_difference_scale))
         self.colormap_name = self._parse_colormap_label(state.get("colormap_name", self.colormap_name))
+        saved_per_mode = state.get("colormap_per_mode", {})
+        if isinstance(saved_per_mode, dict):
+            for mode, name in saved_per_mode.items():
+                parsed = self._parse_colormap_label(name)
+                if parsed:
+                    self._colormap_per_mode[mode] = parsed
+        self._colormap_per_mode[self.display_mode] = self.colormap_name
         self._ensure_valid_colormap_selection()
 
         if "scale_min_percent" in state and "scale_max_percent" in state:
@@ -1528,9 +1605,26 @@ class CameraFeedWindow:
         self.rois_window.rebuild_layout(self.rois)
         self.rois_window.render()
         self._update_zero_window()
+        rois_window_visible = self.rois_window.is_visible()
 
-        for roi in list(self.rois):
-            roi.render()
+        pending_image = None
+        with self._image_state_lock:
+            if self.image_dirty:
+                pending_image = self.imageArray
+                self.image_dirty = False
+
+        if pending_image is not None and hasattr(self, "texture_id") and dpg.does_item_exist(self.texture_id):
+            dpg.set_value(self.texture_id, pending_image)
+            self._display_fps_window_frame_count += 1
+            elapsed_seconds = time.perf_counter() - self._display_fps_window_started_at
+            if elapsed_seconds >= 0.5:
+                self.displayed_feed_fps = self._display_fps_window_frame_count / elapsed_seconds
+                self._display_fps_window_started_at = time.perf_counter()
+                self._display_fps_window_frame_count = 0
+
+        if rois_window_visible:
+            for roi in list(self.rois):
+                roi.render()
 
 
 

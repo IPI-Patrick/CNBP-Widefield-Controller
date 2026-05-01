@@ -7,13 +7,15 @@ import sys
 import threading
 import time
 import traceback
+
 import numpy as np
 
 
-MODEL_NAME = "4824A"
-MAX_SAMPLE_RATE_HZ = 80_000_000.0
+MODEL_NAME = "PS2000"
+MAX_SAMPLE_RATE_HZ = 100_000_000.0
 CHANNEL_NAMES = ("A", "B", "C", "D", "E", "F", "G", "H")
-CHANNEL_ENUM = {"A": 0, "B": 1, "C": 2, "D": 3, "E": 4, "F": 5, "G": 6, "H": 7}
+AVAILABLE_CHANNEL_NAMES = ("A", "B")
+CHANNEL_ENUM = {"A": 0, "B": 1}
 DEFAULT_HISTORY_SECONDS = 1.0
 CAPTURE_BLOCK_DURATION_SECONDS = 0.1
 MAX_ADC_VALUE = 32767.0
@@ -21,10 +23,6 @@ SUPPORTED_AWG_WAVEFORMS = ("dc", "sine", "square", "triangle")
 SCOPE_STORAGE_DTYPE = np.dtype(np.float16)
 SCOPE_STORAGE_DTYPE_NAME = SCOPE_STORAGE_DTYPE.name
 SUPPORTED_COUPLINGS = ("AC", "DC")
-PICO_STATUS_OK = 0x00000000
-PICO_POWER_SUPPLY_NOT_CONNECTED = 0x0000011E
-PICO_USB3_0_DEVICE_NON_USB3_0_PORT = 0x0000011A
-PICO_VARIANT_INFO = 0x00000003
 
 
 def _ensure_picosdk_import_path():
@@ -37,44 +35,49 @@ def _ensure_picosdk_import_path():
 _ensure_picosdk_import_path()
 
 pico_functions = importlib.import_module("picosdk.functions")
-assert_pico_ok = pico_functions.assert_pico_ok
-ps4000a = importlib.import_module("picosdk.ps4000a").ps4000a
+assert_pico2000_ok = pico_functions.assert_pico2000_ok
+ps2000 = importlib.import_module("picosdk.ps2000").ps2000
 
-# Build voltage range mappings from the SDK (PICO_X1_PROBE_* entries)
-PS4000A_VOLTAGE_RANGES = {
-    name: value
-    for name, value in ps4000a.PICO_CONNECT_PROBE_RANGE.items()
-    if isinstance(name, str) and name.startswith("PICO_X1_PROBE_") and name.endswith("V") and "RANGES" not in name
+
+PS2000_VOLTAGE_RANGES = {
+    "PICO_X1_PROBE_20MV": ps2000.PS2000_VOLTAGE_RANGE["PS2000_20MV"],
+    "PICO_X1_PROBE_50MV": ps2000.PS2000_VOLTAGE_RANGE["PS2000_50MV"],
+    "PICO_X1_PROBE_100MV": ps2000.PS2000_VOLTAGE_RANGE["PS2000_100MV"],
+    "PICO_X1_PROBE_200MV": ps2000.PS2000_VOLTAGE_RANGE["PS2000_200MV"],
+    "PICO_X1_PROBE_500MV": ps2000.PS2000_VOLTAGE_RANGE["PS2000_500MV"],
+    "PICO_X1_PROBE_1V": ps2000.PS2000_VOLTAGE_RANGE["PS2000_1V"],
+    "PICO_X1_PROBE_2V": ps2000.PS2000_VOLTAGE_RANGE["PS2000_2V"],
+    "PICO_X1_PROBE_5V": ps2000.PS2000_VOLTAGE_RANGE["PS2000_5V"],
+    "PICO_X1_PROBE_10V": ps2000.PS2000_VOLTAGE_RANGE["PS2000_10V"],
+    "PICO_X1_PROBE_20V": ps2000.PS2000_VOLTAGE_RANGE["PS2000_20V"],
 }
-SUPPORTED_VOLTAGE_RANGES = tuple(PS4000A_VOLTAGE_RANGES.keys())
-PS4000A_RANGE_MILLIVOLTS = {
-    name: ps4000a.PICO_VOLTAGE_RANGE[enum_val] * 1000.0
-    for name, enum_val in PS4000A_VOLTAGE_RANGES.items()
-    if enum_val in ps4000a.PICO_VOLTAGE_RANGE
+SUPPORTED_VOLTAGE_RANGES = tuple(PS2000_VOLTAGE_RANGES.keys())
+PS2000_RANGE_MILLIVOLTS = {
+    name: ps2000.PICO_VOLTAGE_RANGE[enum_val] * 1000.0
+    for name, enum_val in PS2000_VOLTAGE_RANGES.items()
 }
-PS4000A_TIME_UNIT_TO_SECONDS = {
-    ps4000a.PS4000A_TIME_UNITS["PS4000A_FS"]: 1e-15,
-    ps4000a.PS4000A_TIME_UNITS["PS4000A_PS"]: 1e-12,
-    ps4000a.PS4000A_TIME_UNITS["PS4000A_NS"]: 1e-9,
-    ps4000a.PS4000A_TIME_UNITS["PS4000A_US"]: 1e-6,
-    ps4000a.PS4000A_TIME_UNITS["PS4000A_MS"]: 1e-3,
-    ps4000a.PS4000A_TIME_UNITS["PS4000A_S"]: 1.0,
+PS2000_TIME_UNIT_TO_SECONDS = {
+    ps2000.PS2000_TIME_UNITS["PS2000_FS"]: 1e-15,
+    ps2000.PS2000_TIME_UNITS["PS2000_PS"]: 1e-12,
+    ps2000.PS2000_TIME_UNITS["PS2000_NS"]: 1e-9,
+    ps2000.PS2000_TIME_UNITS["PS2000_US"]: 1e-6,
+    ps2000.PS2000_TIME_UNITS["PS2000_MS"]: 1e-3,
+    ps2000.PS2000_TIME_UNITS["PS2000_S"]: 1.0,
 }
 
 
 def _normalize_voltage_range(range_name):
-    """Convert various range name formats to PICO_X1_PROBE_* format."""
     range_text = str(range_name).upper().strip()
-    if range_text in PS4000A_VOLTAGE_RANGES:
+    if range_text in PS2000_VOLTAGE_RANGES:
         return range_text
     for prefix in ("PICO_X1_PROBE_", "PS4000A_", "PS2000A_", "PS2000_"):
         if range_text.startswith(prefix):
             voltage_part = range_text[len(prefix):]
             candidate = f"PICO_X1_PROBE_{voltage_part}"
-            if candidate in PS4000A_VOLTAGE_RANGES:
+            if candidate in PS2000_VOLTAGE_RANGES:
                 return candidate
     candidate = f"PICO_X1_PROBE_{range_text}"
-    if candidate in PS4000A_VOLTAGE_RANGES:
+    if candidate in PS2000_VOLTAGE_RANGES:
         return candidate
     raise ValueError(f"Unrecognized voltage range '{range_name}'.")
 
@@ -101,141 +104,152 @@ def _emit_payload(output_queue, timestamps, channel_arrays, dtype_name):
 
 
 _AWG_WAVEFORM_MAP = {
-    "dc":       ps4000a.PS4000A_WAVE_TYPE["PS4000A_DC_VOLTAGE"],
-    "sine":     ps4000a.PS4000A_WAVE_TYPE["PS4000A_SINE"],
-    "square":   ps4000a.PS4000A_WAVE_TYPE["PS4000A_SQUARE"],
-    "triangle": ps4000a.PS4000A_WAVE_TYPE["PS4000A_TRIANGLE"],
+    "dc": ps2000.PS2000_WAVE_TYPE["PS2000_DC_VOLTAGE"],
+    "sine": ps2000.PS2000_WAVE_TYPE["PS2000_SINE"],
+    "square": ps2000.PS2000_WAVE_TYPE["PS2000_SQUARE"],
+    "triangle": ps2000.PS2000_WAVE_TYPE["PS2000_TRIANGLE"],
 }
 
 
-def _apply_awg_output_to_device(handle, awg_config):
-    """Configure the 4824A built-in signal generator."""
-    waveform_type = str(awg_config.get("waveform_type", "dc")).lower()
-    wave_enum = _AWG_WAVEFORM_MAP.get(waveform_type)
-    if wave_enum is None:
-        raise ValueError(f"Unsupported AWG waveform type: {waveform_type}")
-
-    offset_uv = int(float(awg_config.get("offset_volts", 0.0)) * 1_000_000)
-    pk_to_pk_uv = int(float(awg_config.get("amplitude_vpp_volts", 1.0)) * 1_000_000)
-    frequency_hz = float(awg_config.get("frequency_hz", 1000.0))
-
-    status = ps4000a.ps4000aSetSigGenBuiltIn(
-        ctypes.c_int16(handle),
-        ctypes.c_int32(offset_uv),                                              # offsetVoltage (µV)
-        ctypes.c_uint32(pk_to_pk_uv),                                           # pkToPk (µV)
-        ctypes.c_int32(wave_enum),                                               # waveType
-        ctypes.c_double(frequency_hz),                                           # startFrequency
-        ctypes.c_double(frequency_hz),                                           # stopFrequency (no sweep)
-        ctypes.c_double(0.0),                                                    # increment (no sweep)
-        ctypes.c_double(0.0),                                                    # dwellTime (no sweep)
-        ctypes.c_int32(ps4000a.PS4000A_SWEEP_TYPE["PS4000A_UP"]),                # sweepType
-        ctypes.c_int32(ps4000a.PS4000A_EXTRA_OPERATIONS["PS4000A_ES_OFF"]),      # operation
-        ctypes.c_uint32(0),                                                      # shots (0 = continuous)
-        ctypes.c_uint32(0),                                                      # sweeps (0 = continuous)
-        ctypes.c_int32(ps4000a.PS4000A_SIGGEN_TRIG_TYPE["PS4000A_SIGGEN_RISING"]),    # triggerType
-        ctypes.c_int32(ps4000a.PS4000A_SIGGEN_TRIG_SOURCE["PS4000A_SIGGEN_NONE"]),    # triggerSource
-        ctypes.c_int16(0),                                                       # extInThreshold
-    )
-    _assert_ps4000a_call_ok(status, "ps4000aSetSigGenBuiltIn")
-
-
-def _disable_awg_output_on_device(handle):
-    """Turn off the signal generator by setting 0V DC output."""
-    status = ps4000a.ps4000aSetSigGenBuiltIn(
-        ctypes.c_int16(handle),
-        ctypes.c_int32(0),                                                       # offsetVoltage
-        ctypes.c_uint32(0),                                                      # pkToPk
-        ctypes.c_int32(ps4000a.PS4000A_WAVE_TYPE["PS4000A_DC_VOLTAGE"]),         # waveType
-        ctypes.c_double(0.0),                                                    # startFrequency
-        ctypes.c_double(0.0),                                                    # stopFrequency
-        ctypes.c_double(0.0),                                                    # increment
-        ctypes.c_double(0.0),                                                    # dwellTime
-        ctypes.c_int32(ps4000a.PS4000A_SWEEP_TYPE["PS4000A_UP"]),                # sweepType
-        ctypes.c_int32(ps4000a.PS4000A_EXTRA_OPERATIONS["PS4000A_ES_OFF"]),      # operation
-        ctypes.c_uint32(0),                                                      # shots
-        ctypes.c_uint32(0),                                                      # sweeps
-        ctypes.c_int32(ps4000a.PS4000A_SIGGEN_TRIG_TYPE["PS4000A_SIGGEN_RISING"]),    # triggerType
-        ctypes.c_int32(ps4000a.PS4000A_SIGGEN_TRIG_SOURCE["PS4000A_SIGGEN_NONE"]),    # triggerSource
-        ctypes.c_int16(0),                                                       # extInThreshold
-    )
-    _assert_ps4000a_call_ok(status, "ps4000aSetSigGenBuiltIn (disable)")
-
-
-def _assert_ps4000a_call_ok(status, action_name):
+def _status_name(status_code):
     try:
-        assert_pico_ok(status)
+        status_lookup = importlib.import_module("picosdk.constants").PICO_STATUS_LOOKUP
+        return status_lookup.get(status_code, str(int(status_code)))
+    except Exception:
+        return str(int(status_code))
+
+
+def _assert_ps2000_call_ok(status, action_name):
+    try:
+        assert_pico2000_ok(status)
     except Exception as exc:
-        msg = f"{action_name} failed in ps4000a API with status {status} ({_status_name(status)})."
-        print(f"[PicoScope] {msg}", file=sys.stderr)
+        msg = f"{action_name} failed in ps2000 API with status {status} ({_status_name(status)})."
+        print(f"[PicoScope2000] {msg}", file=sys.stderr)
         raise RuntimeError(msg) from exc
 
 
-def _status_name(status_code):
-    """Return the SDK constant name for a status code, or a hex string if unknown."""
-    try:
-        from picosdk.constants import PICO_STATUS_LOOKUP
-        return PICO_STATUS_LOOKUP.get(status_code, f"0x{status_code:08X}")
-    except Exception:
-        return f"0x{status_code:08X}"
+def _assert_ps2000_sig_gen_call_ok(status, action_name):
+    if int(status) < 0:
+        msg = f"{action_name} failed in ps2000 API with status {status}."
+        print(f"[PicoScope2000] {msg}", file=sys.stderr)
+        raise RuntimeError(msg)
+
+
+def _assert_ps2000_streaming_poll_ok(status, action_name):
+    # Legacy ps2000 polling uses 0 when no new overview buffer is ready yet.
+    if int(status) < 0:
+        msg = f"{action_name} failed in ps2000 API with status {status}."
+        print(f"[PicoScope2000] {msg}", file=sys.stderr)
+        raise RuntimeError(msg)
+
+
+def _assert_ps2000_streaming_start_ok(status, action_name):
+    # Legacy ps2000 streaming start can also report success as 0.
+    if int(status) < 0:
+        msg = f"{action_name} failed in ps2000 API with status {status}."
+        print(f"[PicoScope2000] {msg}", file=sys.stderr)
+        raise RuntimeError(msg)
+
+
+def _get_unit_info_text(handle, info_key):
+    info_buffer = ctypes.create_string_buffer(255)
+    info_code = ps2000.PICO_INFO[info_key]
+    info_length = ps2000.ps2000_get_unit_info(
+        ctypes.c_int16(handle),
+        info_buffer,
+        ctypes.c_int16(len(info_buffer)),
+        ctypes.c_int16(info_code),
+    )
+    if int(info_length) <= 0:
+        return ""
+    return info_buffer.value.decode("utf-8", errors="ignore").strip()
+
+
+def _describe_device(handle):
+    variant = _get_unit_info_text(handle, "PICO_VARIANT_INFO") or MODEL_NAME
+    serial = _get_unit_info_text(handle, "PICO_BATCH_AND_SERIAL")
+    return variant, serial
 
 
 def _list_available_devices():
-    """Enumerate connected ps4000a-series devices using the SDK."""
-    count = ctypes.c_int16(0)
-    serials = ctypes.create_string_buffer(4096)
-    serial_lth = ctypes.c_int16(4096)
-    try:
-        status = ps4000a.ps4000aEnumerateUnits(
-            ctypes.byref(count),
-            serials,
-            ctypes.byref(serial_lth),
-        )
-    except Exception as exc:
-        msg = f"Failed to call ps4000aEnumerateUnits: {exc}"
-        print(f"[PicoScope] {msg}", file=sys.stderr)
-        raise RuntimeError(msg) from exc
-
-    if status != PICO_STATUS_OK and count.value == 0:
-        msg = (
-            f"ps4000aEnumerateUnits returned {_status_name(status)}. "
-            "If this is PICO_HARDWARE_VERSION_NOT_SUPPORTED or PICO_INTERNAL_ERROR, "
-            "update PicoScope SDK / PicoScope software to the latest version."
-        )
-        print(f"[PicoScope] {msg}", file=sys.stderr)
-        raise RuntimeError(msg)
-
-    if count.value == 0:
-        return []
-
-    serial_string = serials.value.decode("utf-8", errors="ignore").strip()
-    if not serial_string:
-        return []
-
-    serial_list = [s.strip() for s in serial_string.split(",") if s.strip()]
     devices = []
-    for serial in serial_list:
-        devices.append(
-            {
-                "model": MODEL_NAME,
-                "serial": serial,
-                "has_verified_serial": True,
-                "variant": MODEL_NAME,
-                "instance_id": serial,
-                "instance_tail": serial,
-                "label": f"{MODEL_NAME} | {serial}",
-            }
-        )
+    handles_to_close = []
+    seen = set()
+    try:
+        while True:
+            handle = int(ps2000.ps2000_open_unit())
+            if handle <= 0:
+                break
+            handles_to_close.append(handle)
+
+            variant, serial = _describe_device(handle)
+            identity = (variant, serial)
+            if identity in seen:
+                continue
+            seen.add(identity)
+
+            serial_tail = serial[-8:] if serial else variant
+            label_suffix = f" | {serial}" if serial else ""
+            devices.append(
+                {
+                    "model": variant,
+                    "serial": serial,
+                    "has_verified_serial": bool(serial),
+                    "variant": variant,
+                    "instance_id": serial or variant,
+                    "instance_tail": serial_tail,
+                    "label": f"{variant}{label_suffix}",
+                }
+            )
+    finally:
+        for handle in handles_to_close:
+            try:
+                ps2000.ps2000_close_unit(ctypes.c_int16(handle))
+            except Exception:
+                pass
+
     return devices
 
 
+def _open_matching_device(serial_number):
+    requested_serial = str(serial_number or "").strip()
+    handles_to_close = []
+    try:
+        while True:
+            handle = int(ps2000.ps2000_open_unit())
+            if handle <= 0:
+                break
+
+            variant, serial = _describe_device(handle)
+            if not requested_serial or serial == requested_serial:
+                for other_handle in handles_to_close:
+                    try:
+                        ps2000.ps2000_close_unit(ctypes.c_int16(other_handle))
+                    except Exception:
+                        pass
+                return handle, variant, serial
+
+            handles_to_close.append(handle)
+    finally:
+        if requested_serial:
+            for handle in handles_to_close:
+                try:
+                    ps2000.ps2000_close_unit(ctypes.c_int16(handle))
+                except Exception:
+                    pass
+
+    if requested_serial:
+        raise RuntimeError(f"No PS2000 device found matching serial '{requested_serial}'.")
+    raise RuntimeError("Failed to open PS2000 device. No device found.")
+
+
 def _select_streaming_interval(sample_rate_hz):
-    """Pick the best ps4000a time unit and interval value for the desired sample rate."""
     interval_seconds = 1.0 / max(float(sample_rate_hz), 1e-12)
     unit_candidates = (
-        ("PS4000A_NS", 1e-9),
-        ("PS4000A_US", 1e-6),
-        ("PS4000A_MS", 1e-3),
-        ("PS4000A_S", 1.0),
+        ("PS2000_NS", 1e-9),
+        ("PS2000_US", 1e-6),
+        ("PS2000_MS", 1e-3),
+        ("PS2000_S", 1.0),
     )
 
     best_interval = None
@@ -251,7 +265,7 @@ def _select_streaming_interval(sample_rate_hz):
         error = abs(actual_interval_seconds - interval_seconds)
         if best_error is None or error < best_error:
             best_interval = interval_value
-            best_units = ps4000a.PS4000A_TIME_UNITS[unit_name]
+            best_units = ps2000.PS2000_TIME_UNITS[unit_name]
             best_unit_seconds = unit_seconds
             best_error = error
 
@@ -284,121 +298,117 @@ def _normalize_awg_waveform_type(waveform_type):
     return waveform_text
 
 
-def _validate_4824a_device(handle):
-    info_buffer = ctypes.create_string_buffer(255)
-    required_size = ctypes.c_int16(0)
-    status = ps4000a.ps4000aGetUnitInfo(
+def _apply_awg_output_to_device(handle, awg_config):
+    waveform_type = str(awg_config.get("waveform_type", "dc")).lower()
+    wave_enum = _AWG_WAVEFORM_MAP.get(waveform_type)
+    if wave_enum is None:
+        raise ValueError(f"Unsupported AWG waveform type: {waveform_type}")
+
+    offset_uv = int(float(awg_config.get("offset_volts", 0.0)) * 1_000_000)
+    pk_to_pk_uv = int(float(awg_config.get("amplitude_vpp_volts", 1.0)) * 1_000_000)
+    frequency_hz = float(awg_config.get("frequency_hz", 1000.0))
+
+    status = ps2000.ps2000_set_sig_gen_built_in(
         ctypes.c_int16(handle),
-        info_buffer,
-        ctypes.c_int16(255),
-        ctypes.byref(required_size),
-        ctypes.c_uint32(PICO_VARIANT_INFO),
+        ctypes.c_int32(offset_uv),
+        ctypes.c_uint32(pk_to_pk_uv),
+        ctypes.c_int32(wave_enum),
+        ctypes.c_float(frequency_hz),
+        ctypes.c_float(frequency_hz),
+        ctypes.c_float(0.0),
+        ctypes.c_float(0.0),
+        ctypes.c_int32(ps2000.PS2000_SWEEP_TYPE["PS2000_UP"]),
+        ctypes.c_uint32(0),
     )
-    if status != PICO_STATUS_OK:
-        raise RuntimeError("Failed to query PicoScope variant info.")
-    variant_text = info_buffer.value.decode("utf-8", errors="ignore").strip() or MODEL_NAME
-    if "4824" not in variant_text.upper():
-        raise RuntimeError(f"Detected PicoScope model '{variant_text}'. This driver requires a 4824A.")
-    return variant_text
+    _assert_ps2000_sig_gen_call_ok(status, "ps2000_set_sig_gen_built_in")
 
 
-def _run_4824a_capture(handle, config, output_queue, stop_event, control_queue, api_lock):
-    status = {}
-    enabled_channels = [name for name in CHANNEL_NAMES if config["channels"][name]["enabled"]]
+def _disable_awg_output_on_device(handle):
+    status = ps2000.ps2000_set_sig_gen_built_in(
+        ctypes.c_int16(handle),
+        ctypes.c_int32(0),
+        ctypes.c_uint32(0),
+        ctypes.c_int32(ps2000.PS2000_WAVE_TYPE["PS2000_DC_VOLTAGE"]),
+        ctypes.c_float(0.0),
+        ctypes.c_float(0.0),
+        ctypes.c_float(0.0),
+        ctypes.c_float(0.0),
+        ctypes.c_int32(ps2000.PS2000_SWEEP_TYPE["PS2000_UP"]),
+        ctypes.c_uint32(0),
+    )
+    _assert_ps2000_sig_gen_call_ok(status, "ps2000_set_sig_gen_built_in (disable)")
+
+
+def _run_ps2000_capture(handle, config, output_queue, stop_event, control_queue, api_lock, device_variant):
+    enabled_channels = [name for name in AVAILABLE_CHANNEL_NAMES if config["channels"][name]["enabled"]]
     if not enabled_channels:
-        raise RuntimeError("At least one 4824A channel must be enabled before starting collection.")
+        raise RuntimeError("At least one PS2000 channel must be enabled before starting collection.")
 
     overview_buffer_size = 50000
     max_samples = 100000
-    ratio_mode_none = ps4000a.PS4000A_RATIO_MODE["PS4000A_RATIO_MODE_NONE"]
 
     try:
-        _validate_4824a_device(handle)
-
-        channel_buffers = {}
         with api_lock:
-            # Configure all channels (enable requested ones, disable the rest)
-            for channel_name in CHANNEL_NAMES:
+            for channel_name in AVAILABLE_CHANNEL_NAMES:
                 channel_config = config["channels"][channel_name]
                 range_name = _normalize_voltage_range(channel_config["range"])
-                status[f"set_channel_{channel_name}"] = ps4000a.ps4000aSetChannel(
+                status = ps2000.ps2000_set_channel(
                     ctypes.c_int16(handle),
-                    ctypes.c_int32(CHANNEL_ENUM[channel_name]),
+                    ctypes.c_int16(CHANNEL_ENUM[channel_name]),
                     ctypes.c_int16(1 if channel_config["enabled"] else 0),
-                    ctypes.c_int32(ps4000a.PICO_COUPLING[channel_config["coupling"]]),
-                    ctypes.c_int32(PS4000A_VOLTAGE_RANGES[range_name]),
-                    ctypes.c_float(0.0),
+                    ctypes.c_int16(ps2000.PICO_COUPLING[channel_config["coupling"]]),
+                    ctypes.c_int16(PS2000_VOLTAGE_RANGES[range_name]),
                 )
-                _assert_ps4000a_call_ok(
-                    status[f"set_channel_{channel_name}"],
-                    f"ps4000aSetChannel({channel_name})",
-                )
+                _assert_ps2000_call_ok(status, f"ps2000_set_channel({channel_name})")
 
-            # Register data buffers for each enabled channel
-            for channel_name in enabled_channels:
-                buf = np.zeros(overview_buffer_size, dtype=np.int16)
-                channel_buffers[channel_name] = buf
-                status[f"set_data_buffers_{channel_name}"] = ps4000a.ps4000aSetDataBuffers(
-                    ctypes.c_int16(handle),
-                    ctypes.c_int32(CHANNEL_ENUM[channel_name]),
-                    buf.ctypes.data_as(ctypes.POINTER(ctypes.c_int16)),
-                    None,
-                    ctypes.c_int32(overview_buffer_size),
-                    ctypes.c_uint32(0),
-                    ctypes.c_int32(ratio_mode_none),
-                )
-                _assert_ps4000a_call_ok(
-                    status[f"set_data_buffers_{channel_name}"],
-                    f"ps4000aSetDataBuffers({channel_name})",
-                )
-
-            # Calculate and start streaming
             interval_value, interval_units, unit_seconds = _select_streaming_interval(config["sample_rate_hz"])
-            sample_interval = ctypes.c_uint32(interval_value)
-            status["run_streaming"] = ps4000a.ps4000aRunStreaming(
+            status = ps2000.ps2000_run_streaming_ns(
                 ctypes.c_int16(handle),
-                ctypes.byref(sample_interval),
+                ctypes.c_uint32(interval_value),
                 ctypes.c_int32(interval_units),
-                ctypes.c_uint32(0),
                 ctypes.c_uint32(max_samples),
                 ctypes.c_int16(0),
                 ctypes.c_uint32(1),
-                ctypes.c_int32(ratio_mode_none),
                 ctypes.c_uint32(overview_buffer_size),
             )
-            _assert_ps4000a_call_ok(status["run_streaming"], "ps4000aRunStreaming")
+            _assert_ps2000_streaming_start_ok(status, "ps2000_run_streaming_ns")
 
-        actual_interval = sample_interval.value
-        interval_seconds = actual_interval * unit_seconds # type: ignore
+        interval_seconds = interval_value * unit_seconds
         actual_rate_hz = 1.0 / max(interval_seconds, 1e-12)
-
         output_queue.put(
             {
                 "kind": "meta",
                 "actual_sample_rate_hz": actual_rate_hz,
                 "enabled_channels": list(enabled_channels),
-                "active_scope_series": MODEL_NAME,
-                "streaming_mode": "ps4000a",
+                "active_scope_series": device_variant or MODEL_NAME,
+                "streaming_mode": "ps2000",
             }
         )
 
         next_sample_time = float(config.get("time_offset_seconds", 0.0))
 
-        def streaming_callback(cb_handle, noOfSamples, startIndex, overflow, triggerAt, triggered, autoStop, pParameter):
+        def streaming_callback(buffers, _overflow, _trigger_at, _triggered, _auto_stop, n_values):
             nonlocal next_sample_time
-            n = int(noOfSamples)
-            if n <= 0:
+            sample_count = int(n_values)
+            if sample_count <= 0:
                 return
-            start = int(startIndex)
-            timestamps = next_sample_time + (np.arange(n, dtype=np.float64) * interval_seconds)
+
+            timestamps = next_sample_time + (np.arange(sample_count, dtype=np.float64) * interval_seconds)
             next_sample_time = float(timestamps[-1] + interval_seconds)
+
             channel_arrays = {}
-            for ch_name in enabled_channels:
-                src = channel_buffers[ch_name]
-                channel_arrays[ch_name] = np.array(src[start:start + n], dtype=np.int16, copy=True)
+            buffer_index_map = {
+                "A": 0,
+                "B": 2,
+            }
+            for channel_name in enabled_channels:
+                buffer_index = buffer_index_map[channel_name]
+                source_buffer = buffers[buffer_index]
+                channel_arrays[channel_name] = np.array(source_buffer[0:sample_count], dtype=np.int16, copy=True)
+
             _emit_payload(output_queue, timestamps, channel_arrays, config["data_bits"])
 
-        callback = ps4000a.StreamingReadyType(streaming_callback)
+        callback = ps2000.GetOverviewBuffersType(streaming_callback)
 
         while not stop_event.is_set():
             if control_queue is not None:
@@ -407,24 +417,24 @@ def _run_4824a_capture(handle, config, output_queue, stop_event, control_queue, 
                         control_queue.get_nowait()
                     except queue.Empty:
                         break
-                    # AWG commands are silently ignored; the 4824A has no signal generator.
 
             with api_lock:
-                ps4000a.ps4000aGetStreamingLatestValues(ctypes.c_int16(handle), callback, None)
+                status = ps2000.ps2000_get_streaming_last_values(ctypes.c_int16(handle), callback)
+            _assert_ps2000_streaming_poll_ok(status, "ps2000_get_streaming_last_values")
             time.sleep(0.01)
     finally:
         try:
             with api_lock:
-                ps4000a.ps4000aStop(ctypes.c_int16(handle))
+                ps2000.ps2000_stop(ctypes.c_int16(handle))
         except Exception:
             pass
 
 
-def _picoscope_worker(handle, config, output_queue, stop_event, control_queue, api_lock):
+def _picoscope_worker(handle, config, output_queue, stop_event, control_queue, api_lock, device_variant):
     try:
-        _run_4824a_capture(handle, config, output_queue, stop_event, control_queue, api_lock)
+        _run_ps2000_capture(handle, config, output_queue, stop_event, control_queue, api_lock, device_variant)
     except Exception as exc:
-        print(f"PicoScope worker error: {type(exc).__name__}: {exc}", file=sys.stderr)
+        print(f"PicoScope2000 worker error: {type(exc).__name__}: {exc}", file=sys.stderr)
         traceback.print_exc()
         try:
             output_queue.put(
@@ -443,7 +453,7 @@ def _picoscope_worker(handle, config, output_queue, stop_event, control_queue, a
         pass
 
 
-class PicoScope:
+class PicoScope2000:
 
     def __init__(self, sample_rate_hz=1000.0, history_seconds=DEFAULT_HISTORY_SECONDS, data_bits="float16"):
         _ = data_bits
@@ -489,11 +499,12 @@ class PicoScope:
         self._listener_stop_event = threading.Event()
         self._control_queue = None
         self._handle = None
+        self._device_variant = MODEL_NAME
         self._device_api_lock = threading.RLock()
 
     @property
     def available_channels(self):
-        return CHANNEL_NAMES
+        return AVAILABLE_CHANNEL_NAMES
 
     @property
     def supported_couplings(self):
@@ -516,7 +527,7 @@ class PicoScope:
             raise ValueError(f"Unsupported channel '{channel_name}'.")
 
         range_name = _normalize_voltage_range(self.channels[normalized_name]["range"])
-        return PS4000A_RANGE_MILLIVOLTS[range_name] / 1000.0
+        return PS2000_RANGE_MILLIVOLTS[range_name] / 1000.0
 
     def convert_samples_to_volts(self, channel_name, samples):
         raw_values = np.asarray(samples, dtype=np.float32)
@@ -526,7 +537,7 @@ class PicoScope:
         try:
             return _list_available_devices()
         except Exception as exc:
-            print(f"[PicoScope] Device enumeration failed: {exc}", file=sys.stderr)
+            print(f"[PicoScope2000] Device enumeration failed: {exc}", file=sys.stderr)
             raise
 
     def _reset_buffers(self):
@@ -695,7 +706,7 @@ class PicoScope:
     def configure_channel(self, channel_name, *, enabled=None, coupling=None, voltage_range=None):
         normalized_name = str(channel_name).upper()
         if normalized_name not in self.channels:
-            raise ValueError(f"Unsupported 4824A channel '{channel_name}'. Expected one of: {', '.join(CHANNEL_NAMES)}")
+            raise ValueError(f"Unsupported PS2000 channel '{channel_name}'. Expected one of: {', '.join(CHANNEL_NAMES)}")
         if self.is_collecting:
             raise RuntimeError("Stop collection before reconfiguring channels.")
 
@@ -710,7 +721,7 @@ class PicoScope:
         if voltage_range is not None:
             range_name = _normalize_voltage_range(voltage_range)
             if range_name not in self.supported_voltage_ranges:
-                raise ValueError(f"Unsupported range '{voltage_range}' for 4824A hardware.")
+                raise ValueError(f"Unsupported range '{voltage_range}' for PS2000 hardware.")
             channel_config["range"] = range_name
 
     def set_sample_capture_rate(self, sample_rate_hz):
@@ -731,7 +742,6 @@ class PicoScope:
         self._reset_buffers()
 
     def set_max_samples(self, max_samples):
-        # Backward-compatible alias: interpret the value as a sample-count history target.
         self.set_history_seconds(float(max_samples) / max(self.sample_rate_hz, 1e-12))
 
     def set_data_bits(self, data_bits):
@@ -820,38 +830,26 @@ class PicoScope:
         self.actual_sample_rate_hz = None
         self.active_scope_series = MODEL_NAME
         with self._device_api_lock:
-            chandle = ctypes.c_int16()
-            serial = self.serial_number.encode("utf-8") if self.serial_number else None
-            status = ps4000a.ps4000aOpenUnit(ctypes.byref(chandle), serial)
-            if status in (PICO_POWER_SUPPLY_NOT_CONNECTED, PICO_USB3_0_DEVICE_NON_USB3_0_PORT):
-                _assert_ps4000a_call_ok(
-                    ps4000a.ps4000aChangePowerSource(chandle, status),
-                    "ps4000aChangePowerSource",
-                )
-            elif status != PICO_STATUS_OK:
-                _assert_ps4000a_call_ok(status, "ps4000aOpenUnit")
-            self._handle = chandle.value
-            if self._handle < 1:
-                self._handle = None
-                msg = "Failed to open PicoScope 4824A. No device found."
-                print(f"[PicoScope] {msg}", file=sys.stderr)
-                raise RuntimeError(msg)
-            _validate_4824a_device(self._handle)
+            handle, variant, serial = _open_matching_device(self.serial_number)
+            self._handle = handle
+            self._device_variant = variant or MODEL_NAME
+            if serial:
+                self.serial_number = serial
         self._apply_awg_state()
 
     def _start_collection_internal(self, *, reset_buffers):
         if self.is_collecting:
             return
         if not self.is_open:
-            raise RuntimeError("Open the 4824A before starting capture.")
+            raise RuntimeError("Open the PS2000 before starting capture.")
 
-        if not any(config["enabled"] for config in self.channels.values()):
-            raise RuntimeError("At least one 4824A channel must be enabled before starting collection.")
+        if not any(self.channels[channel_name]["enabled"] for channel_name in AVAILABLE_CHANNEL_NAMES):
+            raise RuntimeError("At least one PS2000 channel must be enabled before starting collection.")
 
         self.last_error = None
         if reset_buffers:
             self.actual_sample_rate_hz = None
-            self.active_scope_series = MODEL_NAME
+            self.active_scope_series = self._device_variant or MODEL_NAME
             self._reset_buffers()
         self._listener_stop_event.clear()
 
@@ -860,13 +858,21 @@ class PicoScope:
         self._stop_event = threading.Event()
         self._worker_thread = threading.Thread(
             target=_picoscope_worker,
-            name="PicoScope4824AWorker",
+            name="PicoScope2000Worker",
             daemon=True,
-            args=(self._handle, self._build_worker_config(), self._output_queue, self._stop_event, self._control_queue, self._device_api_lock),
+            args=(
+                self._handle,
+                self._build_worker_config(),
+                self._output_queue,
+                self._stop_event,
+                self._control_queue,
+                self._device_api_lock,
+                self._device_variant,
+            ),
         )
         self._worker_thread.start()
 
-        self._listener_thread = threading.Thread(target=self._listener_loop, name="PicoScope4824AListener", daemon=True)
+        self._listener_thread = threading.Thread(target=self._listener_loop, name="PicoScope2000Listener", daemon=True)
         self._listener_thread.start()
 
     def _stop_collection_internal(self):
@@ -910,11 +916,12 @@ class PicoScope:
                 pass
             try:
                 with self._device_api_lock:
-                    ps4000a.ps4000aCloseUnit(ctypes.c_int16(self._handle))
+                    ps2000.ps2000_close_unit(ctypes.c_int16(self._handle))
             except Exception:
                 pass
         self._handle = None
         self.actual_sample_rate_hz = None
+        self.active_scope_series = MODEL_NAME
 
     def get_channel_samples(self, channel_name):
         normalized_name = str(channel_name).upper()

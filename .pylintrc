@@ -371,39 +371,7 @@ single-line-if-stmt=no
 
 # List of modules that can be imported at any level, not just the top level
 # one.
-allow-any-import-level=
 
-# Allow explicit reexports by alias from a package __init__.
-allow-reexport-from-package=no
-
-# Allow wildcard imports from modules that define __all__.
-allow-wildcard-with-all=no
-
-# Deprecated modules which should not be used, separated by a comma.
-deprecated-modules=
-
-# Output a graph (.gv or any supported image format) of external dependencies
-# to the given file (report RP0402 must not be disabled).
-ext-import-graph=
-
-# Output a graph (.gv or any supported image format) of all (i.e. internal and
-# external) dependencies to the given file (report RP0402 must not be
-# disabled).
-import-graph=
-
-# Output a graph (.gv or any supported image format) of internal dependencies
-# to the given file (report RP0402 must not be disabled).
-int-import-graph=
-
-# Force import order to recognize a module as part of the standard
-# compatibility libraries.
-known-standard-library=
-
-# Force import order to recognize a module as part of a third party library.
-known-third-party=enchant
-
-# Couples of modules and preferred modules, separated by a comma.
-preferred-modules=
 
 
 [LOGGING]
@@ -463,22 +431,17 @@ disable=raw-checker-failed,
         too-many-positional-arguments,
         too-many-lines,
         duplicate-code,
-        wrong-import-order,
         trailing-whitespace,
         trailing-newlines,
         missing-final-newline,
         bad-indentation,
         broad-exception-caught,
-        consider-using-from-import,
-      wrong-import-position,
-      import-outside-toplevel,
-      global-statement,
-      global-variable-not-assigned,
-      redefined-outer-name,
-      fixme,
-      unnecessary-lambda-assignment,
+        global-statement,
+        global-variable-not-assigned,
+        redefined-outer-name,
+        fixme,
+        unnecessary-lambda-assignment,
         broad-exception-caught,
-        reportoptionaliterable,
 
 # Enable the message, report, category or checker with the given id(s). You can
 # either give multiple identifier separated by comma (,) or put this option

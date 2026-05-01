@@ -1,4 +1,5 @@
 import ctypes
+from collections import deque
 import os  
 import shutil
 import threading
@@ -10,6 +11,7 @@ from Drivers.PicoScope import CHANNEL_NAMES, SUPPORTED_AWG_WAVEFORMS
 from Utils.StorageDTypes import canonicalize_storage_bit_depth_name, get_raw_storage_bytes, get_signed_storage_bytes
 from Utils import diskspeed
 from Windows.SubWindows.CameraFeed import CameraFeedWindow
+from Windows.SubWindows.Oscilloscope import OscilloscopeWindow
 from Windows.SubWindows.ZAxisControlsWindow import ZAxisControlsWindow
 from Utils.state_persistence import apply_window_state, capture_window_state, load_state_file, save_state_file
 from Utils.themes import read_only_theme, red_green_button_disabled, red_green_button_enabled
@@ -25,6 +27,9 @@ class CameraSystem:
         self.acquisition_duration_seconds = 2.0
         self.acquisition_frame_rate_hz = 0.0
         self.acquisition_scope_sample_rate_hz = 1000.0
+        self.calculate_frame_mean = True
+        self.auto_scope_freq = False
+        self.max_exposure = False
         self.acquisition_storage_dtype_name = "16"
         self.acquisition_zero_on_start = False
         self.acquisition_set_awg_on_start = False
@@ -53,6 +58,21 @@ class CameraSystem:
         self._pending_acquisition_result = None
         self._acquisition_scope_fallback_snapshot = None
         self._acquisition_lock = threading.Lock()
+        self._acquisition_scope_mean_thread = None
+        self._acquisition_scope_mean_stop_event = None
+        self._acquisition_scope_mean_lock = threading.Lock()
+        self._acquisition_scope_pending_frame_timestamps = deque()
+        self._acquisition_scope_mean_time_origin = None
+        self._acquisition_scope_mean_scope_origin = 0.0
+        self._scope_frame_mean_runtime = {
+            "calculate_frame_mean": True,
+            "frame_period_seconds": 0.0,
+            "sample_period_seconds": 0.0,
+            "samples_per_frame": 1.0,
+            "next_center_sample_index": 0.0,
+        }
+        self._preview_scope_registered_frame_count = 0
+        self._preview_scope_started_collection = False
         self.preview_zero_reference_pending = False
         self.aoi_auto_center_enabled = False
         self.preview_max_frames = int(getattr(Andor, "max_acquisitions", 200))
@@ -61,6 +81,10 @@ class CameraSystem:
         self._drive_write_speed_errors = {}
         self._hardware_requirements_signature = None
         self.z_axis_controls = ZAxisControlsWindow()
+        self.frame_scope_window = None
+        self._last_frame_scope_render_frame_index = -1
+        self._last_frame_scope_render_mean_count = -1
+        self._frame_scope_render_snapshot = None
 
         with dpg.window(
             label                = "Camera Controls",
@@ -101,6 +125,16 @@ class CameraSystem:
                 parent      = self.window_id,
                 Andor       = self.Andor
             )
+            self.frame_scope_window = OscilloscopeWindow(
+                [self._make_frame_scope_trace_getter(channel_name) for channel_name in CHANNEL_NAMES],
+                title="Frame Scope Means",
+                channel_headers=[f"Channel {channel_name}" for channel_name in CHANNEL_NAMES],
+                width=880,
+                height=320,
+                pos=(625, 1255),
+                state_name="FrameScopeWindow",
+                tag="#FrameScope",
+            )
 
             # self.mean_graph   = GraphWindow(
             #     name        = "Mean Intensity",
@@ -130,6 +164,19 @@ class CameraSystem:
             dpg.add_text("Camera Settings")
             dpg.add_separator()
 
+            self.settings_frame_rate = dpg.add_input_float(
+                label           = "FPS",
+                width           = -110,
+                default_value   = self.acquisition_frame_rate_hz,
+                min_value       = 0.1,
+                min_clamped     = True,
+                step            = 1.0,
+                format          = "%.0f",
+                callback        = lambda: self.setprop("FrameRate", self.settings_frame_rate)
+            )
+
+            self.acquisition_frame_rate_input_id = self.settings_frame_rate
+
             self.settings_exposure_time = dpg.add_input_float(
                 label           = "Exposure Time",
                 width           = -110,
@@ -139,6 +186,12 @@ class CameraSystem:
                 step            = 0.01,
                 format          = "%.3f s",
                 callback        = lambda: self.setprop("ExposureTime", self.settings_exposure_time)
+            )
+
+            self.settings_max_exposure_checkbox_id = dpg.add_checkbox(
+                label="Max Exposure",
+                default_value=self.max_exposure,
+                callback=self._on_max_exposure_changed,
             )
 
             
@@ -274,20 +327,21 @@ class CameraSystem:
                 step=0.1,
             )
 
-            self.acquisition_frame_rate_input_id = dpg.add_input_float(
-                label="FPS",
-                width=-110,
-                default_value=self.acquisition_frame_rate_hz,
-                min_value=0.1,
-                min_clamped=True,
-                step=1.0,
-                format="%.0f",
-            )
-
 
             self.acquisition_zero_on_start_checkbox_id = dpg.add_checkbox(
                 label="Zero on Start",
                 default_value=self.acquisition_zero_on_start,
+            )
+
+            self.calculate_frame_mean_checkbox_id = dpg.add_checkbox(
+                label="Calculate Frame Mean",
+                default_value=self.calculate_frame_mean,
+            )
+
+            self.auto_scope_freq_checkbox_id = dpg.add_checkbox(
+                label="Auto Scope Freq",
+                default_value=self.auto_scope_freq,
+                callback=self._on_auto_scope_freq_changed,
             )
 
             self.acquisition_set_awg_on_start_checkbox_id = dpg.add_checkbox(
@@ -512,16 +566,113 @@ class CameraSystem:
                 return obj
         return None
 
+    def _get_scope_driver(self):
+        scope_controller = self._get_scope_controller()
+        if scope_controller is None or not scope_controller.driver.is_open:
+            return None
+        return scope_controller.driver
+
+    def _get_auto_scope_settings(self, frame_rate_hz, scope_driver):
+        frame_rate_hz = max(float(frame_rate_hz), 1e-12)
+        history_seconds = max(0.001, 0.5 / frame_rate_hz)
+        if scope_driver is None:
+            max_sample_rate_hz = float(self.acquisition_scope_sample_rate_hz)
+        else:
+            max_sample_rate_hz = float(scope_driver.get_max_sample_rate_hz())
+        sample_rate_hz = max(1.0, 0.001 * max_sample_rate_hz)
+        return {
+            "history_seconds": history_seconds,
+            "sample_rate_hz": sample_rate_hz,
+        }
+
+    def _apply_auto_scope_frequency_settings(self, frame_rate_hz):
+        if not bool(dpg.get_value(self.auto_scope_freq_checkbox_id)):
+            return None
+
+        scope_controller = self._get_scope_controller()
+        scope_driver = self._get_scope_driver()
+        auto_settings = self._get_auto_scope_settings(frame_rate_hz, scope_driver)
+
+        self.acquisition_scope_sample_rate_hz = float(auto_settings["sample_rate_hz"])
+        dpg.set_value(self.acquisition_scope_rate_input_id, self.acquisition_scope_sample_rate_hz)
+
+        if scope_controller is not None:
+            dpg.set_value(scope_controller.seconds_input_id, float(auto_settings["history_seconds"]))
+            dpg.set_value(scope_controller.sample_rate_input_id, float(auto_settings["sample_rate_hz"]))
+
+        return auto_settings
+
     def _apply_preview_max_frames(self, frame_count):
         frame_count = max(1, int(frame_count))
         self.preview_max_frames = frame_count
         self.Andor.set_preview_max_frames(frame_count)
         self.camera_feed.set_roi_history_capacity(frame_count)
-        if hasattr(self, "settings_preview_max_frames"):
-            dpg.set_value(self.settings_preview_max_frames, frame_count)
+        if self.started and not self.acquisition_in_progress:
+            scope_settings = self._get_scope_capture_settings()
+            self.Andor.configure_scope_frame_mean_buffers(scope_settings["enabled_channels"], frame_count)
+
+    def _get_scope_channel_color(self, channel_name):
+        scope_controller = self._get_scope_controller()
+        if scope_controller is not None:
+            for panel in getattr(scope_controller, "channel_panels", []):
+                if panel.get("source_channel") == channel_name:
+                    return list(panel.get("color", [255, 255, 255, 255]))
+        return [255, 255, 255, 255]
+
+    def _make_frame_scope_trace_getter(self, channel_name):
+        return lambda channel_name=channel_name: self._get_frame_scope_trace(channel_name)
+
+    def _get_frame_scope_trace(self, channel_name):
+        scope_controller = self._get_scope_controller()
+        if scope_controller is not None:
+            matching_panel = next(
+                (panel for panel in getattr(scope_controller, "channel_panels", []) if panel.get("source_channel") == channel_name),
+                None,
+            )
+            if matching_panel is not None and not bool(matching_panel.get("enabled")):
+                return None
+
+        snapshot = self._frame_scope_render_snapshot
+        if snapshot is None:
+            snapshot = self.Andor.get_scope_frame_mean_snapshot()
+        scope_buffers = snapshot.get("scope_frame_mean_buffers", {})
+        raw_samples = np.asarray(scope_buffers.get(channel_name, []), dtype=np.float32)
+        camera_timestamps = np.asarray(snapshot.get("timestamps", []), dtype=np.float64)
+        sample_count = int(raw_samples.size)
+
+        if sample_count <= 0:
+            x_values = np.zeros((0,), dtype=np.float64)
+            y_values = np.zeros((0,), dtype=np.float32)
+        else:
+            if camera_timestamps.size >= sample_count:
+                x_values = camera_timestamps[-sample_count:] - float(camera_timestamps[-sample_count])
+            else:
+                frame_period_seconds = 1.0 / max(float(self.acquisition_frame_rate_hz or self.Andor.get_frame_rate()), 1e-12)
+                x_values = np.arange(sample_count, dtype=np.float64) * frame_period_seconds
+            y_values = raw_samples.astype(np.float32, copy=False)
+
+        abs_last_x = float(camera_timestamps[-1]) if camera_timestamps.size > 0 else (float(x_values[-1]) if x_values.size > 0 else 0.0)
+        return {
+            "panel_id": channel_name,
+            "label": f"Channel {channel_name}",
+            "color": self._get_scope_channel_color(channel_name),
+            "x_values": x_values,
+            "y_values": y_values,
+            "abs_last_x": abs_last_x,
+        }
 
     def _on_preview_max_frames_changed(self, sender=None, app_data=None, user_data=None):
         self._apply_preview_max_frames(dpg.get_value(self.settings_preview_max_frames))
+        self._refresh_hardware_requirements(force=True)
+
+    def _on_acquisition_frame_rate_changed(self, sender=None, app_data=None, user_data=None):
+        self.acquisition_frame_rate_hz = max(0.1, float(app_data or dpg.get_value(self.acquisition_frame_rate_input_id)))
+        self._apply_auto_scope_frequency_settings(self.acquisition_frame_rate_hz)
+        self._refresh_hardware_requirements(force=True)
+
+    def _on_auto_scope_freq_changed(self, sender=None, app_data=None, user_data=None):
+        self.auto_scope_freq = bool(app_data)
+        self._apply_auto_scope_frequency_settings(float(dpg.get_value(self.acquisition_frame_rate_input_id)))
         self._refresh_hardware_requirements(force=True)
 
     def _clamp_temperature_setpoint_c(self, temperature_c):
@@ -541,15 +692,15 @@ class CameraSystem:
     def _sync_camera_cooler_readout(self):
         cooler_enabled = self.Andor.get_sensor_cooling_enabled()
         if cooler_enabled is not None:
-            dpg.set_value(self.settings_cooler_checkbox_id, bool(cooler_enabled))
+            self._cooler_enabled_value = bool(cooler_enabled)
 
         temperature_c = self.Andor.get_sensor_temperature_c()
         if temperature_c is not None:
-            dpg.set_value(self.cooler_temperature_input_id, float(temperature_c))
+            self._cooler_temperature_c = float(temperature_c)
 
     def _on_camera_cooler_changed(self, sender, app_data, user_data=None):
         self.Andor.set_sensor_cooling_enabled(bool(app_data))
-        self._sync_camera_cooler_readout()
+        self._cooler_enabled_value = bool(app_data)
 
     def _on_camera_temp_set_changed(self, sender, app_data, user_data=None):
         requested_option = str(app_data)
@@ -586,12 +737,10 @@ class CameraSystem:
 
     def _on_awg_on_start_changed(self, sender, app_data, user_data=None):
         self.acquisition_set_awg_on_start = bool(app_data)
-        self._update_acquisition_awg_visibility()
         self._refresh_hardware_requirements(force=True)
 
     def _on_acquisition_awg_waveform_changed(self, sender, app_data, user_data=None):
         self.acquisition_awg_waveform = str(app_data).strip().lower()
-        self._update_acquisition_awg_visibility()
         self._refresh_hardware_requirements(force=True)
 
     def _update_spool_to_disk_controls(self):
@@ -606,7 +755,6 @@ class CameraSystem:
 
     def _on_spool_to_disk_changed(self, sender=None, app_data=None, user_data=None):
         self.spool_to_disk_enabled = bool(app_data)
-        self._update_spool_to_disk_controls()
 
     def _show_spool_location_dialog(self, sender=None, app_data=None, user_data=None):
         dpg.show_item(self.spool_location_dialog_id)
@@ -802,6 +950,226 @@ class CameraSystem:
             "enabled_channels": enabled_channels,
         }
 
+    def _get_scope_frame_mean_frame_period_seconds(self):
+        if self.acquisition_in_progress and float(self.acquisition_frame_rate_hz) > 0.0:
+            frame_rate_hz = float(self.acquisition_frame_rate_hz)
+        else:
+            frame_rate_hz = float(self.Andor.get_frame_rate())
+        return 1.0 / max(frame_rate_hz, 1e-12)
+
+    def _configure_scope_frame_mean_runtime(self, *, sample_rate_hz, frame_rate_hz, calculate_frame_mean):
+        sample_rate_hz = max(float(sample_rate_hz), 1e-12)
+        frame_rate_hz = max(float(frame_rate_hz), 1e-12)
+        frame_period_seconds = 1.0 / frame_rate_hz
+        sample_period_seconds = 1.0 / sample_rate_hz
+        samples_per_frame = max(1.0, frame_period_seconds * sample_rate_hz)
+        self._scope_frame_mean_runtime = {
+            "calculate_frame_mean": bool(calculate_frame_mean),
+            "frame_period_seconds": frame_period_seconds,
+            "sample_period_seconds": sample_period_seconds,
+            "samples_per_frame": samples_per_frame,
+            "next_center_sample_index": 0.0,
+        }
+
+    def _get_acquisition_scope_buffer_seconds(self, acquisition_seconds=None):
+        if acquisition_seconds is None:
+            acquisition_seconds = float(dpg.get_value(self.acquisition_duration_input_id))
+        return max(0.1, float(acquisition_seconds) * 2.0)
+
+    def _queue_scope_frame_timestamps(self, timestamps):
+        if not timestamps:
+            return
+        with self._acquisition_scope_mean_lock:
+            for timestamp in timestamps:
+                normalized_timestamp = float(timestamp)
+                if self._acquisition_scope_mean_time_origin is None:
+                    self._acquisition_scope_mean_time_origin = normalized_timestamp
+                normalized_timestamp -= float(self._acquisition_scope_mean_time_origin)
+                self._acquisition_scope_pending_frame_timestamps.append(normalized_timestamp)
+
+    def _get_pending_scope_frame_count(self):
+        with self._acquisition_scope_mean_lock:
+            return len(self._acquisition_scope_pending_frame_timestamps)
+
+    def _reduce_scope_buffer_into_frame_means(self, scope_driver, *, force=False):
+        if scope_driver is None or self._get_pending_scope_frame_count() <= 0:
+            return
+
+        scope_channels = self.Andor.get_scope_frame_mean_channels()
+        if not scope_channels:
+            return
+
+        scope_snapshot = scope_driver.get_buffer_snapshot(channel_names=scope_channels)
+        scope_timestamps = np.asarray(scope_snapshot.get("timestamps", []), dtype=np.float64)
+        scope_timestamps = scope_timestamps - float(self._acquisition_scope_mean_scope_origin)
+        if scope_timestamps.size == 0:
+            return
+
+        runtime = dict(self._scope_frame_mean_runtime)
+        calculate_frame_mean = bool(runtime.get("calculate_frame_mean", True))
+        frame_period_seconds = float(runtime.get("frame_period_seconds") or self._get_scope_frame_mean_frame_period_seconds())
+        actual_scope_rate_hz = float(scope_snapshot.get("actual_sample_rate_hz") or self.acquisition_scope_sample_rate_hz)
+        sample_period_seconds = 1.0 / max(actual_scope_rate_hz, 1e-12)
+        latest_scope_timestamp = float(scope_timestamps[-1])
+        channel_arrays = {
+            channel_name: np.asarray(scope_snapshot.get("channels", {}).get(channel_name, []), dtype=np.float32)
+            for channel_name in scope_channels
+        }
+
+        frame_mean_payloads = []
+
+        with self._acquisition_scope_mean_lock:
+            while self._acquisition_scope_pending_frame_timestamps:
+                frame_timestamp = float(self._acquisition_scope_pending_frame_timestamps[0])
+                if not force and latest_scope_timestamp + (0.5 * sample_period_seconds) < frame_timestamp:
+                    break
+
+                self._acquisition_scope_pending_frame_timestamps.popleft()
+                frame_start = frame_timestamp - frame_period_seconds
+                frame_end = frame_timestamp
+                frame_center_index = int(round(float(runtime.get("next_center_sample_index", 0.0))))
+                if scope_timestamps.size > 0:
+                    frame_center_index = int(np.clip(frame_center_index, 0, scope_timestamps.size - 1))
+                runtime["next_center_sample_index"] = float(runtime.get("next_center_sample_index", 0.0)) + float(runtime.get("samples_per_frame", 1.0))
+
+                in_frame_mask = None
+                if calculate_frame_mean:
+                    in_frame_mask = (scope_timestamps >= frame_start) & (scope_timestamps < frame_end)
+                    if not np.any(in_frame_mask):
+                        frame_center = frame_start + (0.5 * frame_period_seconds)
+                        nearest_sample_index = int(np.argmin(np.abs(scope_timestamps - frame_center)))
+                        in_frame_mask = np.zeros(scope_timestamps.shape, dtype=bool)
+                        in_frame_mask[nearest_sample_index] = True
+
+                frame_means = {}
+                for channel_name in scope_channels:
+                    raw_samples = channel_arrays.get(channel_name)
+                    if raw_samples is None or raw_samples.size == 0:
+                        frame_means[channel_name] = np.float16(0.0)
+                        continue
+
+                    if calculate_frame_mean:
+                        window_samples = raw_samples[in_frame_mask]
+                        if window_samples.size == 0:
+                            frame_means[channel_name] = np.float16(0.0)
+                            continue
+
+                        voltage_samples = scope_driver.convert_samples_to_volts(channel_name, window_samples)
+                        frame_means[channel_name] = np.float16(np.mean(voltage_samples, dtype=np.float64))
+                    else:
+                        center_sample = np.asarray([raw_samples[frame_center_index]], dtype=np.float32)
+                        voltage_sample = scope_driver.convert_samples_to_volts(channel_name, center_sample)
+                        frame_means[channel_name] = np.float16(float(voltage_sample[0]))
+
+                frame_mean_payloads.append(frame_means)
+
+        self._scope_frame_mean_runtime = runtime
+
+        for frame_means in frame_mean_payloads:
+            self.Andor.append_scope_frame_mean_values(frame_means)
+
+    def _run_scope_mean_worker(self, scope_driver, stop_event):
+        while not stop_event.is_set():
+            self._reduce_scope_buffer_into_frame_means(scope_driver, force=False)
+            stop_event.wait(0.01)
+
+        self._reduce_scope_buffer_into_frame_means(scope_driver, force=True)
+
+    def _stop_scope_mean_thread(self):
+        if self._acquisition_scope_mean_stop_event is not None:
+            self._acquisition_scope_mean_stop_event.set()
+        if self._acquisition_scope_mean_thread is not None and self._acquisition_scope_mean_thread.is_alive():
+            self._acquisition_scope_mean_thread.join(timeout=2.0)
+        self._acquisition_scope_mean_thread = None
+        self._acquisition_scope_mean_stop_event = None
+
+    def _pad_remaining_scope_frame_means(self):
+        with self._acquisition_scope_mean_lock:
+            remaining_count = len(self._acquisition_scope_pending_frame_timestamps)
+            self._acquisition_scope_pending_frame_timestamps.clear()
+            self._acquisition_scope_mean_time_origin = None
+        for _ in range(remaining_count):
+            self.Andor.append_scope_frame_mean_values({})
+
+    def _clear_pending_scope_frame_means(self):
+        with self._acquisition_scope_mean_lock:
+            self._acquisition_scope_pending_frame_timestamps.clear()
+            self._acquisition_scope_mean_time_origin = None
+        self._acquisition_scope_mean_scope_origin = 0.0
+
+    def _start_scope_mean_thread(self, scope_driver):
+        if scope_driver is None:
+            return
+        self._stop_scope_mean_thread()
+        self._acquisition_scope_mean_stop_event = threading.Event()
+        self._acquisition_scope_mean_thread = threading.Thread(
+            target=self._run_scope_mean_worker,
+            args=(scope_driver, self._acquisition_scope_mean_stop_event),
+            daemon=True,
+            name="ScopeFrameMeanWorker",
+        )
+        self._acquisition_scope_mean_thread.start()
+
+    def _drain_preview_scope_frame_timestamps(self):
+        if not self.started or self.acquisition_in_progress:
+            return
+
+        with self.Andor.frame_lock:
+            if len(self.Andor.timestamps) > self._preview_scope_registered_frame_count:
+                new_camera_timestamps = [
+                    float(timestamp)
+                    for timestamp in list(self.Andor.timestamps)[self._preview_scope_registered_frame_count:]
+                ]
+                self._preview_scope_registered_frame_count = len(self.Andor.timestamps)
+            else:
+                new_camera_timestamps = []
+
+        if new_camera_timestamps:
+            self._queue_scope_frame_timestamps(new_camera_timestamps)
+
+    def _stop_preview_scope_means(self):
+        self.Andor.set_scope_frame_mean_source(None, calculate_mean=bool(dpg.get_value(self.calculate_frame_mean_checkbox_id)))
+        self._preview_scope_registered_frame_count = 0
+
+        if self._preview_scope_started_collection:
+            scope_controller = self._get_scope_controller()
+            scope_driver = scope_controller.driver if scope_controller is not None else None
+            if scope_driver is not None and scope_driver.is_collecting:
+                try:
+                    scope_driver.stop_collection()
+                except Exception:
+                    pass
+        self._preview_scope_started_collection = False
+
+    def _start_preview_scope_means(self):
+        self._preview_scope_registered_frame_count = 0
+        self._preview_scope_started_collection = False
+
+        scope_controller = self._get_scope_controller()
+        scope_driver = scope_controller.driver if scope_controller is not None and scope_controller.driver.is_open else None
+        scope_settings = self._get_scope_capture_settings()
+        preview_frame_rate_hz = float(self.Andor.get_frame_rate())
+        auto_settings = self._apply_auto_scope_frequency_settings(preview_frame_rate_hz)
+
+        self.Andor.configure_scope_frame_mean_buffers(scope_settings["enabled_channels"], self.preview_max_frames)
+        self.Andor.set_scope_frame_mean_source(scope_driver, calculate_mean=bool(dpg.get_value(self.calculate_frame_mean_checkbox_id)))
+
+        if scope_driver is None:
+            return
+
+        if scope_driver.is_collecting:
+            scope_driver.stop_collection()
+            self._preview_scope_started_collection = True
+
+        if auto_settings is not None:
+            scope_driver.set_sample_capture_rate(float(auto_settings["sample_rate_hz"]))
+            scope_driver.set_history_seconds(float(auto_settings["history_seconds"]))
+
+        if not scope_driver.is_collecting:
+            scope_driver.clear_buffers()
+            scope_driver.start_collection()
+            self._preview_scope_started_collection = True
+
     def _get_hardware_requirements_signature(self):
         scope_settings = self._get_scope_capture_settings()
         return (
@@ -822,8 +1190,9 @@ class CameraSystem:
 
     def _build_acquisition_save_arrays(self, camera, scope, payload):
         scope = scope or {}
-        channel_payload = scope.get("channels", {})
-        paired_scope_sample_count = len(scope.get("timestamps", []))
+        channel_payload = camera.get("scope_frame_mean_buffers", {})
+        aligned_camera_timestamps = np.asarray(camera.get("timestamps", []), dtype=np.float64)
+        paired_scope_sample_count = len(aligned_camera_timestamps)
 
         save_arrays = {
             "camera_acquisitions": np.asarray(camera["acquisitions"]),
@@ -834,11 +1203,11 @@ class CameraSystem:
             "camera_mean_buffer": np.asarray(camera["mean_buffer"], dtype=np.float64),
             "camera_zero": np.asarray(camera["zero"]),
             "camera_storage_dtype": np.asarray([camera.get("storage_dtype") or self.Andor.storage_dtype_name]),
-            "scope_timestamps": np.asarray(scope.get("timestamps", []), dtype=np.float64),
-            "scope_paired_camera_timestamps": np.asarray(scope.get("paired_camera_timestamps", []), dtype=np.float64),
-            "scope_unpaired_camera_timestamps": np.asarray(scope.get("unpaired_camera_timestamps", []), dtype=np.float64),
+            "scope_timestamps": np.asarray(aligned_camera_timestamps, dtype=np.float64),
+            "scope_paired_camera_timestamps": np.asarray(aligned_camera_timestamps, dtype=np.float64),
+            "scope_unpaired_camera_timestamps": np.asarray([], dtype=np.float64),
             "scope_actual_sample_rate_hz": np.asarray([scope.get("actual_sample_rate_hz") or self.acquisition_scope_sample_rate_hz], dtype=np.float64),
-            "scope_history_seconds": np.asarray([scope.get("history_seconds") or self.acquisition_scope_duration_seconds], dtype=np.float64),
+            "scope_history_seconds": np.asarray([scope.get("history_seconds") or self.acquisition_scope_buffer_seconds], dtype=np.float64),
             "requested_duration_seconds": np.asarray([payload["requested_duration_seconds"]], dtype=np.float64),
             "requested_frame_rate_hz": np.asarray([payload["requested_frame_rate_hz"]], dtype=np.float64),
             "requested_scope_sample_rate_hz": np.asarray([payload["requested_scope_sample_rate_hz"]], dtype=np.float64),
@@ -862,8 +1231,11 @@ class CameraSystem:
     def _estimate_acquisition_requirements(self):
         acquisition_seconds = max(0.01, float(dpg.get_value(self.acquisition_duration_input_id)))
         acquisition_fps = max(0.1, float(dpg.get_value(self.acquisition_frame_rate_input_id)))
+        scope_sample_rate = max(0.1, float(dpg.get_value(self.acquisition_scope_rate_input_id)))
+        scope_buffer_seconds = self._get_acquisition_scope_buffer_seconds(acquisition_seconds)
         target_frames = max(1, int(round(acquisition_seconds * acquisition_fps)))
         paired_scope_samples = target_frames
+        scope_buffer_samples = max(1, int(round(scope_buffer_seconds * scope_sample_rate)))
 
         frame_height = max(1, int(getattr(self.camera, "AOIHeight", 1)))
         frame_width = max(1, int(getattr(self.camera, "AOIWidth", 1)))
@@ -882,6 +1254,8 @@ class CameraSystem:
         scope_sample_bytes = paired_scope_samples * np.dtype(np.float16).itemsize
         scope_timestamp_bytes = paired_scope_samples * np.dtype(np.float64).itemsize
         scope_pair_timestamp_bytes = paired_scope_samples * np.dtype(np.float64).itemsize
+        scope_runtime_sample_bytes = scope_buffer_samples * np.dtype(np.float16).itemsize
+        scope_runtime_timestamp_bytes = scope_buffer_samples * np.dtype(np.float64).itemsize
         raw_history_bytes = target_frames * raw_frame_bytes
         signed_history_bytes = target_frames * signed_frame_bytes
 
@@ -915,9 +1289,9 @@ class CameraSystem:
         ram_bytes += signed_frame_bytes
         ram_bytes += signed_frame_bytes
         ram_bytes += raw_frame_bytes
-        ram_bytes += scope_timestamp_bytes
+        ram_bytes += scope_runtime_timestamp_bytes
         ram_bytes += scope_pair_timestamp_bytes
-        ram_bytes += scope_channel_count * scope_sample_bytes
+        ram_bytes += scope_channel_count * scope_runtime_sample_bytes
 
         camera_bits_per_second = raw_frame_bytes * acquisition_fps * 8.0
 
@@ -1025,8 +1399,8 @@ class CameraSystem:
             dpg.set_value(self.hardware_spooling_value_id, "Unknown")
 
     def _set_acquisition_progress(self, progress_value, overlay_text):
-        dpg.set_value(self.acquisition_progress_bar_id, max(0.0, min(1.0, float(progress_value))))
-        dpg.configure_item(self.acquisition_progress_bar_id, overlay=str(overlay_text))
+        self._acquisition_progress_value = max(0.0, min(1.0, float(progress_value)))
+        self._acquisition_progress_overlay = str(overlay_text)
 
     def _stop_acquisition_awg_thread(self):
         if self._acquisition_awg_stop_event is not None:
@@ -1133,8 +1507,6 @@ class CameraSystem:
         self.acquisition_started_at = None
         self._acquisition_thread = None
         self._acquisition_scope_fallback_snapshot = None
-        self._update_acquisition_button_state()
-        dpg.configure_item(self.save_button_id, enabled=True)
 
         frame_count = len(payload["camera"]["acquisitions"])
         if payload["stopped_early"]:
@@ -1146,24 +1518,10 @@ class CameraSystem:
         stopped_early = False
         scope_stopped = False
         awg_enabled_for_run = bool(self.acquisition_set_awg_on_start)
-        registered_frame_count = 0
         scope_driver = scope_controller.driver if scope_controller is not None and scope_controller.driver.is_open else None
 
         try:
             while True:
-                with self.Andor.frame_lock:
-                    if len(self.Andor.timestamps) > registered_frame_count:
-                        new_camera_timestamps = [
-                            float(timestamp)
-                            for timestamp in list(self.Andor.timestamps)[registered_frame_count:]
-                        ]
-                        registered_frame_count = len(self.Andor.timestamps)
-                    else:
-                        new_camera_timestamps = []
-
-                if new_camera_timestamps and scope_driver is not None:
-                    scope_driver.register_camera_frame_timestamps(new_camera_timestamps)
-
                 if self.acquisition_stop_requested:
                     stopped_early = True
                     break
@@ -1184,16 +1542,6 @@ class CameraSystem:
             if self.Andor.is_capturing:
                 self.Andor.stop_capture()
                 stopped_early = True
-            with self.Andor.frame_lock:
-                if len(self.Andor.timestamps) > registered_frame_count:
-                    final_camera_timestamps = [
-                        float(timestamp)
-                        for timestamp in list(self.Andor.timestamps)[registered_frame_count:]
-                    ]
-                else:
-                    final_camera_timestamps = []
-            if final_camera_timestamps and scope_driver is not None:
-                scope_driver.register_camera_frame_timestamps(final_camera_timestamps)
             if awg_enabled_for_run and scope_driver is not None:
                 try:
                     scope_driver.set_awg_enabled(False)
@@ -1202,6 +1550,7 @@ class CameraSystem:
             if scope_driver is not None and scope_driver.is_collecting:
                 scope_driver.stop_collection()
                 scope_stopped = True
+            self.Andor.set_scope_frame_mean_source(None, calculate_mean=self.calculate_frame_mean)
 
             with self._acquisition_lock:
                 self._pending_acquisition_result = self._build_completed_acquisition_payload(stopped_early)
@@ -1227,7 +1576,9 @@ class CameraSystem:
 
         acquisition_seconds = max(0.01, float(dpg.get_value(self.acquisition_duration_input_id)))
         acquisition_fps = max(0.1, float(dpg.get_value(self.acquisition_frame_rate_input_id)))
-        scope_sample_rate = max(0.1, float(dpg.get_value(self.acquisition_scope_rate_input_id)))
+        auto_scope_settings = self._apply_auto_scope_frequency_settings(acquisition_fps)
+        scope_sample_rate = float(auto_scope_settings["sample_rate_hz"]) if auto_scope_settings is not None else max(0.1, float(dpg.get_value(self.acquisition_scope_rate_input_id)))
+        calculate_frame_mean = bool(dpg.get_value(self.calculate_frame_mean_checkbox_id))
         storage_dtype_name = canonicalize_storage_bit_depth_name(
             dpg.get_value(self.settings_storage_dtype_combo_id) or self.Andor.storage_dtype_name,
             fallback=self.Andor.storage_dtype_name,
@@ -1236,7 +1587,8 @@ class CameraSystem:
         awg_start_after_seconds = max(0.0, float(dpg.get_value(self.acquisition_awg_start_after_input_id)))
         target_frames = max(1, int(round(acquisition_seconds * acquisition_fps)))
         target_scope_samples = max(1, int(round(acquisition_seconds * scope_sample_rate)))
-        scope_buffer_seconds = acquisition_seconds * 1.5
+        scope_buffer_seconds = float(auto_scope_settings["history_seconds"]) if auto_scope_settings is not None else self._get_acquisition_scope_buffer_seconds(acquisition_seconds)
+        scope_settings = self._get_scope_capture_settings()
 
         if awg_set_on_start and awg_start_after_seconds >= acquisition_seconds:
             self._set_acquisition_progress(0.0, "AWG delay must be shorter than acquisition")
@@ -1247,6 +1599,7 @@ class CameraSystem:
                 self.Andor.stop_capture()
             if self.started:
                 self.started = False
+                self._stop_preview_scope_means()
                 self._update_preview_button_state()
 
             if scope_driver is not None and scope_driver.is_collecting:
@@ -1257,6 +1610,8 @@ class CameraSystem:
 
             self.Andor.set_storage_dtype(storage_dtype_name)
             self.Andor.set_frame_rate(acquisition_fps)
+            self.Andor.configure_scope_frame_mean_buffers(scope_settings["enabled_channels"], target_frames)
+            self.Andor.set_scope_frame_mean_source(scope_driver, calculate_mean=calculate_frame_mean)
             self.Andor.clear_buffers(reset_frame_index=True)
             self._acquisition_scope_fallback_snapshot = self._build_scope_fallback_snapshot(
                 target_frames,
@@ -1267,7 +1622,7 @@ class CameraSystem:
                 scope_driver.stop_collection()
                 scope_driver.set_sample_capture_rate(scope_sample_rate)
                 scope_driver.set_history_seconds(scope_buffer_seconds)
-                scope_driver.configure_frame_pairing(enabled=True, frame_buffer_size=target_frames)
+                scope_driver.configure_frame_pairing(enabled=False)
                 scope_driver.clear_buffers()
                 if awg_set_on_start:
                     scope_driver.configure_awg(**self._collect_acquisition_awg_config())
@@ -1276,6 +1631,7 @@ class CameraSystem:
             self.acquisition_duration_seconds = acquisition_seconds
             self.acquisition_frame_rate_hz = acquisition_fps
             self.acquisition_scope_sample_rate_hz = scope_sample_rate
+            self.calculate_frame_mean = calculate_frame_mean
             self.acquisition_storage_dtype_name = self.Andor.storage_dtype_name
             self.acquisition_zero_on_start = bool(dpg.get_value(self.acquisition_zero_on_start_checkbox_id))
             self.acquisition_set_awg_on_start = awg_set_on_start
@@ -1326,6 +1682,7 @@ class CameraSystem:
             self.acquisition_started_at = None
             self._acquisition_thread = None
             self._acquisition_scope_fallback_snapshot = None
+            self.Andor.set_scope_frame_mean_source(None, calculate_mean=calculate_frame_mean)
             try:
                 if self.Andor.is_capturing:
                     self.Andor.stop_capture()
@@ -1365,20 +1722,20 @@ class CameraSystem:
     def toggle_preview(self):
         if self.Andor.is_capturing:
             self.Andor.stop_capture()
+            self._stop_preview_scope_means()
             self.started = False
             self.preview_zero_reference_pending = False
-            self._update_preview_button_state()
 
         else:
             # Reset the camera feed texture size
             self.started = True
             self._apply_preview_max_frames(dpg.get_value(self.settings_preview_max_frames))
+            self._start_preview_scope_means()
             self.Andor.clear_buffers(reset_frame_index=True)
             self.camera_feed.reset_texture()
             self.camera_feed.rebuild_roi_traces()
             self.preview_zero_reference_pending = int(getattr(self.Andor, "zero_version", 0)) <= 0
             self.Andor.start_capture_continuous()
-            self._update_preview_button_state()
 
     def _get_camera_aoi_limits(self):
         return {
@@ -1476,6 +1833,72 @@ class CameraSystem:
     def _refresh_aoi_controls_from_camera(self):
         self._sync_aoi_widgets(self._get_current_aoi_settings())
 
+    def _apply_frame_rate_exposure_constraints(self, changed_prop):
+        requested_frame_rate_hz = max(0.1, float(dpg.get_value(self.settings_frame_rate)))
+        max_exposure_enabled = bool(dpg.get_value(self.settings_max_exposure_checkbox_id))
+        requested_exposure_seconds = max(1e-6, float(dpg.get_value(self.settings_exposure_time)))
+
+        if max_exposure_enabled:
+            frame_rate_hz = requested_frame_rate_hz
+            exposure_seconds = 1.0 / requested_frame_rate_hz
+        elif changed_prop == "ExposureTime":
+            frame_rate_hz = min(requested_frame_rate_hz, 1.0 / requested_exposure_seconds)
+            exposure_seconds = requested_exposure_seconds
+        else:
+            frame_rate_hz = requested_frame_rate_hz
+            exposure_seconds = min(requested_exposure_seconds, 1.0 / requested_frame_rate_hz)
+
+        try:
+            if changed_prop == "ExposureTime":
+                if hasattr(self.camera, "FrameRate"):
+                    self.camera.FrameRate = frame_rate_hz
+                self.camera.ExposureTime = exposure_seconds
+            else:
+                self.camera.ExposureTime = exposure_seconds
+                if hasattr(self.camera, "FrameRate"):
+                    self.camera.FrameRate = frame_rate_hz
+        except Exception:
+            dpg.set_value(self.settings_frame_rate, float(getattr(self.camera, "FrameRate", requested_frame_rate_hz)))
+            dpg.set_value(self.settings_exposure_time, float(getattr(self.camera, "ExposureTime", requested_exposure_seconds)))
+            raise
+
+        actual_frame_rate_hz = float(getattr(self.camera, "FrameRate", frame_rate_hz))
+        actual_exposure_seconds = float(getattr(self.camera, "ExposureTime", exposure_seconds))
+        dpg.set_value(self.settings_frame_rate, actual_frame_rate_hz)
+        dpg.set_value(self.settings_exposure_time, actual_exposure_seconds)
+        self.acquisition_frame_rate_hz = actual_frame_rate_hz
+        self._apply_auto_scope_frequency_settings(actual_frame_rate_hz)
+        self.Andor.frame_ready_event.set()
+
+    def _on_max_exposure_changed(self, sender=None, app_data=None, user_data=None):
+        self.max_exposure = bool(app_data)
+        self._apply_frame_rate_exposure_constraints("FrameRate")
+        self._refresh_hardware_requirements(force=True)
+
+    def _render_frame_scope_window(self, *, force=False):
+        if self.frame_scope_window is None:
+            return
+        if not self.frame_scope_window.is_visible():
+            self._frame_scope_render_snapshot = None
+            return
+
+        current_frame_index = int(getattr(self.Andor, "frameIdx", 0))
+        current_mean_count = int(self.Andor.get_scope_frame_mean_count())
+        should_render = force or (
+            current_frame_index != self._last_frame_scope_render_frame_index
+            or current_mean_count != self._last_frame_scope_render_mean_count
+        )
+        if not should_render:
+            return
+
+        self._frame_scope_render_snapshot = self.Andor.get_scope_frame_mean_snapshot()
+        try:
+            self.frame_scope_window.render()
+        finally:
+            self._frame_scope_render_snapshot = None
+        self._last_frame_scope_render_frame_index = current_frame_index
+        self._last_frame_scope_render_mean_count = current_mean_count
+
     def _on_aoi_auto_center_changed(self, sender=None, app_data=None, user_data=None):
         self.aoi_auto_center_enabled = bool(dpg.get_value(self.settings_aoi_auto_center_checkbox_id))
         self._apply_aoi_settings()
@@ -1515,6 +1938,11 @@ class CameraSystem:
             self._refresh_hardware_requirements(force=True)
             return
 
+        if prop in {"ExposureTime", "FrameRate"}:
+            self._apply_frame_rate_exposure_constraints(prop)
+            self._refresh_hardware_requirements(force=True)
+            return
+
         setattr(self.camera, prop, dpg.get_value(setting))
         self._refresh_hardware_requirements(force=True)
 
@@ -1522,6 +1950,7 @@ class CameraSystem:
     def render(self):
         self.camera_feed.render()
         self.z_axis_controls.render()
+        self._render_frame_scope_window(force=self.Andor.frame_ready_event.is_set())
         self._sync_camera_cooler_readout()
 
         if self.started and self.preview_zero_reference_pending and self.Andor.frameIdx > 0:
@@ -1561,13 +1990,22 @@ class CameraSystem:
             self.settings_cooler_checkbox_id,
             enabled=(not self.Andor.is_capturing and self.cooler_supported),
         )
+        exposure_enabled = (not self.Andor.is_capturing) and (not bool(dpg.get_value(self.settings_max_exposure_checkbox_id)))
+        dpg.configure_item(self.settings_exposure_time, enabled=exposure_enabled)
+        dpg.bind_item_theme(self.settings_exposure_time, None if exposure_enabled else read_only_theme)
         dpg.configure_item(self.cooler_temperature_input_id, enabled=False)
+        if hasattr(self, "_cooler_enabled_value"):
+            dpg.set_value(self.settings_cooler_checkbox_id, bool(self._cooler_enabled_value))
+        if hasattr(self, "_cooler_temperature_c"):
+            dpg.set_value(self.cooler_temperature_input_id, float(self._cooler_temperature_c))
 
         acquisition_inputs = (
             self.acquisition_duration_input_id,
             self.acquisition_frame_rate_input_id,
             self.acquisition_scope_rate_input_id,
             self.acquisition_zero_on_start_checkbox_id,
+            self.calculate_frame_mean_checkbox_id,
+            self.auto_scope_freq_checkbox_id,
             self.acquisition_set_awg_on_start_checkbox_id,
             self.acquisition_awg_waveform_combo_id,
             self.acquisition_awg_dc_offset_input_id,
@@ -1583,6 +2021,9 @@ class CameraSystem:
         self._update_acquisition_button_state()
         self._update_acquisition_awg_visibility()
         self._update_spool_to_disk_controls()
+        dpg.configure_item(self.save_button_id, enabled=self._completed_acquisition_payload is not None)
+        dpg.set_value(self.acquisition_progress_bar_id, self._acquisition_progress_value)
+        dpg.configure_item(self.acquisition_progress_bar_id, overlay=self._acquisition_progress_overlay)
 
     def SaveState(self):
         save_state_file(
@@ -1590,6 +2031,7 @@ class CameraSystem:
             {
                 "window": capture_window_state(self.window_id),
                 "exposure_time": float(dpg.get_value(self.settings_exposure_time)),
+                "max_exposure": bool(dpg.get_value(self.settings_max_exposure_checkbox_id)),
                 "trigger_mode": str(dpg.get_value(self.settings_trigger_mode)),
                 "cooler_enabled": bool(dpg.get_value(self.settings_cooler_checkbox_id)),
                 "temperature_setpoint": str(self.temperature_setpoint_value),
@@ -1605,6 +2047,8 @@ class CameraSystem:
                 "acquisition_frame_rate_hz": float(dpg.get_value(self.acquisition_frame_rate_input_id)),
                 "acquisition_scope_sample_rate_hz": float(dpg.get_value(self.acquisition_scope_rate_input_id)),
                 "acquisition_zero_on_start": bool(dpg.get_value(self.acquisition_zero_on_start_checkbox_id)),
+                "calculate_frame_mean": bool(dpg.get_value(self.calculate_frame_mean_checkbox_id)),
+                "auto_scope_freq": bool(dpg.get_value(self.auto_scope_freq_checkbox_id)),
                 "acquisition_set_awg_on_start": bool(dpg.get_value(self.acquisition_set_awg_on_start_checkbox_id)),
                 "acquisition_awg_waveform": str(dpg.get_value(self.acquisition_awg_waveform_combo_id)).strip().lower(),
                 "acquisition_awg_dc_offset_volts": float(dpg.get_value(self.acquisition_awg_dc_offset_input_id)),
@@ -1626,6 +2070,8 @@ class CameraSystem:
             self.z_axis_controls.SaveState()
         if hasattr(self.camera_feed, "SaveState"):
             self.camera_feed.SaveState()
+        if self.frame_scope_window is not None:
+            self.frame_scope_window.SaveState()
 
     def LoadState(self):
         state = load_state_file(type(self).__name__)
@@ -1679,6 +2125,10 @@ class CameraSystem:
             elif "acquisition_storage_dtype" in state:
                 dpg.set_value(self.settings_storage_dtype_combo_id, canonicalize_storage_bit_depth_name(state["acquisition_storage_dtype"], fallback=self.Andor.storage_dtype_name))
 
+            if "max_exposure" in state:
+                dpg.set_value(self.settings_max_exposure_checkbox_id, bool(state["max_exposure"]))
+                self.max_exposure = bool(state["max_exposure"])
+
             self._apply_preview_max_frames(int(state.get("preview_max_frames", self.preview_max_frames)))
 
             if "acquisition_duration_seconds" in state:
@@ -1689,6 +2139,10 @@ class CameraSystem:
                 dpg.set_value(self.acquisition_scope_rate_input_id, float(state["acquisition_scope_sample_rate_hz"]))
             if "acquisition_zero_on_start" in state:
                 dpg.set_value(self.acquisition_zero_on_start_checkbox_id, bool(state["acquisition_zero_on_start"]))
+            if "calculate_frame_mean" in state:
+                dpg.set_value(self.calculate_frame_mean_checkbox_id, bool(state["calculate_frame_mean"]))
+            if "auto_scope_freq" in state:
+                dpg.set_value(self.auto_scope_freq_checkbox_id, bool(state["auto_scope_freq"]))
             if "acquisition_set_awg_on_start" in state:
                 dpg.set_value(self.acquisition_set_awg_on_start_checkbox_id, bool(state["acquisition_set_awg_on_start"]))
             if "acquisition_awg_waveform" in state:
@@ -1720,11 +2174,15 @@ class CameraSystem:
             self._refresh_storage_devices(state.get("hardware_storage_drive"))
 
             self.acquisition_duration_seconds = float(dpg.get_value(self.acquisition_duration_input_id))
+            self._apply_frame_rate_exposure_constraints("FrameRate")
             self.acquisition_frame_rate_hz = float(dpg.get_value(self.acquisition_frame_rate_input_id))
             self.acquisition_scope_sample_rate_hz = float(dpg.get_value(self.acquisition_scope_rate_input_id))
             self.Andor.set_storage_dtype(canonicalize_storage_bit_depth_name(dpg.get_value(self.settings_storage_dtype_combo_id), fallback=self.Andor.storage_dtype_name))
             self.acquisition_storage_dtype_name = self.Andor.storage_dtype_name
+            self.max_exposure = bool(dpg.get_value(self.settings_max_exposure_checkbox_id))
             self.acquisition_zero_on_start = bool(dpg.get_value(self.acquisition_zero_on_start_checkbox_id))
+            self.calculate_frame_mean = bool(dpg.get_value(self.calculate_frame_mean_checkbox_id))
+            self.auto_scope_freq = bool(dpg.get_value(self.auto_scope_freq_checkbox_id))
             self.acquisition_set_awg_on_start = bool(dpg.get_value(self.acquisition_set_awg_on_start_checkbox_id))
             self.acquisition_awg_waveform = str(dpg.get_value(self.acquisition_awg_waveform_combo_id)).strip().lower()
             self.acquisition_awg_dc_offset_volts = float(dpg.get_value(self.acquisition_awg_dc_offset_input_id))
@@ -1743,6 +2201,9 @@ class CameraSystem:
             self._update_acquisition_awg_visibility()
             self._update_spool_to_disk_controls()
             self._refresh_hardware_requirements(force=True)
+
+        if self.frame_scope_window is not None:
+            self.frame_scope_window.LoadState()
 
         if hasattr(self.z_axis_controls, "LoadState"):
             self.z_axis_controls.LoadState()

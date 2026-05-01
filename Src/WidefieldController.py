@@ -5,6 +5,7 @@ from collections import deque
 
 from dearpygui import dearpygui as dpg
 from Utils.shared_state import class_objects
+import Utils.shared_state as shared_state
 from Utils.console_capture import install_console_capture
 from Utils.state_persistence import apply_viewport_state, apply_window_layout, capture_viewport_state, capture_window_layout, get_init_file_path, load_state_file, normalize_viewport_state, save_state_file
 from Utils.utils import load_window_classes
@@ -129,7 +130,7 @@ def create_performance_overlay():
         no_background=False,
         no_saved_settings=True,
     ):
-        dpg.add_text("0.0 UI FPS", tag="SoftwarePerformanceOverlayText")
+        dpg.add_text("0.0 UI FPS | 0.0 Capture FPS", tag="SoftwarePerformanceOverlayText")
 
 
 def save_viewport_state():
@@ -158,17 +159,25 @@ def request_viewport_state_save():
 def update_performance_overlay():
     SOFTWARE_FPS_TIMES.append(time.perf_counter())
     if len(SOFTWARE_FPS_TIMES) < 2:
-        fps = 0.0
+        ui_fps = 0.0
     else:
         elapsed = SOFTWARE_FPS_TIMES[-1] - SOFTWARE_FPS_TIMES[0]
-        fps = 0.0 if elapsed <= 0.0 else (len(SOFTWARE_FPS_TIMES) - 1) / elapsed
+        ui_fps = 0.0 if elapsed <= 0.0 else (len(SOFTWARE_FPS_TIMES) - 1) / elapsed
 
-    label = f"{fps:0.1f} UI FPS"
+    capture_fps = 0.0
+    shared_andor = getattr(shared_state, "shared_andor", None)
+    if shared_andor is not None and hasattr(shared_andor, "get_capture_loop_fps"):
+        try:
+            capture_fps = float(shared_andor.get_capture_loop_fps())
+        except Exception:
+            capture_fps = 0.0
+
+    label = f"{ui_fps:0.1f} UI FPS | {capture_fps:0.1f} Capture FPS"
     dpg.set_value("SoftwarePerformanceOverlayText", label)
 
     viewport_width = dpg.get_viewport_client_width()
     viewport_height = dpg.get_viewport_client_height()
-    overlay_width = max(110, int(len(label) * 8.0) + 16)
+    overlay_width = max(260, int(len(label) * 8.0) + 16)
     overlay_height = 30
     dpg.configure_item("SoftwarePerformanceOverlay", width=overlay_width, height=overlay_height)
     dpg.set_item_pos(
