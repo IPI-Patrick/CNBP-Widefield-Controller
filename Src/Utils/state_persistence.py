@@ -167,6 +167,29 @@ def apply_window_state(item_id, state):
         dpg.hide_item(item_id)
 
 
+def capture_item_open_states(item_ids):
+    if not isinstance(item_ids, dict):
+        return {}
+
+    open_states = {}
+    for state_key, item_id in item_ids.items():
+        if item_id is None or not dpg.does_item_exist(item_id):
+            continue
+        open_states[str(state_key)] = bool(dpg.get_value(item_id))
+    return open_states
+
+
+def apply_item_open_states(item_ids, state):
+    if not isinstance(item_ids, dict) or not isinstance(state, dict):
+        return
+
+    for state_key, is_open in state.items():
+        item_id = item_ids.get(state_key)
+        if item_id is None or not dpg.does_item_exist(item_id):
+            continue
+        dpg.set_value(item_id, bool(is_open))
+
+
 def capture_viewport_state(fallback_state=None):
     state = {}
 

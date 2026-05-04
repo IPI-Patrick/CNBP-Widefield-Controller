@@ -1,7 +1,7 @@
 import threading
 import numpy as np
 import dearpygui.dearpygui as dpg
-from Utils.state_persistence import apply_window_state, capture_window_state, load_state_file, save_state_file
+from Utils.state_persistence import apply_item_open_states, apply_window_state, capture_item_open_states, capture_window_state, load_state_file, save_state_file
 from Utils.themes import red_green_button_disabled, red_green_button_enabled
 
 class VideoSettings:
@@ -25,6 +25,7 @@ class VideoSettings:
         self.ser            = None
         self.pH             = 7.00
         self.reading        = False
+        self.section_node_ids = {}
 
 
         with dpg.window(
@@ -43,52 +44,50 @@ class VideoSettings:
             with dpg.group():
                 self.settings_group = dpg.last_item()
 
-                dpg.add_text("Zero Frame")
+                with dpg.tree_node(label="Zero Frame", default_open=True, span_full_width=True) as zero_frame_node_id:
+                    self.section_node_ids["zero_frame"] = zero_frame_node_id
+                    self.zero_frame_time = dpg.add_input_float(
+                        label           = "Time",      
+                        width           = -40,          
+                        default_value   = 2.0,
+                        min_value       = 0.1,
+                        max_value       = 100.0,
+                        format          = "%.1f s",                
+                    )
+
+                    self.zero_frame_progess = dpg.add_progress_bar(
+                        width           = -1,
+                        height          = 20,
+                        default_value   = 0.0,
+                        overlay         = "0%",
+                    )
+
+                    self.zero_start_button = dpg.add_button(
+                        label           = "Record Zero Frame",
+                        width           = -1,
+                        height          = 20,
+                        callback        = self.record_zero,
+                    )
+
                 dpg.add_separator()
 
-                self.zero_frame_time = dpg.add_input_float(
-                    label           = "Time",      
-                    width           = -40,          
-                    default_value   = 2.0,
-                    min_value       = 0.1,
-                    max_value       = 100.0,
-                    format          = "%.1f s",                
-                )
+                with dpg.tree_node(label="Controls", default_open=True, span_full_width=True) as controls_node_id:
+                    self.section_node_ids["controls"] = controls_node_id
+                    self.start_button = dpg.add_button(
+                        label           = "Start",
+                        width           = -1,
+                        height          = 60,
+                        callback        = self.start_acquisition,
+                    )
 
-                self.zero_frame_progess = dpg.add_progress_bar(
-                    width           = -1,
-                    height          = 20,
-                    default_value   = 0.0,
-                    overlay         = "0%",
-                )
+                    self.live_button = dpg.add_button(
+                        label           = "Live",
+                        width           = -1,
+                        height          = 60,
+                        callback        = self.start_live_feed,
+                    )
 
-                self.zero_start_button = dpg.add_button(
-                    label           = "Record Zero Frame",
-                    width           = -1,
-                    height          = 20,
-                    callback        = self.record_zero,
-                )
-
-
-
-                # Buttons need to be outside of the settings group so they're always enabled
-                dpg.add_spacer(height=20)
-                dpg.add_text("Controls")
                 dpg.add_separator()
-
-                self.start_button = dpg.add_button(
-                    label           = "Start",
-                    width           = -1,
-                    height          = 60,
-                    callback        = self.start_acquisition,
-                )
-
-                self.live_button = dpg.add_button(
-                    label           = "Live",
-                    width           = -1,
-                    height          = 60,
-                    callback        = self.start_live_feed,
-                )
 
     def start_acquisition(self):
         pass
@@ -189,6 +188,7 @@ class VideoSettings:
             type(self).__name__,
             {
                 "window": capture_window_state(self.window_id),
+                "sections": capture_item_open_states(self.section_node_ids),
                 "zero_frame_time": float(dpg.get_value(self.zero_frame_time)),
             },
         )
@@ -199,5 +199,6 @@ class VideoSettings:
             return
 
         apply_window_state(self.window_id, state.get("window"))
+        apply_item_open_states(self.section_node_ids, state.get("sections"))
         if "zero_frame_time" in state:
             dpg.set_value(self.zero_frame_time, float(state["zero_frame_time"]))

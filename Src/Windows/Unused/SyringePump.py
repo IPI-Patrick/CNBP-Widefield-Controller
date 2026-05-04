@@ -38,61 +38,58 @@ class SyringePump:
         ):
             self.window_id = dpg.last_item()
 
-            dpg.add_text("Connection")
-            dpg.add_separator()
-            with dpg.group(horizontal=True):
-                self.port_combo = dpg.add_combo(
-                    width=-30,
-                    items=self.ports,
-                    default_value=self.ports[0] if self.ports else "",
-                    callback=self._on_port_selected,
-                )
-                dpg.add_button(label="R", width=20, callback=self._refresh_ports)
-            with dpg.group(horizontal=True):
-                self.connect_button = dpg.add_button(label="Connect", width=-30, callback=self._toggle_connect)
-                self.status_led     = dpg.add_button(label=" ", width=20, callback=self._toggle_connect)
+            with dpg.tree_node(label="Connection", default_open=True, span_full_width=True):
+                with dpg.group(horizontal=True):
+                    self.port_combo = dpg.add_combo(
+                        width=-30,
+                        items=self.ports,
+                        default_value=self.ports[0] if self.ports else "",
+                        callback=self._on_port_selected,
+                    )
+                    dpg.add_button(label="R", width=20, callback=self._refresh_ports)
+                with dpg.group(horizontal=True):
+                    self.connect_button = dpg.add_button(label="Connect", width=-30, callback=self._toggle_connect)
+                    self.status_led     = dpg.add_button(label=" ", width=20, callback=self._toggle_connect)
 
-            dpg.add_spacer(height=4)
-            dpg.add_text("Status")
-            dpg.add_separator()
-            self.status_state       = dpg.add_input_text(label="State", width=-110, default_value="Unknown", readonly=True)
-            self.status_pos         = dpg.add_input_text(label="Position (steps)", width=-110, default_value="0", readonly=True )
-
-
-            dpg.add_spacer(height=6)
-            dpg.add_text("Dose")
-            dpg.add_separator()
-            self.dose_volume        = dpg.add_input_float(label="Volume (mL)", width=-110, default_value=1.0, min_value=0.0)
-            self.dose_time          = dpg.add_input_float(label="Time (s)", width=-110, default_value=10.0, min_value=0.1)
-            self.status_time        = dpg.add_input_text(label="Elapsed (s)", width=-110, default_value="0", readonly=True, enabled=False )
-            self.status_dispensed   = dpg.add_input_text(label="Dispensed (mL)", width=-110, default_value="0", readonly=True, enabled=False )
-            self.dose_progress      = dpg.add_progress_bar(label="Dose Progress", width=-1, default_value=0.0)
-            self.dose_button        = dpg.add_button(label="Start Dose", width=-1, callback=self._on_start_dose)
-
-
-            dpg.add_spacer(height=6)
-            dpg.add_text("Zero & Calibration")
             dpg.add_separator()
 
-            self.cal_actual         = dpg.add_input_float(label="Measured (mL)", width=-110, default_value=1.0, min_value=0.0)
-            self.steps_per_ml_input = dpg.add_input_text(label="steps/mL", width=-110, default_value="1000.0")
-            self.set_zero_button    = dpg.add_button(label="Set Zero", width=-1, callback=lambda: self._send(f"ZERO"))
-            self.cal_apply_button   = dpg.add_button(label="Calibrate", width=-1, callback=self._on_apply_actual)
+            with dpg.tree_node(label="Status", default_open=True, span_full_width=True):
+                self.status_state       = dpg.add_input_text(label="State", width=-110, default_value="Unknown", readonly=True)
+                self.status_pos         = dpg.add_input_text(label="Position (steps)", width=-110, default_value="0", readonly=True )
 
-            dpg.add_spacer(height=6)
-            dpg.add_text("Jog / Move")
             dpg.add_separator()
 
-            with dpg.group(horizontal=True):
-                self.jog_steps = dpg.add_input_int(label="", width=100, default_value=100)
-                dpg.add_button(label="- Jog", width=80, callback=lambda: self._on_jog(-1))
-                dpg.add_button(label="+ Jog", width=-1, callback=lambda: self._on_jog(1))
+            with dpg.tree_node(label="Dose", default_open=True, span_full_width=True):
+                self.dose_volume        = dpg.add_input_float(label="Volume (mL)", width=-110, default_value=1.0, min_value=0.0)
+                self.dose_time          = dpg.add_input_float(label="Time (s)", width=-110, default_value=10.0, min_value=0.1)
+                self.status_time        = dpg.add_input_text(label="Elapsed (s)", width=-110, default_value="0", readonly=True, enabled=False )
+                self.status_dispensed   = dpg.add_input_text(label="Dispensed (mL)", width=-110, default_value="0", readonly=True, enabled=False )
+                self.dose_progress      = dpg.add_progress_bar(label="Dose Progress", width=-1, default_value=0.0)
+                self.dose_button        = dpg.add_button(label="Start Dose", width=-1, callback=self._on_start_dose)
 
-            with dpg.group(horizontal=True):
-                self.goto_steps = dpg.add_input_int(label="", width=100, default_value=100)
-                dpg.add_button(label="Go", width=-1, callback=lambda: self._send(f"GOTO_STEPS {dpg.get_value(self.goto_steps)}"))
-            dpg.add_button(label="Go To Zero", width=-1, callback=lambda: self._send(f"GOTO_STEPS 0"))
-            dpg.add_button(label="STOP", width=-1, callback=lambda: self._send("STOP"))
+            dpg.add_separator()
+
+            with dpg.tree_node(label="Zero & Calibration", default_open=True, span_full_width=True):
+                self.cal_actual         = dpg.add_input_float(label="Measured (mL)", width=-110, default_value=1.0, min_value=0.0)
+                self.steps_per_ml_input = dpg.add_input_text(label="steps/mL", width=-110, default_value="1000.0")
+                self.set_zero_button    = dpg.add_button(label="Set Zero", width=-1, callback=lambda: self._send(f"ZERO"))
+                self.cal_apply_button   = dpg.add_button(label="Calibrate", width=-1, callback=self._on_apply_actual)
+
+            dpg.add_separator()
+
+            with dpg.tree_node(label="Jog / Move", default_open=True, span_full_width=True):
+                with dpg.group(horizontal=True):
+                    self.jog_steps = dpg.add_input_int(label="", width=100, default_value=100)
+                    dpg.add_button(label="- Jog", width=80, callback=lambda: self._on_jog(-1))
+                    dpg.add_button(label="+ Jog", width=-1, callback=lambda: self._on_jog(1))
+
+                with dpg.group(horizontal=True):
+                    self.goto_steps = dpg.add_input_int(label="", width=100, default_value=100)
+                    dpg.add_button(label="Go", width=-1, callback=lambda: self._send(f"GOTO_STEPS {dpg.get_value(self.goto_steps)}"))
+                dpg.add_button(label="Go To Zero", width=-1, callback=lambda: self._send(f"GOTO_STEPS 0"))
+                dpg.add_button(label="STOP", width=-1, callback=lambda: self._send("STOP"))
+
+            dpg.add_separator()
 
         # Auto-connect if a default port exists
         if self.ports:

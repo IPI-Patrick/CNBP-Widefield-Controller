@@ -141,7 +141,7 @@ class OscilloscopeWindow:
 		if dpg.does_item_exist(trace_items["label_id"]):
 			dpg.set_value(trace_items["label_id"], trace["label"])
 			plot_pos = dpg.get_item_pos(trace_items["plot_id"])
-			dpg.set_item_pos(trace_items["label_id"], (int(plot_pos[0]) + 40, int(plot_pos[1]) + 8))
+			dpg.set_item_pos(trace_items["label_id"], (int(plot_pos[0]) + 50, int(plot_pos[1]) + 8))
 
 	def _ensure_trace_items(self, trace):
 		panel_id = trace["panel_id"]

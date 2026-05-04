@@ -52,74 +52,70 @@ class pHExperiment:
             self.started        = False            
             self.finishing      = False
 
-            dpg.add_text("Settings")
-            dpg.add_separator()
-
-            self.settings_trigger_mode = dpg.add_combo(
-                label           = "COM port",
-                width           = -110,
-                items           = self.pHSensor.comports,
-                default_value   = self.pHSensor.comports[0] if self.pHSensor.comports else None,
-                callback        = self.on_comport_change
-            )
-
-            self.settings_num_frames = dpg.add_input_int(
-                label           = "Number of Frames",
-                width           = -110,
-                default_value   = self.Andor.max_acquisitions,
-                min_value       = 1,
-                max_value       = 10000,
-                step            = 1,
-                callback        = lambda: setattr(self.Andor, 'max_acquisitions', dpg.get_value(self.settings_num_frames))
-            )
-
-            self.settings_continuous = dpg.add_checkbox(
-                label           = "Continuous Acquisition",
-                default_value   = True,
-            )
-
-            self.settings_pH_interval = dpg.add_input_float(
-                label           = "pH Interval (s)",
-                width           = -110,
-                default_value   = 1,
-                min_value       = 0,
-                max_value       = 1000,
-                step            = 0.01,
-                callback        = lambda: setattr(self.pHSensor, 'interval', dpg.get_value(self.settings_pH_interval))
-            )
-
-            dpg.add_spacer(height=20)
-            dpg.add_text("Output")
-            dpg.add_separator()
-
-            dpg.add_text("Directory")
-            with dpg.group(horizontal=True):
-                self.file_dialog_id = dpg.add_file_dialog(
-                    directory_selector=True, 
-                    show=False, 
-                    tag="file_dialog_id",
-                    width=700, 
-                    height=400
+            with dpg.tree_node(label="Settings", default_open=True, span_full_width=True):
+                self.settings_trigger_mode = dpg.add_combo(
+                    label           = "COM port",
+                    width           = -110,
+                    items           = self.pHSensor.comports,
+                    default_value   = self.pHSensor.comports[0] if self.pHSensor.comports else None,
+                    callback        = self.on_comport_change
                 )
 
-                self.settings_output_dir = dpg.add_input_text(        
+                self.settings_num_frames = dpg.add_input_int(
+                    label           = "Number of Frames",
+                    width           = -110,
+                    default_value   = self.Andor.max_acquisitions,
+                    min_value       = 1,
+                    max_value       = 10000,
+                    step            = 1,
+                    callback        = lambda: setattr(self.Andor, 'max_acquisitions', dpg.get_value(self.settings_num_frames))
+                )
+
+                self.settings_continuous = dpg.add_checkbox(
+                    label           = "Continuous Acquisition",
+                    default_value   = True,
+                )
+
+                self.settings_pH_interval = dpg.add_input_float(
+                    label           = "pH Interval (s)",
+                    width           = -110,
+                    default_value   = 1,
+                    min_value       = 0,
+                    max_value       = 1000,
+                    step            = 0.01,
+                    callback        = lambda: setattr(self.pHSensor, 'interval', dpg.get_value(self.settings_pH_interval))
+                )
+
+            dpg.add_separator()
+
+            with dpg.tree_node(label="Output", default_open=True, span_full_width=True):
+                dpg.add_text("Directory")
+                with dpg.group(horizontal=True):
+                    self.file_dialog_id = dpg.add_file_dialog(
+                        directory_selector=True, 
+                        show=False, 
+                        tag="file_dialog_id",
+                        width=700, 
+                        height=400
+                    )
+
+                    self.settings_output_dir = dpg.add_input_text(        
+                        width = -1,       
+                        default_value   = os.path.join(os.getcwd(), "Experiments"),
+                    )
+
+                    self.file_select_button = dpg.add_button(
+                        width           = 20,
+                        label           = "📁",  # Folder icon
+                        callback        = lambda: dpg.show_item(self.file_dialog_id)
+                    )
+
+                dpg.add_text("File Name")
+                self.settings_file_name = dpg.add_input_text(        
                     width = -1,       
-                    default_value   = os.path.join(os.getcwd(), "Experiments"),
+                    default_value   = "pH_Experiment",
                 )
 
-                self.file_select_button = dpg.add_button(
-                    width           = 20,
-                    label           = "📁",  # Folder icon
-                    callback        = lambda: dpg.show_item(self.file_dialog_id)
-                )
-
-            dpg.add_text("File Name")
-            self.settings_file_name = dpg.add_input_text(        
-                width = -1,       
-                default_value   = "pH_Experiment",
-            )
-
-            dpg.add_spacer(height=20)
             dpg.add_separator()
 
             # Add the start/stop button

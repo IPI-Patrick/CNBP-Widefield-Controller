@@ -1,78 +1,91 @@
 import dearpygui.dearpygui as dpg
 
 from Drivers.PicoScope import SUPPORTED_AWG_WAVEFORMS
-from Utils.state_persistence import apply_window_state, capture_window_state, load_state_file, save_state_file
+from Utils.state_persistence import apply_item_open_states, apply_window_state, capture_item_open_states, capture_window_state, load_state_file, save_state_file
 from Utils.themes import red_green_button_disabled, red_green_button_enabled
 
 
 class FunctionGeneratorWindow:
 
-    def __init__(self, get_driver, set_error, *, width=320, height=220, pos=(1315, 10)):
+    def __init__(self, get_driver, set_error, *, width=320, height=220, pos=(1315, 10), parent=None, embedded=False):
         self._get_driver = get_driver
         self._set_error = set_error
         self._awg_enabled = False
+        self.section_node_ids = {}
+        self._embedded = bool(embedded)
+        self.window_id = None
+        self.root_container_id = None
 
         driver = self._get_driver()
 
-        with dpg.window(
-            label="Function Generator",
-            tag="#FunctionGenerator",
-            width=width,
-            height=height,
-            pos=pos,
-            no_scrollbar=False,
-            no_resize=False,
-            no_scroll_with_mouse=True,
-        ):
-            self.window_id = dpg.last_item()
+        if self._embedded:
+            with dpg.group(parent=parent) as self.root_container_id:
+                self._build_controls(driver)
+        else:
+            with dpg.window(
+                label="Function Generator",
+                tag="#FunctionGenerator",
+                width=width,
+                height=height,
+                pos=pos,
+                no_scrollbar=False,
+                no_resize=False,
+                no_scroll_with_mouse=True,
+            ):
+                self.window_id = dpg.last_item()
+                self.root_container_id = self.window_id
 
-            dpg.add_text("Function Generator")
-            dpg.add_separator()
+                with dpg.tree_node(label="Function Generator", default_open=True, span_full_width=True) as function_generator_node_id:
+                    self.section_node_ids["function_generator"] = function_generator_node_id
+                    self._build_controls(driver)
 
-            self.awg_enabled_button_id = dpg.add_button(
-                label="Disabled",
-                width=-1,
-                callback=self._on_awg_enabled_toggled,
-            )
-            dpg.bind_item_theme(self.awg_enabled_button_id, red_green_button_disabled)
-
-            with dpg.group() as self.awg_settings_group_id:
-                self.awg_waveform_combo_id = dpg.add_combo(
-                    label="Waveform",
-                    width=-120,
-                    items=[w.title() for w in SUPPORTED_AWG_WAVEFORMS],
-                    default_value="Dc",
-                    callback=self._on_awg_waveform_changed,
-                )
-
-                self.awg_frequency_input_id = dpg.add_input_float(
-                    label="Frequency (Hz)",
-                    width=-120,
-                    default_value=driver.awg_config["frequency_hz"],
-                    min_value=0.0,
-                    step=100.0,
-                    callback=self._on_awg_setting_changed,
-                )
-
-                self.awg_amplitude_input_id = dpg.add_input_float(
-                    label="Amplitude (Vpp)",
-                    width=-120,
-                    default_value=driver.awg_config["amplitude_vpp_volts"],
-                    min_value=0.0,
-                    step=0.1,
-                    callback=self._on_awg_setting_changed,
-                )
-
-                self.awg_offset_input_id = dpg.add_input_float(
-                    label="Offset (V)",
-                    width=-120,
-                    default_value=driver.awg_config["offset_volts"],
-                    step=0.1,
-                    callback=self._on_awg_setting_changed,
-                )
+                dpg.add_separator()
 
         self._update_awg_enabled_button()
         self._update_awg_settings_visibility()
+
+    def _build_controls(self, driver):
+        self.awg_enabled_button_id = dpg.add_button(
+            label="Disabled",
+            width=-1,
+            callback=self._on_awg_enabled_toggled,
+        )
+        dpg.bind_item_theme(self.awg_enabled_button_id, red_green_button_disabled)
+
+        with dpg.group() as self.awg_settings_group_id:
+            self.awg_waveform_combo_id = dpg.add_combo(
+                label="Waveform",
+                width=-120,
+                items=[w.title() for w in SUPPORTED_AWG_WAVEFORMS],
+                default_value="Dc",
+                callback=self._on_awg_waveform_changed,
+            )
+
+            self.awg_frequency_input_id = dpg.add_input_float(
+                label="Frequency (Hz)",
+                width=-120,
+                default_value=driver.awg_config["frequency_hz"],
+                min_value=0.0,
+                step=100.0,
+                callback=self._on_awg_setting_changed,
+            )
+
+            self.awg_amplitude_input_id = dpg.add_input_float(
+                label="Amplitude (Vpp)",
+                width=-120,
+                default_value=driver.awg_config["amplitude_vpp_volts"],
+                min_value=0.0,
+                step=0.1,
+                callback=self._on_awg_setting_changed,
+            )
+
+            self.awg_offset_input_id = dpg.add_input_float(
+                label="Offset (V)",
+                width=-120,
+                default_value=driver.awg_config["offset_volts"],
+                step=0.1,
+                callback=self._on_awg_setting_changed,
+            )
 
     def get_awg_settings(self):
         return {
@@ -125,24 +138,27 @@ class FunctionGeneratorWindow:
             dpg.configure_item(item_id, enabled=awg_config_enabled)
 
     def SaveState(self):
-        save_state_file(
-            type(self).__name__,
-            {
-                "window": capture_window_state(self.window_id),
-                "enabled": bool(self._awg_enabled),
-                "waveform": dpg.get_value(self.awg_waveform_combo_id),
-                "frequency_hz": float(dpg.get_value(self.awg_frequency_input_id)),
-                "amplitude_vpp_volts": float(dpg.get_value(self.awg_amplitude_input_id)),
-                "offset_volts": float(dpg.get_value(self.awg_offset_input_id)),
-            },
-        )
+        payload = {
+            "enabled": bool(self._awg_enabled),
+            "waveform": dpg.get_value(self.awg_waveform_combo_id),
+            "frequency_hz": float(dpg.get_value(self.awg_frequency_input_id)),
+            "amplitude_vpp_volts": float(dpg.get_value(self.awg_amplitude_input_id)),
+            "offset_volts": float(dpg.get_value(self.awg_offset_input_id)),
+        }
+        if not self._embedded:
+            payload["window"] = capture_window_state(self.window_id)
+            payload["sections"] = capture_item_open_states(self.section_node_ids)
+
+        save_state_file(type(self).__name__, payload)
 
     def LoadState(self, legacy_state=None):
         state = load_state_file(type(self).__name__) or legacy_state or {}
         if not state:
             return
 
-        apply_window_state(self.window_id, state.get("window"))
+        if not self._embedded:
+            apply_window_state(self.window_id, state.get("window"))
+            apply_item_open_states(self.section_node_ids, state.get("sections"))
 
         waveform = str(state.get("waveform", dpg.get_value(self.awg_waveform_combo_id)))
         dpg.set_value(self.awg_waveform_combo_id, waveform)

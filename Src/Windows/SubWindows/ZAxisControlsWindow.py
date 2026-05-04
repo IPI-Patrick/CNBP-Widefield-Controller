@@ -2,7 +2,7 @@ import dearpygui.dearpygui as dpg
 
 from Drivers.ZAxisDriver import ZAxisDriver
 from Utils.fonts import get_segmdl2_icon_font
-from Utils.state_persistence import apply_window_state, capture_window_state, load_state_file, save_state_file
+from Utils.state_persistence import apply_item_open_states, apply_window_state, capture_item_open_states, capture_window_state, load_state_file, save_state_file
 from Utils.themes import selected_theme
 
 
@@ -17,6 +17,7 @@ class ZAxisControlsWindow:
         self._key_down_active = False
         self._active_motion_direction = 0
         self._syncing_jog_inputs = False
+        self.section_node_ids = {}
 
         initial_ports = self.driver.list_ports()
         initial_port = initial_ports[0] if initial_ports else ""
@@ -34,143 +35,144 @@ class ZAxisControlsWindow:
         ):
             self.window_id = dpg.last_item()
 
-            dpg.add_text("Connection")
-            dpg.add_separator()
-
-            with dpg.group(horizontal=True):
-                self.port_combo_id = dpg.add_combo(
-                    label="Port",
-                    width=-130,
-                    items=initial_ports,
-                    default_value=initial_port,
-                    callback=self._on_port_selected,
-                )
-                self.refresh_button_id = dpg.add_button(
-                    label="\uE117",
-                    width=40,
-                    callback=self._refresh_ports,
-                )
-
-                with dpg.tooltip(self.refresh_button_id):
-                    dpg.add_text("Refresh COM ports")
-
-                self.connect_button_id = dpg.add_button(
-                    label="\uE8CD" if self.driver.connected else "\uE71B",
-                    width=40,
-                    callback=self._toggle_connection,
-                )
-
-                with dpg.tooltip(self.connect_button_id):
-                    self.connect_button_tooltip_id = dpg.add_text(
-                        "Disconnect z axis" if self.driver.connected else "Connect z axis"
+            with dpg.tree_node(label="Connection", default_open=True, span_full_width=True) as connection_node_id:
+                self.section_node_ids["connection"] = connection_node_id
+                with dpg.group(horizontal=True):
+                    self.port_combo_id = dpg.add_combo(
+                        label="Port",
+                        width=-130,
+                        items=initial_ports,
+                        default_value=initial_port,
+                        callback=self._on_port_selected,
+                    )
+                    self.refresh_button_id = dpg.add_button(
+                        label="\uE117",
+                        width=40,
+                        callback=self._refresh_ports,
                     )
 
-                dpg.bind_item_font(self.refresh_button_id, self.icon_font)
-                dpg.bind_item_font(self.connect_button_id, self.icon_font)
+                    with dpg.tooltip(self.refresh_button_id):
+                        dpg.add_text("Refresh COM ports")
 
-            dpg.add_spacer(height=8)
-            dpg.add_text("Status")
+                    self.connect_button_id = dpg.add_button(
+                        label="\uE8CD" if self.driver.connected else "\uE71B",
+                        width=40,
+                        callback=self._toggle_connection,
+                    )
+
+                    with dpg.tooltip(self.connect_button_id):
+                        self.connect_button_tooltip_id = dpg.add_text(
+                            "Disconnect z axis" if self.driver.connected else "Connect z axis"
+                        )
+
+                    dpg.bind_item_font(self.refresh_button_id, self.icon_font)
+                    dpg.bind_item_font(self.connect_button_id, self.icon_font)
+
             dpg.add_separator()
 
-            self.state_input_id = dpg.add_input_text(
-                label="State",
-                width=-110,
-                default_value="Disconnected",
-                readonly=True,
-            )
-            self.position_input_id = dpg.add_input_text(
-                label="Position",
-                width=-110,
-                default_value="--",
-                readonly=True,
-            )
-            self.speed_status_input_id = dpg.add_input_text(
-                label="Speed",
-                width=-110,
-                default_value="--",
-                readonly=True,
-            )
-            self.error_input_id = dpg.add_input_text(
-                label="Error",
-                width=-110,
-                default_value="",
-                readonly=True,
-            )
+            with dpg.tree_node(label="Status", default_open=True, span_full_width=True) as status_node_id:
+                self.section_node_ids["status"] = status_node_id
+                self.state_input_id = dpg.add_input_text(
+                    label="State",
+                    width=-110,
+                    default_value="Disconnected",
+                    readonly=True,
+                )
+                self.position_input_id = dpg.add_input_text(
+                    label="Position",
+                    width=-110,
+                    default_value="--",
+                    readonly=True,
+                )
+                self.speed_status_input_id = dpg.add_input_text(
+                    label="Speed",
+                    width=-110,
+                    default_value="--",
+                    readonly=True,
+                )
+                self.error_input_id = dpg.add_input_text(
+                    label="Error",
+                    width=-110,
+                    default_value="",
+                    readonly=True,
+                )
 
-            dpg.add_spacer(height=8)
-            dpg.add_text("Motion")
             dpg.add_separator()
 
-            self.jog_steps_input_id = dpg.add_input_int(
-                label="Jog Steps",
-                width=-110,
-                default_value=100,
-                min_value=1,
-                min_clamped=True,
-                step=10,
-                callback=self._on_jog_steps_changed,
-            )
-            self.jog_revs_input_id = dpg.add_input_float(
-                label="Jog Revs",
-                width=-110,
-                default_value=100.0 / float(self.driver.STEPS_PER_OUTPUT_REV),
-                min_value=1.0 / float(self.driver.STEPS_PER_OUTPUT_REV),
-                min_clamped=True,
-                step=0.001,
-                format="%.6f rev",
-                callback=self._on_jog_revs_changed,
-            )
-            self.motion_speed_input_id = dpg.add_input_float(
-                label="Move Speed",
-                width=-110,
-                default_value=0.01,
-                min_value=0.0001,
-                min_clamped=True,
-                step=0.001,
-                format="%.4f rev/s",
-            )
-            self.motion_acceleration_input_id = dpg.add_input_float(
-                label="Acceleration",
-                width=-110,
-                default_value=28.125,
-                min_value=0.0001,
-                min_clamped=True,
-                step=1.0,
-                format="%.3f deg/s^2",
-                callback=self._on_motion_profile_changed,
-            )
-
-            with dpg.group(horizontal=True):
-                self.negative_jog_button_id = dpg.add_button(
-                    label="- Jog",
-                    width=85,
-                    callback=lambda: self._on_jog(-1),
+            with dpg.tree_node(label="Motion", default_open=True, span_full_width=True) as motion_node_id:
+                self.section_node_ids["motion"] = motion_node_id
+                self.jog_steps_input_id = dpg.add_input_int(
+                    label="Jog Steps",
+                    width=-110,
+                    default_value=100,
+                    min_value=1,
+                    min_clamped=True,
+                    step=10,
+                    callback=self._on_jog_steps_changed,
                 )
-                self.set_zero_button_id = dpg.add_button(
-                    label="Set Zero",
-                    width=85,
-                    callback=self._set_zero,
+                self.jog_revs_input_id = dpg.add_input_float(
+                    label="Jog Revs",
+                    width=-110,
+                    default_value=100.0 / float(self.driver.STEPS_PER_OUTPUT_REV),
+                    min_value=1.0 / float(self.driver.STEPS_PER_OUTPUT_REV),
+                    min_clamped=True,
+                    step=0.001,
+                    format="%.6f rev",
+                    callback=self._on_jog_revs_changed,
                 )
-                self.positive_jog_button_id = dpg.add_button(
-                    label="+ Jog",
-                    width=-1,
-                    callback=lambda: self._on_jog(1),
+                self.motion_speed_input_id = dpg.add_input_float(
+                    label="Move Speed",
+                    width=-110,
+                    default_value=0.01,
+                    min_value=0.0001,
+                    min_clamped=True,
+                    step=0.001,
+                    format="%.4f rev/s",
+                )
+                self.motion_acceleration_input_id = dpg.add_input_float(
+                    label="Acceleration",
+                    width=-110,
+                    default_value=28.125,
+                    min_value=0.0001,
+                    min_clamped=True,
+                    step=1.0,
+                    format="%.3f deg/s^2",
+                    callback=self._on_motion_profile_changed,
                 )
 
-            with dpg.group(horizontal=True):
-                self.negative_move_button_id = dpg.add_button(
-                    label="Move -",
-                    width=85,
-                )
-                self.stop_button_id = dpg.add_button(
-                    label="Stop",
-                    width=85,
-                    callback=self._stop_motion,
-                )
-                self.positive_move_button_id = dpg.add_button(
-                    label="Move +",
-                    width=-1,
-                )
+                with dpg.group(horizontal=True):
+                    self.negative_jog_button_id = dpg.add_button(
+                        label="- Jog",
+                        width=85,
+                        callback=lambda: self._on_jog(-1),
+                    )
+                    self.set_zero_button_id = dpg.add_button(
+                        label="Set Zero",
+                        width=85,
+                        callback=self._set_zero,
+                    )
+                    self.positive_jog_button_id = dpg.add_button(
+                        label="+ Jog",
+                        width=-1,
+                        callback=lambda: self._on_jog(1),
+                    )
+
+                with dpg.group(horizontal=True):
+                    self.negative_move_button_id = dpg.add_button(
+                        label="Move -",
+                        width=85,
+                    )
+                    self.stop_button_id = dpg.add_button(
+                        label="Stop",
+                        width=85,
+                        callback=self._stop_motion,
+                    )
+                    self.positive_move_button_id = dpg.add_button(
+                        label="Move +",
+                        width=-1,
+                    )
+
+            dpg.add_separator()
 
         with dpg.item_handler_registry(tag=f"{self.tag_prefix}_MoveDownHandlers"):
             dpg.add_item_activated_handler(callback=lambda: self._on_move_button_pressed(-1))
@@ -399,6 +401,7 @@ class ZAxisControlsWindow:
             self._state_name(),
             {
                 "window": capture_window_state(self.window_id),
+                "sections": capture_item_open_states(self.section_node_ids),
                 "port": str(dpg.get_value(self.port_combo_id)).strip(),
                 "jog_steps": int(dpg.get_value(self.jog_steps_input_id)),
                 "jog_revs": float(dpg.get_value(self.jog_revs_input_id)),
@@ -414,6 +417,7 @@ class ZAxisControlsWindow:
             return
 
         apply_window_state(self.window_id, state.get("window"))
+        apply_item_open_states(self.section_node_ids, state.get("sections"))
 
         if "port" in state:
             saved_port = str(state["port"]).strip()

@@ -2,7 +2,7 @@ import Drivers.LaserDriver as LaserDriverModule
 from Drivers.PM1000 import PM1000
 import dearpygui.dearpygui as dpg
 from Utils.fonts import get_segmdl2_icon_font
-from Utils.state_persistence import apply_window_state, capture_window_state, load_state_file, save_state_file
+from Utils.state_persistence import apply_item_open_states, apply_window_state, capture_item_open_states, capture_window_state, load_state_file, save_state_file
 
 class LaserControls:
 
@@ -28,6 +28,7 @@ class LaserControls:
             self.pm1000_power_source = dpg.add_float_value(default_value=0.0)
 
         mdl = get_segmdl2_icon_font()
+        self.section_node_ids = {}
 
 
         with dpg.window(
@@ -42,128 +43,127 @@ class LaserControls:
         ):
             self.window_id = dpg.last_item()
 
-            dpg.add_text("Laser Connection")
-            dpg.add_separator()
-
-            with dpg.group(horizontal=True):
-                self.laser_com_port_id = dpg.add_combo(
-                    label = "Port",
-                    width = -130,
-                    items = self.laser.refresh_ports(),
-                    default_value = self.laser.COMPort if self.laser.COMPort else "Not Found",
-                    callback = self._on_port_selected,
-                )
-
-                self.refresh_ports_button_id = dpg.add_button(
-                    label = "\uE117",
-                    width = 40,
-                    callback = self._refresh_ports,
-                )
-
-                with dpg.tooltip(self.refresh_ports_button_id):
-                    dpg.add_text("Refresh COM ports")
-
-                self.connection_button_id = dpg.add_button(
-                    label = "\uE8CD" if self.laser.is_connected() else "\uE71B",
-                    width = 40,
-                    callback = self._toggle_connection,
-                )
-
-                with dpg.tooltip(self.connection_button_id):
-                    self.connection_button_tooltip_id = dpg.add_text(
-                        "Disconnect laser" if self.laser.is_connected() else "Connect laser"
+            with dpg.tree_node(label="Laser Connection", default_open=True, span_full_width=True) as laser_connection_node_id:
+                self.section_node_ids["laser_connection"] = laser_connection_node_id
+                with dpg.group(horizontal=True):
+                    self.laser_com_port_id = dpg.add_combo(
+                        label = "Port",
+                        width = -130,
+                        items = self.laser.refresh_ports(),
+                        default_value = self.laser.COMPort if self.laser.COMPort else "Not Found",
+                        callback = self._on_port_selected,
                     )
 
-                dpg.bind_item_font(self.refresh_ports_button_id, mdl)
-                dpg.bind_item_font(self.connection_button_id, mdl)
+                    self.refresh_ports_button_id = dpg.add_button(
+                        label = "\uE117",
+                        width = 40,
+                        callback = self._refresh_ports,
+                    )
 
-            dpg.add_spacer(height=6)
-            dpg.add_text("Power Meter Connection")
+                    with dpg.tooltip(self.refresh_ports_button_id):
+                        dpg.add_text("Refresh COM ports")
+
+                    self.connection_button_id = dpg.add_button(
+                        label = "\uE8CD" if self.laser.is_connected() else "\uE71B",
+                        width = 40,
+                        callback = self._toggle_connection,
+                    )
+
+                    with dpg.tooltip(self.connection_button_id):
+                        self.connection_button_tooltip_id = dpg.add_text(
+                            "Disconnect laser" if self.laser.is_connected() else "Connect laser"
+                        )
+
+                    dpg.bind_item_font(self.refresh_ports_button_id, mdl)
+                    dpg.bind_item_font(self.connection_button_id, mdl)
+
             dpg.add_separator()
 
-            with dpg.group(horizontal=True):
-                self.pm1000_device_combo_id = dpg.add_combo(
-                    label = " Dev",
-                    width = -130,
-                    items = [],
-                    default_value = "No devices",
-                    callback = self._on_pm1000_device_selected,
-                )
+            with dpg.tree_node(label="Power Meter Connection", default_open=True, span_full_width=True) as power_meter_connection_node_id:
+                self.section_node_ids["power_meter_connection"] = power_meter_connection_node_id
+                with dpg.group(horizontal=True):
+                    self.pm1000_device_combo_id = dpg.add_combo(
+                        label = " Dev",
+                        width = -130,
+                        items = [],
+                        default_value = "No devices",
+                        callback = self._on_pm1000_device_selected,
+                    )
 
-                self.pm1000_refresh_button_id = dpg.add_button(
-                    label = "\uE117",
-                    width = 40,
-                    callback = self._pm1000_refresh_devices,
-                )
+                    self.pm1000_refresh_button_id = dpg.add_button(
+                        label = "\uE117",
+                        width = 40,
+                        callback = self._pm1000_refresh_devices,
+                    )
 
-                with dpg.tooltip(self.pm1000_refresh_button_id):
-                    dpg.add_text("Refresh power meter devices")
+                    with dpg.tooltip(self.pm1000_refresh_button_id):
+                        dpg.add_text("Refresh power meter devices")
 
-                self.pm1000_connect_button_id = dpg.add_button(
-                    label = "\uE71B",
-                    width = 40,
-                    callback = self._pm1000_toggle_connection,
-                )
+                    self.pm1000_connect_button_id = dpg.add_button(
+                        label = "\uE71B",
+                        width = 40,
+                        callback = self._pm1000_toggle_connection,
+                    )
 
-                with dpg.tooltip(self.pm1000_connect_button_id):
-                    self.pm1000_connect_tooltip_id = dpg.add_text("Connect power meter")
+                    with dpg.tooltip(self.pm1000_connect_button_id):
+                        self.pm1000_connect_tooltip_id = dpg.add_text("Connect power meter")
 
-                dpg.bind_item_font(self.pm1000_refresh_button_id, mdl)
-                dpg.bind_item_font(self.pm1000_connect_button_id, mdl)
+                    dpg.bind_item_font(self.pm1000_refresh_button_id, mdl)
+                    dpg.bind_item_font(self.pm1000_connect_button_id, mdl)
 
-            dpg.add_spacer(height=10)
-            dpg.add_text("Power Control")
             dpg.add_separator()
 
-            with dpg.group(horizontal=True):
-                self.laser_indicator_id = dpg.add_color_button(
-                    label = "",
-                    width = 19,
-                    height = 19,
-                    enabled = False,
-                    tag = "laser_indicator",
+            with dpg.tree_node(label="Power Control", default_open=True, span_full_width=True) as power_control_node_id:
+                self.section_node_ids["power_control"] = power_control_node_id
+                with dpg.group(horizontal=True):
+                    self.laser_indicator_id = dpg.add_color_button(
+                        label = "",
+                        width = 19,
+                        height = 19,
+                        enabled = False,
+                        tag = "laser_indicator",
+                    )
+
+                    self.laser_button_id = dpg.add_button(
+                        label = "Enable Emission",
+                        width = -1,
+                        callback = self._toggle_emission,
+                    )
+
+                self.laser_power_id = dpg.add_slider_float(
+                    label = "Target Power",
+                    source = self.target_power_source,
+                    min_value = 0.0,
+                    max_value = self.laser.max_power_mw,
+                    format = "%.2f mW",
+                    callback = self.request_laser_power,
                 )
 
-                self.laser_button_id = dpg.add_button(
-                    label = "Enable Emission",
-                    width = -1,
-                    callback = self._toggle_emission,
+                self.laser_power_input_id = dpg.add_input_float(
+                    label = "Target Entry",
+                    source = self.target_power_source,
+                    min_value = 0.0,
+                    max_value = self.laser.max_power_mw,
+                    min_clamped = True,
+                    max_clamped = True,
+                    step = 0.5,
+                    format = "%.2f mW",
+                    callback = self.request_laser_power,
                 )
 
-            self.laser_power_id = dpg.add_slider_float(
-                label = "Target Power",
-                source = self.target_power_source,
-                min_value = 0.0,
-                max_value = self.laser.max_power_mw,
-                format = "%.2f mW",
-                callback = self.request_laser_power,
-            )
+                self.laser_actual_id = dpg.add_progress_bar(
+                    label = "Actual",
+                    default_value = 0.0,
+                    overlay = "0.00 mW",
+                )
 
-            self.laser_power_input_id = dpg.add_input_float(
-                label = "Target Entry",
-                source = self.target_power_source,
-                min_value = 0.0,
-                max_value = self.laser.max_power_mw,
-                min_clamped = True,
-                max_clamped = True,
-                step = 0.5,
-                format = "%.2f mW",
-                callback = self.request_laser_power,
-            )
+                self.pm1000_reading_bar_id = dpg.add_progress_bar(
+                    label = "Measured",
+                    default_value = 0.0,
+                    overlay = "0.0000 mW",
+                )
 
-            self.laser_actual_id = dpg.add_progress_bar(
-                label = "Actual",
-                default_value = 0.0,
-                overlay = "0.00 mW",
-            )
-
-            self.pm1000_reading_bar_id = dpg.add_progress_bar(
-                label = "Measured",
-                default_value = 0.0,
-                overlay = "0.0000 mW",
-            )
-
-            dpg.add_spacer(height=10)
+            dpg.add_separator()
 
             with dpg.plot(
                 label="Laser Output",
@@ -367,6 +367,7 @@ class LaserControls:
             type(self).__name__,
             {
                 "window": capture_window_state(self.window_id),
+                "sections": capture_item_open_states(self.section_node_ids),
                 "laser_com_port": str(dpg.get_value(self.laser_com_port_id)),
                 "target_power_mw": float(dpg.get_value(self.target_power_source)),
                 "pm1000_device": self._pm1000_selected_device_name,
@@ -379,6 +380,7 @@ class LaserControls:
             return
 
         apply_window_state(self.window_id, state.get("window"))
+        apply_item_open_states(self.section_node_ids, state.get("sections"))
 
         saved_port = str(state.get("laser_com_port") or "").strip()
         if saved_port:

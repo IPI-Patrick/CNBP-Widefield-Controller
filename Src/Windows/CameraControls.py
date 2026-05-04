@@ -2,18 +2,21 @@ import ctypes
 from collections import deque
 import os  
 import shutil
+import tempfile
 import threading
 import time
+import zipfile
 import numpy as np
 import dearpygui.dearpygui as dpg
-from Drivers.Andor import Andor, SUPPORTED_STORAGE_DTYPES
+from Drivers.Andor import Andor
 from Drivers.PicoScope import CHANNEL_NAMES, SUPPORTED_AWG_WAVEFORMS
-from Utils.StorageDTypes import canonicalize_storage_bit_depth_name, get_raw_storage_bytes, get_signed_storage_bytes
+from Utils.StorageDTypes import get_raw_storage_bytes
 from Utils import diskspeed
+from Windows.SubWindows.AcquisitionPreviewWindow import AcquisitionPreviewWindow
 from Windows.SubWindows.CameraFeed import CameraFeedWindow
 from Windows.SubWindows.Oscilloscope import OscilloscopeWindow
 from Windows.SubWindows.ZAxisControlsWindow import ZAxisControlsWindow
-from Utils.state_persistence import apply_window_state, capture_window_state, load_state_file, save_state_file
+from Utils.state_persistence import apply_item_open_states, apply_window_state, capture_item_open_states, capture_window_state, load_state_file, save_state_file
 from Utils.themes import read_only_theme, red_green_button_disabled, red_green_button_enabled
 import Utils.shared_state as shared_state
 from Utils.shared_state import class_objects
@@ -47,8 +50,6 @@ class CameraSystem:
         self.spool_to_disk_enabled = False
         self.spool_to_disk_directory = os.path.join(os.getcwd(), "Experiments")
         self.spool_to_disk_filename = "acquisition"
-        self.spool_write_difference = True
-        self.spool_write_contrast = True
         self.spool_write_scope = True
         self.spool_write_power = False
         self._acquisition_thread = None
@@ -56,8 +57,20 @@ class CameraSystem:
         self._acquisition_awg_stop_event = None
         self._completed_acquisition_payload = None
         self._pending_acquisition_result = None
+        self._pending_save_result = None
         self._acquisition_scope_fallback_snapshot = None
+        self._acquisition_settings_snapshot = None
         self._acquisition_lock = threading.Lock()
+        self._save_thread = None
+        self._save_in_progress = False
+        self._save_progress_value = 0.0
+        self._save_progress_display_value = 0.0
+        self._save_progress_segment_start_value = 0.0
+        self._save_progress_segment_end_value = 0.0
+        self._save_progress_segment_key = None
+        self._save_progress_overlay = "Save"
+        self._save_progress_segment_started_at = time.perf_counter()
+        self._acquisition_preview_window = None
         self._acquisition_scope_mean_thread = None
         self._acquisition_scope_mean_stop_event = None
         self._acquisition_scope_mean_lock = threading.Lock()
@@ -74,12 +87,15 @@ class CameraSystem:
         self._preview_scope_registered_frame_count = 0
         self._preview_scope_started_collection = False
         self.preview_zero_reference_pending = False
+        self.last_save_directory = os.path.join(os.getcwd(), "Experiments")
         self.aoi_auto_center_enabled = False
         self.preview_max_frames = int(getattr(Andor, "max_acquisitions", 200))
         self._storage_devices = []
         self._drive_write_speed_cache = {}
         self._drive_write_speed_errors = {}
         self._hardware_requirements_signature = None
+        self.section_node_ids = {}
+        self._footer_padding = 8
         self.z_axis_controls = ZAxisControlsWindow()
         self.frame_scope_window = None
         self._last_frame_scope_render_frame_index = -1
@@ -136,17 +152,6 @@ class CameraSystem:
                 tag="#FrameScope",
             )
 
-            # self.mean_graph   = GraphWindow(
-            #     name        = "Mean Intensity",
-            #     id          = "MeanIntensityGraph",
-            #     getYValues  = lambda: self.Andor.meanBuffer,
-            #     getXValues  = lambda: range(len(self.Andor.meanBuffer)),
-            #     xlabel      = "Acquisitions",
-            #     ylabel      = "Mean Intensity",
-            #     xpos        = 10,
-            #     ypos        = 625
-            # )
-
             with dpg.theme() as self.stop_button_theme:
                 with dpg.theme_component(dpg.mvButton):
                     dpg.add_theme_color(dpg.mvThemeCol_Button, [70, 70, 70])
@@ -161,371 +166,364 @@ class CameraSystem:
                     dpg.add_theme_color(dpg.mvThemeCol_FrameBgActive, [52, 52, 52])
                     dpg.add_theme_color(dpg.mvThemeCol_Border, [90, 90, 90])
 
-            dpg.add_text("Camera Settings")
-            dpg.add_separator()
-
-            self.settings_frame_rate = dpg.add_input_float(
-                label           = "FPS",
-                width           = -110,
-                default_value   = self.acquisition_frame_rate_hz,
-                min_value       = 0.1,
-                min_clamped     = True,
-                step            = 1.0,
-                format          = "%.0f",
-                callback        = lambda: self.setprop("FrameRate", self.settings_frame_rate)
-            )
-
-            self.acquisition_frame_rate_input_id = self.settings_frame_rate
-
-            self.settings_exposure_time = dpg.add_input_float(
-                label           = "Exposure Time",
-                width           = -110,
-                default_value   = cam.ExposureTime,
-                min_value       = 0.001,
-                max_value       = 1,
-                step            = 0.01,
-                format          = "%.3f s",
-                callback        = lambda: self.setprop("ExposureTime", self.settings_exposure_time)
-            )
-
-            self.settings_max_exposure_checkbox_id = dpg.add_checkbox(
-                label="Max Exposure",
-                default_value=self.max_exposure,
-                callback=self._on_max_exposure_changed,
-            )
-
-            
-            self.settings_trigger_mode = dpg.add_combo(
-                label           = "Trigger Mode",
-                width           = -110,
-                items           = cam.options_TriggerMode,
-                default_value   = cam.TriggerMode,
-                callback        = lambda: self.setprop("TriggerMode", self.settings_trigger_mode)
-            )
-
-            self.settings_cooler_checkbox_id = dpg.add_checkbox(
-                label="Cooler",
-                default_value=bool(self.Andor.get_sensor_cooling_enabled() or False),
-                callback=self._on_camera_cooler_changed,
-                enabled=self.cooler_supported,
-            )
-
-            self.settings_temp_set_input_id = dpg.add_combo(
-                label="Temp Set",
-                width=-110,
-                items=self.temperature_setpoint_options,
-                default_value=self.temperature_setpoint_value,
-                callback=self._on_camera_temp_set_changed,
-                enabled=self.temperature_setpoint_supported,
-            )
-
-            self.cooler_temperature_input_id = dpg.add_input_float(
-                label="Temperature",
-                width=-110,
-                default_value=float(self.Andor.get_sensor_temperature_c() or 0.0),
-                format="%.1f C",
-                enabled=False,
-            )
-
-            dpg.add_spacer(height=20)
-            dpg.add_text("Frame Settings")
-            dpg.add_separator()
-
-            self.settings_pixel_binning = dpg.add_combo(
-                label           = "Pixel Binning",
-                width           = -110,
-                items           = cam.options_AOIBinning,
-                default_value   = cam.AOIBinning,
-                callback        = lambda: self.setprop("AOIBinning", self.settings_pixel_binning)
-            )
-
-            self.settings_image_width = dpg.add_input_int(
-                label           = "Width",
-                width           = -110,
-                default_value   = cam.AOIWidth,
-                min_value       = 1,
-                max_value       = cam.AOIWidth,
-                callback        = lambda: self.setprop("AOIWidth", self.settings_image_width)
-            )
-
-            self.settings_image_height = dpg.add_input_int(
-                label           = "Height",
-                width           = -110,
-                default_value   = cam.AOIHeight,
-                min_value       = 1,
-                max_value       = cam.AOIHeight,
-                callback        = lambda: self.setprop("AOIHeight", self.settings_image_height),
-            )
-
-            self.settings_image_left = dpg.add_input_int(
-                label           = "Left",
-                width           = -110,
-                default_value   = cam.AOILeft,
-                min_value       = 1,
-                max_value       = cam.AOILeft,
-                callback        = lambda: self.setprop("AOILeft", self.settings_image_left),
-            )
-
-            self.settings_image_top = dpg.add_input_int(
-                label           = "Top",
-                width           = -110,
-                default_value   = cam.AOITop,
-                min_value       = 1,
-                max_value       = cam.AOITop,
-                callback        = lambda: self.setprop("AOITop", self.settings_image_top),
-            )
-
-            self.settings_aoi_auto_center_checkbox_id = dpg.add_checkbox(
-                label="Auto Center",
-                default_value=self.aoi_auto_center_enabled,
-                callback=self._on_aoi_auto_center_changed,
-            )
-
-            self.settings_storage_dtype_combo_id = dpg.add_combo(
-                label="Bitness",
-                width=-110,
-                items=list(SUPPORTED_STORAGE_DTYPES),
-                default_value=self.acquisition_storage_dtype_name,
-                callback=self._on_camera_storage_dtype_changed,
-            )
-
-
-            dpg.add_spacer(height=20)
-            dpg.add_text("Preview Settings")
-            dpg.add_separator()
-
-            self.settings_preview_max_frames = dpg.add_input_int(
-                label="Max Frames",
-                width=-110,
-                default_value=self.preview_max_frames,
-                min_value=1,
-                min_clamped=True,
-                step=10,
-                callback=self._on_preview_max_frames_changed,
-            )
-
-            self._refresh_aoi_controls_from_camera()
-
-            # Add the start/stop button
-            self.start_button_id = dpg.add_button(
-                label           = "Start Preview",
-                width           = -1,  
-                callback        = self.toggle_preview,
-                tag             = "start_camera_button"
-            )
-
-            dpg.add_spacer(height=20)
-            dpg.add_text("Acquisition Settings")
-            dpg.add_separator()
-
-            self.acquisition_duration_input_id = dpg.add_input_float(
-                label="Seconds",
-                width=-110,
-                default_value=self.acquisition_duration_seconds,
-                min_value=0.01,
-                min_clamped=True,
-                step=0.1,
-            )
-
-
-            self.acquisition_zero_on_start_checkbox_id = dpg.add_checkbox(
-                label="Zero on Start",
-                default_value=self.acquisition_zero_on_start,
-            )
-
-            self.calculate_frame_mean_checkbox_id = dpg.add_checkbox(
-                label="Calculate Frame Mean",
-                default_value=self.calculate_frame_mean,
-            )
-
-            self.auto_scope_freq_checkbox_id = dpg.add_checkbox(
-                label="Auto Scope Freq",
-                default_value=self.auto_scope_freq,
-                callback=self._on_auto_scope_freq_changed,
-            )
-
-            self.acquisition_set_awg_on_start_checkbox_id = dpg.add_checkbox(
-                label="Set AWG on Start",
-                default_value=self.acquisition_set_awg_on_start,
-                callback=self._on_awg_on_start_changed,
-            )
-
-            with dpg.group(show=False) as self.acquisition_awg_group_id:
-                self.acquisition_awg_waveform_combo_id = dpg.add_combo(
-                    label="Waveform",
-                    width=-110,
-                    items=[waveform.title() for waveform in SUPPORTED_AWG_WAVEFORMS],
-                    default_value=self.acquisition_awg_waveform.title(),
-                    callback=self._on_acquisition_awg_waveform_changed,
-                )
-
-                with dpg.group(show=True) as self.acquisition_awg_dc_group_id:
-                    self.acquisition_awg_dc_offset_input_id = dpg.add_input_float(
-                        label="Offset (V)",
-                        width=-110,
-                        default_value=self.acquisition_awg_dc_offset_volts,
-                        step=0.1,
+            with dpg.child_window(border=False, width=-1, height=400, no_scrollbar=False) as self.content_area_id:
+                with dpg.tree_node(label="Camera Settings", default_open=True, span_full_width=True) as camera_settings_node_id:
+                    self.section_node_ids["camera_settings"] = camera_settings_node_id
+                    self.settings_frame_rate = dpg.add_input_float(
+                        label           = "FPS",
+                        width           = -110,
+                        default_value   = self.acquisition_frame_rate_hz,
+                        min_value       = 0.1,
+                        min_clamped     = True,
+                        step            = 1.0,
+                        format          = "%.0f",
+                        callback        = lambda: self.setprop("FrameRate", self.settings_frame_rate)
                     )
 
-                with dpg.group(show=False) as self.acquisition_awg_periodic_group_id:
-                    self.acquisition_awg_frequency_input_id = dpg.add_input_float(
-                        label="Frequency (Hz)",
+                    self.acquisition_frame_rate_input_id = self.settings_frame_rate
+
+                    self.settings_exposure_time = dpg.add_input_float(
+                        label           = "Exposure Time",
+                        width           = -110,
+                        default_value   = cam.ExposureTime,
+                        min_value       = 0.001,
+                        max_value       = 1,
+                        step            = 0.01,
+                        format          = "%.3f s",
+                        callback        = lambda: self.setprop("ExposureTime", self.settings_exposure_time)
+                    )
+
+                    self.settings_max_exposure_checkbox_id = dpg.add_checkbox(
+                        label="Max Exposure",
+                        default_value=self.max_exposure,
+                        callback=self._on_max_exposure_changed,
+                    )
+
+                    self.settings_trigger_mode = dpg.add_combo(
+                        label           = "Trigger Mode",
+                        width           = -110,
+                        items           = cam.options_TriggerMode,
+                        default_value   = cam.TriggerMode,
+                        callback        = lambda: self.setprop("TriggerMode", self.settings_trigger_mode)
+                    )
+
+                    self.settings_cooler_checkbox_id = dpg.add_checkbox(
+                        label="Cooler",
+                        default_value=bool(self.Andor.get_sensor_cooling_enabled() or False),
+                        callback=self._on_camera_cooler_changed,
+                        enabled=self.cooler_supported,
+                    )
+
+                    self.settings_temp_set_input_id = dpg.add_combo(
+                        label="Temp Set",
                         width=-110,
-                        default_value=self.acquisition_awg_frequency_hz,
-                        min_value=0.0,
+                        items=self.temperature_setpoint_options,
+                        default_value=self.temperature_setpoint_value,
+                        callback=self._on_camera_temp_set_changed,
+                        enabled=self.temperature_setpoint_supported,
+                    )
+
+                    self.cooler_temperature_input_id = dpg.add_input_float(
+                        label="Temperature",
+                        width=-110,
+                        default_value=float(self.Andor.get_sensor_temperature_c() or 0.0),
+                        format="%.1f C",
+                        enabled=False,
+                    )
+
+                dpg.add_separator()
+                with dpg.tree_node(label="Frame Settings", default_open=True, span_full_width=True) as frame_settings_node_id:
+                    self.section_node_ids["frame_settings"] = frame_settings_node_id
+                    self.settings_pixel_binning = dpg.add_combo(
+                        label           = "Pixel Binning",
+                        width           = -110,
+                        items           = cam.options_AOIBinning,
+                        default_value   = cam.AOIBinning,
+                        callback        = lambda: self.setprop("AOIBinning", self.settings_pixel_binning)
+                    )
+
+                    self.settings_image_width = dpg.add_input_int(
+                        label           = "Width",
+                        width           = -110,
+                        default_value   = cam.AOIWidth,
+                        min_value       = 1,
+                        max_value       = cam.AOIWidth,
+                        callback        = lambda: self.setprop("AOIWidth", self.settings_image_width)
+                    )
+
+                    self.settings_image_height = dpg.add_input_int(
+                        label           = "Height",
+                        width           = -110,
+                        default_value   = cam.AOIHeight,
+                        min_value       = 1,
+                        max_value       = cam.AOIHeight,
+                        callback        = lambda: self.setprop("AOIHeight", self.settings_image_height),
+                    )
+
+                    self.settings_image_left = dpg.add_input_int(
+                        label           = "Left",
+                        width           = -110,
+                        default_value   = cam.AOILeft,
+                        min_value       = 1,
+                        max_value       = cam.AOILeft,
+                        callback        = lambda: self.setprop("AOILeft", self.settings_image_left),
+                    )
+
+                    self.settings_image_top = dpg.add_input_int(
+                        label           = "Top",
+                        width           = -110,
+                        default_value   = cam.AOITop,
+                        min_value       = 1,
+                        max_value       = cam.AOITop,
+                        callback        = lambda: self.setprop("AOITop", self.settings_image_top),
+                    )
+
+                    self.settings_aoi_auto_center_checkbox_id = dpg.add_checkbox(
+                        label="Auto Center",
+                        default_value=self.aoi_auto_center_enabled,
+                        callback=self._on_aoi_auto_center_changed,
+                    )
+
+                dpg.add_separator()
+                with dpg.tree_node(label="Preview Settings", default_open=True, span_full_width=True) as preview_settings_node_id:
+                    self.section_node_ids["preview_settings"] = preview_settings_node_id
+                    self.settings_preview_max_frames = dpg.add_input_int(
+                        label="Max Frames",
+                        width=-110,
+                        default_value=self.preview_max_frames,
+                        min_value=1,
                         min_clamped=True,
-                        step=100.0,
+                        step=10,
+                        callback=self._on_preview_max_frames_changed,
                     )
-                    self.acquisition_awg_amplitude_input_id = dpg.add_input_float(
-                        label="Amplitude (Vpp)",
+
+                    self._refresh_aoi_controls_from_camera()
+
+                dpg.add_separator()
+                with dpg.tree_node(label="Acquisition Settings", default_open=True, span_full_width=True) as acquisition_settings_node_id:
+                    self.section_node_ids["acquisition_settings"] = acquisition_settings_node_id
+                    self.acquisition_duration_input_id = dpg.add_input_float(
+                        label="Seconds",
                         width=-110,
-                        default_value=self.acquisition_awg_amplitude_vpp_volts,
-                        min_value=0.0,
+                        default_value=self.acquisition_duration_seconds,
+                        min_value=0.01,
                         min_clamped=True,
                         step=0.1,
                     )
-                    self.acquisition_awg_periodic_offset_input_id = dpg.add_input_float(
-                        label="Offset (V)",
-                        width=-110,
-                        default_value=self.acquisition_awg_periodic_offset_volts,
-                        step=0.1,
+
+                    self.acquisition_zero_on_start_checkbox_id = dpg.add_checkbox(
+                        label="Zero on Start",
+                        default_value=self.acquisition_zero_on_start,
                     )
 
-                    self.acquisition_awg_start_after_input_id = dpg.add_input_float(
-                        label="AWG Delay (s)",
-                        width=-110,
-                        default_value=self.acquisition_awg_start_after_seconds,
-                        min_value=0.0,
-                        min_clamped=True,
-                        step=0.1,
-                        format="%.2f s",
+                    self.calculate_frame_mean_checkbox_id = dpg.add_checkbox(
+                        label="Calculate Frame Mean",
+                        default_value=self.calculate_frame_mean,
                     )
 
-                    self.acquisition_scope_rate_input_id = dpg.add_input_float(
-                        label="Scope Hz",
-                        width=-110,
-                        default_value=self.acquisition_scope_sample_rate_hz,
-                        min_value=0.1,
-                        min_clamped=True,
-                        step=100.0,
+                    self.auto_scope_freq_checkbox_id = dpg.add_checkbox(
+                        label="Auto Scope Freq",
+                        default_value=self.auto_scope_freq,
+                        callback=self._on_auto_scope_freq_changed,
                     )
+
+                    self.acquisition_set_awg_on_start_checkbox_id = dpg.add_checkbox(
+                        label="Set AWG on Start",
+                        default_value=self.acquisition_set_awg_on_start,
+                        callback=self._on_awg_on_start_changed,
+                    )
+
+                    with dpg.group(show=False) as self.acquisition_awg_group_id:
+                        self.acquisition_awg_waveform_combo_id = dpg.add_combo(
+                            label="Waveform",
+                            width=-110,
+                            items=[waveform.title() for waveform in SUPPORTED_AWG_WAVEFORMS],
+                            default_value=self.acquisition_awg_waveform.title(),
+                            callback=self._on_acquisition_awg_waveform_changed,
+                        )
+
+                        with dpg.group(show=True) as self.acquisition_awg_dc_group_id:
+                            self.acquisition_awg_dc_offset_input_id = dpg.add_input_float(
+                                label="Offset (V)",
+                                width=-110,
+                                default_value=self.acquisition_awg_dc_offset_volts,
+                                step=0.1,
+                            )
+
+                        with dpg.group(show=False) as self.acquisition_awg_periodic_group_id:
+                            self.acquisition_awg_frequency_input_id = dpg.add_input_float(
+                                label="Frequency (Hz)",
+                                width=-110,
+                                default_value=self.acquisition_awg_frequency_hz,
+                                min_value=0.0,
+                                min_clamped=True,
+                                step=100.0,
+                            )
+                            self.acquisition_awg_amplitude_input_id = dpg.add_input_float(
+                                label="Amplitude (Vpp)",
+                                width=-110,
+                                default_value=self.acquisition_awg_amplitude_vpp_volts,
+                                min_value=0.0,
+                                min_clamped=True,
+                                step=0.1,
+                            )
+                            self.acquisition_awg_periodic_offset_input_id = dpg.add_input_float(
+                                label="Offset (V)",
+                                width=-110,
+                                default_value=self.acquisition_awg_periodic_offset_volts,
+                                step=0.1,
+                            )
+
+                            self.acquisition_awg_start_after_input_id = dpg.add_input_float(
+                                label="AWG Delay (s)",
+                                width=-110,
+                                default_value=self.acquisition_awg_start_after_seconds,
+                                min_value=0.0,
+                                min_clamped=True,
+                                step=0.1,
+                                format="%.2f s",
+                            )
+
+                            self.acquisition_scope_rate_input_id = dpg.add_input_float(
+                                label="Scope Hz",
+                                width=-110,
+                                default_value=self.acquisition_scope_sample_rate_hz,
+                                min_value=0.1,
+                                min_clamped=True,
+                                step=100.0,
+                            )
                     
-            dpg.add_spacer(height=10)
-            dpg.add_text("Hardware Reqs")
-            dpg.add_separator()
+                dpg.add_separator()
+                with dpg.tree_node(label="Hardware Reqs", default_open=True, span_full_width=True) as hardware_reqs_node_id:
+                    self.section_node_ids["hardware_reqs"] = hardware_reqs_node_id
+                    self.hardware_drive_combo_id = dpg.add_combo(
+                        label="Drive",
+                        width=-110,
+                        items=[],
+                        default_value="",
+                        callback=self._on_storage_device_changed,
+                    )
 
-            self.hardware_drive_combo_id = dpg.add_combo(
-                label="Drive",
-                width=-110,
-                items=[],
-                default_value="",
-                callback=self._on_storage_device_changed,
-            )
+                    self.hardware_ram_value_id = dpg.add_input_text(
+                        label="RAM (GB)",
+                        width=-110,
+                        default_value="Calculating...",
+                        readonly=True,
+                    )
+                    dpg.bind_item_theme(self.hardware_ram_value_id, self.hardware_readout_theme)
 
-            self.hardware_ram_value_id = dpg.add_input_text(
-                label="RAM (GB)",
-                width=-110,
-                default_value="Calculating...",
-                readonly=True,
-            )
-            dpg.bind_item_theme(self.hardware_ram_value_id, self.hardware_readout_theme)
+                    self.hardware_disk_value_id = dpg.add_input_text(
+                        label="Disk Space (GB)",
+                        width=-110,
+                        default_value="Calculating...",
+                        readonly=True,
+                    )
+                    dpg.bind_item_theme(self.hardware_disk_value_id, self.hardware_readout_theme)
 
-            self.hardware_disk_value_id = dpg.add_input_text(
-                label="Disk Space (GB)",
-                width=-110,
-                default_value="Calculating...",
-                readonly=True,
-            )
-            dpg.bind_item_theme(self.hardware_disk_value_id, self.hardware_readout_theme)
+                    self.hardware_bitrate_value_id = dpg.add_input_text(
+                        label="Bitrate (Mbps)",
+                        width=-110,
+                        default_value="Calculating...",
+                        readonly=True,
+                    )
+                    dpg.bind_item_theme(self.hardware_bitrate_value_id, self.hardware_readout_theme)
 
-            self.hardware_bitrate_value_id = dpg.add_input_text(
-                label="Bitrate (Mbps)",
-                width=-110,
-                default_value="Calculating...",
-                readonly=True,
-            )
-            dpg.bind_item_theme(self.hardware_bitrate_value_id, self.hardware_readout_theme)
+                    self.hardware_spooling_value_id = dpg.add_input_text(
+                        label="Spool to Disk",
+                        width=-110,
+                        default_value="Unknown",
+                        readonly=True,
+                    )
+                    dpg.bind_item_theme(self.hardware_spooling_value_id, self.hardware_readout_theme)
 
-            self.hardware_spooling_value_id = dpg.add_input_text(
-                label="Spool to Disk",
-                width=-110,
-                default_value="Unknown",
-                readonly=True,
-            )
-            dpg.bind_item_theme(self.hardware_spooling_value_id, self.hardware_readout_theme)
+                dpg.add_separator()
+                with dpg.tree_node(label="Spool to Disk", default_open=True, span_full_width=True) as spool_to_disk_node_id:
+                    self.section_node_ids["spool_to_disk"] = spool_to_disk_node_id
+                    self.spool_to_disk_enabled_checkbox_id = dpg.add_checkbox(
+                        label="Enable Spooling",
+                        default_value=self.spool_to_disk_enabled,
+                        callback=self._on_spool_to_disk_changed,
+                    )
 
-            dpg.add_spacer(height=10)
-            dpg.add_text("Spool to Disk")
-            dpg.add_separator()
+                    with dpg.group(horizontal=True) as self.spool_to_disk_location_row_id:
+                        self.spool_to_disk_directory_input_id = dpg.add_input_text(
+                            label="Location",
+                            width=-145,
+                            default_value=self.spool_to_disk_directory,
+                            readonly=True,
+                        )
+                        dpg.bind_item_theme(self.spool_to_disk_directory_input_id, self.hardware_readout_theme)
+                        self.spool_to_disk_browse_button_id = dpg.add_button(
+                            label="Browse",
+                            width=-1,
+                            callback=self._show_spool_location_dialog,
+                        )
 
-            self.spool_to_disk_enabled_checkbox_id = dpg.add_checkbox(
-                label="Enable Spooling",
-                default_value=self.spool_to_disk_enabled,
-                callback=self._on_spool_to_disk_changed,
-            )
+                    self.spool_to_disk_filename_input_id = dpg.add_input_text(
+                        label="Filename",
+                        width=-110,
+                        default_value=self.spool_to_disk_filename,
+                    )
 
-            with dpg.group(horizontal=True) as self.spool_to_disk_location_row_id:
-                self.spool_to_disk_directory_input_id = dpg.add_input_text(
-                    label="Location",
-                    width=-145,
-                    default_value=self.spool_to_disk_directory,
-                    readonly=True,
-                )
-                dpg.bind_item_theme(self.spool_to_disk_directory_input_id, self.hardware_readout_theme)
-                self.spool_to_disk_browse_button_id = dpg.add_button(
-                    label="Browse",
+                    self.spool_write_scope_checkbox_id = dpg.add_checkbox(
+                        label="Write Scope",
+                        default_value=self.spool_write_scope,
+                    )
+
+                    self.spool_write_power_checkbox_id = dpg.add_checkbox(
+                        label="Write Power",
+                        default_value=self.spool_write_power,
+                    )
+
+                dpg.add_separator()
+
+            with dpg.group() as self.bottom_controls_group_id:
+                dpg.add_separator()
+                self.acquisition_progress_bar_id = dpg.add_progress_bar(
                     width=-1,
-                    callback=self._show_spool_location_dialog,
+                    height=18,
+                    default_value=0.0,
+                    overlay="Idle",
                 )
 
-            self.spool_to_disk_filename_input_id = dpg.add_input_text(
-                label="Filename",
-                width=-110,
-                default_value=self.spool_to_disk_filename,
-            )
+                self.acquire_button_id = dpg.add_button(
+                    label="Acquire",
+                    width=-1,
+                    height=36,
+                    callback=self._on_acquire_button_pressed,
+                )
+                dpg.bind_item_theme(self.acquire_button_id, red_green_button_enabled)
 
-            self.spool_write_difference_checkbox_id = dpg.add_checkbox(
-                label="Write Difference",
-                default_value=self.spool_write_difference,
-            )
+                self.start_button_id = dpg.add_button(
+                    label="Start Preview",
+                    width=-1,
+                    height=36,
+                    callback=self.toggle_preview,
+                    tag="start_camera_button"
+                )
 
-            self.spool_write_contrast_checkbox_id = dpg.add_checkbox(
-                label="Write Contrast",
-                default_value=self.spool_write_contrast,
-            )
+                self.save_button_id = dpg.add_button(
+                    label="Save",
+                    width=-1,
+                    height=36,
+                    enabled=False,
+                    callback=self._show_save_dialog,
+                )
 
-            self.spool_write_scope_checkbox_id = dpg.add_checkbox(
-                label="Write Scope",
-                default_value=self.spool_write_scope,
-            )
+                self.save_progress_bar_id = dpg.add_progress_bar(
+                    width=-1,
+                    height=36,
+                    default_value=0.0,
+                    overlay="Saving... 0%",
+                    show=False,
+                )
 
-            self.spool_write_power_checkbox_id = dpg.add_checkbox(
-                label="Write Power",
-                default_value=self.spool_write_power,
-            )
-
-            dpg.add_spacer(height=20)
-            self.acquisition_progress_bar_id = dpg.add_progress_bar(
-                width=-1,
-                height=18,
-                default_value=0.0,
-                overlay="Idle",
-            )
-
-            self.acquire_button_id = dpg.add_button(
-                label="Acquire",
-                width=-1,
-                height=36,
-                callback=self._on_acquire_button_pressed,
-            )
-            dpg.bind_item_theme(self.acquire_button_id, red_green_button_enabled)
-
-            self.save_button_id = dpg.add_button(
-                label="Save",
-                width=-1,
-                enabled=False,
-                callback=self._show_save_dialog,
-            )
+                self.open_button_id = dpg.add_button(
+                    label="Open",
+                    width=-1,
+                    height=36,
+                    callback=self._show_open_dialog,
+                )
 
             with dpg.file_dialog(
                 directory_selector=False,
@@ -535,6 +533,16 @@ class CameraSystem:
                 height=400,
                 modal=True,
             ) as self.save_dialog_id:
+                dpg.add_file_extension(".npz", color=(0, 255, 0, 255))
+
+            with dpg.file_dialog(
+                directory_selector=False,
+                show=False,
+                callback=self._on_open_dialog_selected,
+                width=700,
+                height=400,
+                modal=True,
+            ) as self.open_dialog_id:
                 dpg.add_file_extension(".npz", color=(0, 255, 0, 255))
 
             with dpg.file_dialog(
@@ -553,6 +561,7 @@ class CameraSystem:
         self._update_spool_to_disk_controls()
         self._refresh_storage_devices()
         self._set_acquisition_progress(0.0, "Idle")
+        self._set_save_progress(0.0, "Save")
         self._refresh_hardware_requirements(force=True)
         self._sync_camera_cooler_readout()
 
@@ -637,21 +646,16 @@ class CameraSystem:
             snapshot = self.Andor.get_scope_frame_mean_snapshot()
         scope_buffers = snapshot.get("scope_frame_mean_buffers", {})
         raw_samples = np.asarray(scope_buffers.get(channel_name, []), dtype=np.float32)
-        camera_timestamps = np.asarray(snapshot.get("timestamps", []), dtype=np.float64)
         sample_count = int(raw_samples.size)
 
         if sample_count <= 0:
             x_values = np.zeros((0,), dtype=np.float64)
             y_values = np.zeros((0,), dtype=np.float32)
         else:
-            if camera_timestamps.size >= sample_count:
-                x_values = camera_timestamps[-sample_count:] - float(camera_timestamps[-sample_count])
-            else:
-                frame_period_seconds = 1.0 / max(float(self.acquisition_frame_rate_hz or self.Andor.get_frame_rate()), 1e-12)
-                x_values = np.arange(sample_count, dtype=np.float64) * frame_period_seconds
+            x_values = self.Andor.get_estimated_time_axis_values(sample_count)
             y_values = raw_samples.astype(np.float32, copy=False)
 
-        abs_last_x = float(camera_timestamps[-1]) if camera_timestamps.size > 0 else (float(x_values[-1]) if x_values.size > 0 else 0.0)
+        abs_last_x = float(x_values[-1]) if x_values.size > 0 else 0.0
         return {
             "panel_id": channel_name,
             "label": f"Channel {channel_name}",
@@ -748,8 +752,6 @@ class CameraSystem:
         dpg.configure_item(self.spool_to_disk_directory_input_id, enabled=controls_enabled)
         dpg.configure_item(self.spool_to_disk_browse_button_id, enabled=controls_enabled)
         dpg.configure_item(self.spool_to_disk_filename_input_id, enabled=controls_enabled)
-        dpg.configure_item(self.spool_write_difference_checkbox_id, enabled=controls_enabled)
-        dpg.configure_item(self.spool_write_contrast_checkbox_id, enabled=controls_enabled)
         dpg.configure_item(self.spool_write_scope_checkbox_id, enabled=controls_enabled)
         dpg.configure_item(self.spool_write_power_checkbox_id, enabled=controls_enabled)
 
@@ -784,10 +786,7 @@ class CameraSystem:
         }
 
     def _on_camera_storage_dtype_changed(self, sender, app_data, user_data=None):
-        selected_dtype = canonicalize_storage_bit_depth_name(app_data, fallback=self.Andor.storage_dtype_name)
-        self.Andor.set_storage_dtype(selected_dtype)
         self.acquisition_storage_dtype_name = self.Andor.storage_dtype_name
-        dpg.set_value(self.settings_storage_dtype_combo_id, self.acquisition_storage_dtype_name)
         self.Andor.frame_ready_event.set()
         self.camera_feed.rebuild_roi_traces()
         self._refresh_hardware_requirements(force=True)
@@ -1175,7 +1174,7 @@ class CameraSystem:
         return (
             float(dpg.get_value(self.acquisition_duration_input_id)),
             float(dpg.get_value(self.acquisition_frame_rate_input_id)),
-            str(dpg.get_value(self.settings_storage_dtype_combo_id)),
+            str(self.Andor.storage_dtype_name),
             bool(dpg.get_value(self.acquisition_zero_on_start_checkbox_id)),
             bool(dpg.get_value(self.acquisition_set_awg_on_start_checkbox_id)),
             str(dpg.get_value(self.acquisition_awg_waveform_combo_id)),
@@ -1189,42 +1188,27 @@ class CameraSystem:
         )
 
     def _build_acquisition_save_arrays(self, camera, scope, payload):
-        scope = scope or {}
         channel_payload = camera.get("scope_frame_mean_buffers", {})
-        aligned_camera_timestamps = np.asarray(camera.get("timestamps", []), dtype=np.float64)
-        paired_scope_sample_count = len(aligned_camera_timestamps)
+        settings_payload = payload.get("settings", {}) or {}
 
         save_arrays = {
             "camera_acquisitions": np.asarray(camera["acquisitions"]),
-            "camera_filtered": np.asarray(camera.get("filtered", [])),
-            "camera_difference": np.asarray(camera["difference"]),
-            "camera_contrast": np.asarray(camera.get("contrast", [])),
             "camera_timestamps": np.asarray(camera["timestamps"], dtype=np.float64),
-            "camera_mean_buffer": np.asarray(camera["mean_buffer"], dtype=np.float64),
-            "camera_zero": np.asarray(camera["zero"]),
-            "camera_storage_dtype": np.asarray([camera.get("storage_dtype") or self.Andor.storage_dtype_name]),
-            "scope_timestamps": np.asarray(aligned_camera_timestamps, dtype=np.float64),
-            "scope_paired_camera_timestamps": np.asarray(aligned_camera_timestamps, dtype=np.float64),
-            "scope_unpaired_camera_timestamps": np.asarray([], dtype=np.float64),
-            "scope_actual_sample_rate_hz": np.asarray([scope.get("actual_sample_rate_hz") or self.acquisition_scope_sample_rate_hz], dtype=np.float64),
-            "scope_history_seconds": np.asarray([scope.get("history_seconds") or self.acquisition_scope_buffer_seconds], dtype=np.float64),
-            "requested_duration_seconds": np.asarray([payload["requested_duration_seconds"]], dtype=np.float64),
-            "requested_frame_rate_hz": np.asarray([payload["requested_frame_rate_hz"]], dtype=np.float64),
-            "requested_scope_sample_rate_hz": np.asarray([payload["requested_scope_sample_rate_hz"]], dtype=np.float64),
-            "requested_storage_dtype": np.asarray([payload["requested_storage_dtype"]]),
-            "requested_scope_storage_dtype": np.asarray(["float16"]),
-            "requested_scope_sample_count": np.asarray([payload["requested_scope_sample_count"]], dtype=np.int64),
-            "paired_scope_sample_count": np.asarray([paired_scope_sample_count], dtype=np.int64),
-            "requested_scope_buffer_seconds": np.asarray([payload["requested_scope_buffer_seconds"]], dtype=np.float64),
-            "zero_on_start": np.asarray([payload["zero_on_start"]], dtype=np.bool_),
-            "set_awg_on_start": np.asarray([payload["set_awg_on_start"]], dtype=np.bool_),
-            "awg_waveform": np.asarray([payload["awg_waveform"]]),
-            "awg_start_after_seconds": np.asarray([payload["awg_start_after_seconds"]], dtype=np.float64),
-            "stopped_early": np.asarray([payload["stopped_early"]], dtype=np.bool_),
         }
 
         for channel_name, samples in sorted(channel_payload.items()):
             save_arrays[f"scope_channel_{channel_name}"] = np.asarray(samples, dtype=np.float16)
+
+        for setting_name, value in sorted(settings_payload.items()):
+            save_key = f"settings_{setting_name}"
+            if isinstance(value, (bool, np.bool_)):
+                save_arrays[save_key] = np.asarray(value, dtype=np.bool_)
+            elif isinstance(value, (int, np.integer)):
+                save_arrays[save_key] = np.asarray(value, dtype=np.int64)
+            elif isinstance(value, (float, np.floating)):
+                save_arrays[save_key] = np.asarray(value, dtype=np.float64)
+            else:
+                save_arrays[save_key] = np.asarray(str(value))
 
         return save_arrays
 
@@ -1241,72 +1225,35 @@ class CameraSystem:
         frame_width = max(1, int(getattr(self.camera, "AOIWidth", 1)))
         frame_pixels = frame_height * frame_width
         sensor_frame_dtype = np.dtype(f"u{max(1, (self.Andor.bit_depth + 7) // 8)}")
-        storage_dtype_name = canonicalize_storage_bit_depth_name(
-            dpg.get_value(self.settings_storage_dtype_combo_id) or self.Andor.storage_dtype_name,
-            fallback=self.Andor.storage_dtype_name,
-        )
         camera_frame_bytes = frame_pixels * sensor_frame_dtype.itemsize
-        raw_frame_bytes = frame_pixels * get_raw_storage_bytes(storage_dtype_name)
-        signed_frame_bytes = frame_pixels * get_signed_storage_bytes(storage_dtype_name)
+        raw_frame_bytes = frame_pixels * get_raw_storage_bytes(self.Andor.storage_dtype_name)
 
         scope_settings = self._get_scope_capture_settings()
         scope_channel_count = len(scope_settings["enabled_channels"])
         scope_sample_bytes = paired_scope_samples * np.dtype(np.float16).itemsize
-        scope_timestamp_bytes = paired_scope_samples * np.dtype(np.float64).itemsize
-        scope_pair_timestamp_bytes = paired_scope_samples * np.dtype(np.float64).itemsize
         scope_runtime_sample_bytes = scope_buffer_samples * np.dtype(np.float16).itemsize
-        scope_runtime_timestamp_bytes = scope_buffer_samples * np.dtype(np.float64).itemsize
         raw_history_bytes = target_frames * raw_frame_bytes
-        signed_history_bytes = target_frames * signed_frame_bytes
 
         disk_bytes = 0
         disk_bytes += raw_history_bytes
-        disk_bytes += raw_history_bytes
-        disk_bytes += signed_history_bytes
-        disk_bytes += signed_history_bytes
         disk_bytes += target_frames * np.dtype(np.float64).itemsize
-        disk_bytes += target_frames * np.dtype(np.float64).itemsize
-        disk_bytes += raw_frame_bytes
-        disk_bytes += scope_timestamp_bytes
-        disk_bytes += scope_pair_timestamp_bytes
         disk_bytes += scope_channel_count * scope_sample_bytes
-        disk_bytes += 7 * np.dtype(np.float64).itemsize
-        disk_bytes += 2 * np.dtype(np.int64).itemsize
-        disk_bytes += 3 * np.dtype(np.bool_).itemsize
-        disk_bytes += np.asarray([str(dpg.get_value(self.acquisition_awg_waveform_combo_id) or "")]).nbytes
-        disk_bytes += np.asarray([str(dpg.get_value(self.settings_storage_dtype_combo_id) or "")]).nbytes
-        disk_bytes += np.asarray(["float16"]).nbytes
 
         ram_bytes = 0
         ram_bytes += raw_history_bytes
-        ram_bytes += raw_history_bytes
-        ram_bytes += signed_history_bytes
-        ram_bytes += signed_history_bytes
-        ram_bytes += target_frames * np.dtype(np.float64).itemsize
         ram_bytes += target_frames * np.dtype(np.float64).itemsize
         ram_bytes += raw_frame_bytes
-        ram_bytes += raw_frame_bytes
-        ram_bytes += signed_frame_bytes
-        ram_bytes += signed_frame_bytes
-        ram_bytes += raw_frame_bytes
-        ram_bytes += scope_runtime_timestamp_bytes
-        ram_bytes += scope_pair_timestamp_bytes
         ram_bytes += scope_channel_count * scope_runtime_sample_bytes
 
         camera_bits_per_second = raw_frame_bytes * acquisition_fps * 8.0
 
         total_write_bits_per_second = 0.0
         total_write_bits_per_second += raw_frame_bytes * acquisition_fps * 8.0
-        total_write_bits_per_second += raw_frame_bytes * acquisition_fps * 8.0
-        total_write_bits_per_second += signed_frame_bytes * acquisition_fps * 8.0
-        total_write_bits_per_second += signed_frame_bytes * acquisition_fps * 8.0 
         total_write_bits_per_second += np.dtype(np.float64).itemsize * acquisition_fps * 8.0
-        total_write_bits_per_second += np.dtype(np.float64).itemsize * acquisition_fps * 8.0
-        total_write_bits_per_second += acquisition_fps * np.dtype(np.float64).itemsize * 8.0
         total_write_bits_per_second += scope_channel_count * acquisition_fps * np.dtype(np.float16).itemsize * 8.0
 
         additional_bits_per_second = max(0.0, total_write_bits_per_second - camera_bits_per_second)
-        camera_bytes_per_frame = (2.0 * raw_frame_bytes) + (2.0 * signed_frame_bytes)
+        camera_bytes_per_frame = raw_frame_bytes
 
         selected_label = str(dpg.get_value(self.hardware_drive_combo_id) or "").strip()
         drive_speed_bps = self._drive_write_speed_cache.get(selected_label)
@@ -1402,6 +1349,146 @@ class CameraSystem:
         self._acquisition_progress_value = max(0.0, min(1.0, float(progress_value)))
         self._acquisition_progress_overlay = str(overlay_text)
 
+    def _set_save_progress(self, progress_value, overlay_text):
+        self._save_progress_value = max(0.0, min(1.0, float(progress_value)))
+        self._save_progress_overlay = str(overlay_text)
+        if self._save_progress_value <= 0.0 or self._save_progress_value >= 1.0:
+            self._save_progress_display_value = self._save_progress_value
+            self._save_progress_segment_start_value = self._save_progress_value
+            self._save_progress_segment_end_value = self._save_progress_value
+            self._save_progress_segment_started_at = time.perf_counter()
+
+    def _set_save_progress_segment(self, start_value, end_value, current_key=None):
+        start_value = max(0.0, min(1.0, float(start_value)))
+        end_value = max(start_value, min(1.0, float(end_value)))
+        self._save_progress_segment_start_value = start_value
+        self._save_progress_segment_end_value = end_value
+        self._save_progress_segment_key = current_key
+        self._save_progress_segment_started_at = time.perf_counter()
+        self._save_progress_display_value = max(self._save_progress_display_value, start_value)
+
+    def _update_save_progress(self, completed_units, total_units, current_key=None):
+        total_units = max(float(total_units), 1.0)
+        progress_value = max(0.0, min(1.0, float(completed_units) / total_units))
+        percent = int(round(progress_value * 100.0))
+        if current_key:
+            overlay = f"Saving {percent}% ({current_key})"
+        else:
+            overlay = f"Saving {percent}%"
+        self._set_save_progress(progress_value, overlay)
+
+    def _get_save_progress_overlay(self, display_value):
+        if not self._save_in_progress:
+            return self._save_progress_overlay
+
+        percent = int(round(max(0.0, min(1.0, float(display_value))) * 100.0))
+        if self._save_progress_segment_key:
+            return f"Saving {percent}% ({self._save_progress_segment_key})"
+        return f"Saving {percent}%"
+
+    def _get_animated_save_progress_value(self):
+        if not self._save_in_progress:
+            self._save_progress_display_value = self._save_progress_value
+            return self._save_progress_display_value
+
+        start_value = self._save_progress_segment_start_value
+        end_value = self._save_progress_segment_end_value
+        current_value = max(self._save_progress_display_value, start_value)
+        if end_value <= start_value:
+            self._save_progress_display_value = max(current_value, self._save_progress_value)
+            return self._save_progress_display_value
+
+        elapsed_seconds = max(0.0, time.perf_counter() - self._save_progress_segment_started_at)
+        segment_span = end_value - start_value
+        approach = 1.0 - np.exp(-1.2 * elapsed_seconds)
+        animated_value = start_value + (segment_span * approach)
+
+        if end_value < 1.0:
+            animated_cap = max(start_value, end_value - 0.01)
+            animated_value = min(animated_value, animated_cap)
+        else:
+            animated_value = min(animated_value, 0.99)
+
+        self._save_progress_display_value = max(current_value, animated_value)
+        return self._save_progress_display_value
+
+    def _write_npz_with_progress(self, file_path, save_arrays):
+        entries = []
+        total_units = 0
+
+        for key, value in save_arrays.items():
+            array_value = np.asanyarray(value)
+            entry_units = max(int(array_value.nbytes), 1)
+            entries.append((key, array_value, entry_units))
+            total_units += entry_units
+
+        directory = os.path.dirname(file_path) or os.getcwd()
+        file_descriptor, temp_path = tempfile.mkstemp(prefix=".saving_", suffix=".npz", dir=directory)
+        os.close(file_descriptor)
+
+        completed_units = 0
+        self._update_save_progress(0, total_units)
+
+        try:
+            with zipfile.ZipFile(temp_path, mode="w", compression=zipfile.ZIP_DEFLATED, allowZip64=True) as archive:
+                for key, array_value, entry_units in entries:
+                    next_completed_units = completed_units + entry_units
+                    self._set_save_progress_segment(
+                        completed_units / total_units,
+                        next_completed_units / total_units,
+                        current_key=key,
+                    )
+                    with archive.open(f"{key}.npy", mode="w", force_zip64=True) as handle:
+                        np.lib.format.write_array(handle, array_value, allow_pickle=True)
+                    completed_units = next_completed_units
+                    self._update_save_progress(completed_units, total_units, current_key=key)
+
+            os.replace(temp_path, file_path)
+        except Exception:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+            raise
+
+    def _run_save_acquisition(self, file_path, payload):
+        save_name = os.path.basename(file_path)
+
+        try:
+            camera = payload["camera"]
+            scope = payload["scope"] or {}
+            save_arrays = self._build_acquisition_save_arrays(camera, scope, payload)
+            self._write_npz_with_progress(file_path, save_arrays)
+        except Exception as exc:
+            with self._acquisition_lock:
+                self._pending_save_result = {
+                    "success": False,
+                    "overlay": f"Save failed: {exc}",
+                }
+            return
+
+        with self._acquisition_lock:
+            self._pending_save_result = {
+                "success": True,
+                "overlay": f"Saved: {save_name}",
+            }
+
+    def _apply_pending_save_result(self):
+        with self._acquisition_lock:
+            result = self._pending_save_result
+            self._pending_save_result = None
+
+        if result is None:
+            return
+
+        self._save_in_progress = False
+        self._save_thread = None
+
+        if result["success"]:
+            self._set_save_progress(1.0, result["overlay"])
+            self._set_acquisition_progress(1.0, result["overlay"])
+        else:
+            self._set_save_progress(0.0, result["overlay"])
+            self._set_acquisition_progress(self._acquisition_progress_value, result["overlay"])
+
     def _stop_acquisition_awg_thread(self):
         if self._acquisition_awg_stop_event is not None:
             self._acquisition_awg_stop_event.set()
@@ -1434,6 +1521,42 @@ class CameraSystem:
             scope_controller.driver.resume_collection()
         except Exception as exc:
             print(f"Acquisition AWG enable failed: {exc}")
+
+    def _collect_settings_snapshot(self):
+        return {
+            "exposure_time":                    float(dpg.get_value(self.settings_exposure_time)),
+            "max_exposure":                     bool(dpg.get_value(self.settings_max_exposure_checkbox_id)),
+            "trigger_mode":                     str(dpg.get_value(self.settings_trigger_mode)),
+            "cooler_enabled":                   bool(dpg.get_value(self.settings_cooler_checkbox_id)),
+            "temperature_setpoint":             str(dpg.get_value(self.settings_temp_set_input_id)),
+            "pixel_binning":                    str(dpg.get_value(self.settings_pixel_binning)),
+            "image_width":                      int(dpg.get_value(self.settings_image_width)),
+            "image_height":                     int(dpg.get_value(self.settings_image_height)),
+            "image_left":                       int(dpg.get_value(self.settings_image_left)),
+            "image_top":                        int(dpg.get_value(self.settings_image_top)),
+            "image_auto_center":                bool(dpg.get_value(self.settings_aoi_auto_center_checkbox_id)),
+            "frame_storage_dtype":              str(self.Andor.storage_dtype_name),
+            "preview_max_frames":               int(dpg.get_value(self.settings_preview_max_frames)),
+            "acquisition_duration_seconds":     float(dpg.get_value(self.acquisition_duration_input_id)),
+            "acquisition_frame_rate_hz":        float(dpg.get_value(self.acquisition_frame_rate_input_id)),
+            "acquisition_scope_sample_rate_hz": float(dpg.get_value(self.acquisition_scope_rate_input_id)),
+            "acquisition_zero_on_start":        bool(dpg.get_value(self.acquisition_zero_on_start_checkbox_id)),
+            "calculate_frame_mean":             bool(dpg.get_value(self.calculate_frame_mean_checkbox_id)),
+            "auto_scope_freq":                  bool(dpg.get_value(self.auto_scope_freq_checkbox_id)),
+            "set_awg_on_start":                 bool(dpg.get_value(self.acquisition_set_awg_on_start_checkbox_id)),
+            "awg_waveform":                     str(dpg.get_value(self.acquisition_awg_waveform_combo_id)).strip().lower(),
+            "awg_dc_offset_volts":              float(dpg.get_value(self.acquisition_awg_dc_offset_input_id)),
+            "awg_frequency_hz":                 float(dpg.get_value(self.acquisition_awg_frequency_input_id)),
+            "awg_amplitude_vpp_volts":          float(dpg.get_value(self.acquisition_awg_amplitude_input_id)),
+            "awg_periodic_offset_volts":        float(dpg.get_value(self.acquisition_awg_periodic_offset_input_id)),
+            "awg_start_after_seconds":          float(dpg.get_value(self.acquisition_awg_start_after_input_id)),
+            "hardware_storage_drive":           str(dpg.get_value(self.hardware_drive_combo_id) or ""),
+            "spool_to_disk_enabled":            bool(dpg.get_value(self.spool_to_disk_enabled_checkbox_id)),
+            "spool_to_disk_directory":          str(dpg.get_value(self.spool_to_disk_directory_input_id) or ""),
+            "spool_to_disk_filename":           str(dpg.get_value(self.spool_to_disk_filename_input_id) or ""),
+            "spool_write_scope":                bool(dpg.get_value(self.spool_write_scope_checkbox_id)),
+            "spool_write_power":                bool(dpg.get_value(self.spool_write_power_checkbox_id)),
+        }
 
     def _build_completed_acquisition_payload(self, stopped_early):
         camera_snapshot = self.Andor.get_snapshot()
@@ -1474,6 +1597,7 @@ class CameraSystem:
             "set_awg_on_start": bool(self.acquisition_set_awg_on_start),
             "awg_waveform": self.acquisition_awg_waveform,
             "awg_start_after_seconds": float(self.acquisition_awg_start_after_seconds),
+            "settings": self._acquisition_settings_snapshot or {},
         }
 
     def _build_scope_fallback_snapshot(self, target_frames, scope_sample_rate, scope_buffer_seconds):
@@ -1579,10 +1703,6 @@ class CameraSystem:
         auto_scope_settings = self._apply_auto_scope_frequency_settings(acquisition_fps)
         scope_sample_rate = float(auto_scope_settings["sample_rate_hz"]) if auto_scope_settings is not None else max(0.1, float(dpg.get_value(self.acquisition_scope_rate_input_id)))
         calculate_frame_mean = bool(dpg.get_value(self.calculate_frame_mean_checkbox_id))
-        storage_dtype_name = canonicalize_storage_bit_depth_name(
-            dpg.get_value(self.settings_storage_dtype_combo_id) or self.Andor.storage_dtype_name,
-            fallback=self.Andor.storage_dtype_name,
-        )
         awg_set_on_start = bool(dpg.get_value(self.acquisition_set_awg_on_start_checkbox_id))
         awg_start_after_seconds = max(0.0, float(dpg.get_value(self.acquisition_awg_start_after_input_id)))
         target_frames = max(1, int(round(acquisition_seconds * acquisition_fps)))
@@ -1608,7 +1728,6 @@ class CameraSystem:
             if bool(dpg.get_value(self.acquisition_zero_on_start_checkbox_id)):
                 self.Andor.set_zero_frame(np.array(self.Andor.latest_frame, copy=True))
 
-            self.Andor.set_storage_dtype(storage_dtype_name)
             self.Andor.set_frame_rate(acquisition_fps)
             self.Andor.configure_scope_frame_mean_buffers(scope_settings["enabled_channels"], target_frames)
             self.Andor.set_scope_frame_mean_source(scope_driver, calculate_mean=calculate_frame_mean)
@@ -1657,6 +1776,7 @@ class CameraSystem:
             self._update_acquisition_button_state()
             self.camera_feed.reset_texture()
             self.camera_feed.recalculate_rois()
+            self._acquisition_settings_snapshot = self._collect_settings_snapshot()
 
             self.Andor.start_capture_fixed(target_frames)
             if scope_driver is not None:
@@ -1682,6 +1802,7 @@ class CameraSystem:
             self.acquisition_started_at = None
             self._acquisition_thread = None
             self._acquisition_scope_fallback_snapshot = None
+            self._acquisition_settings_snapshot = None
             self.Andor.set_scope_frame_mean_source(None, calculate_mean=calculate_frame_mean)
             try:
                 if self.Andor.is_capturing:
@@ -1699,7 +1820,27 @@ class CameraSystem:
     def _show_save_dialog(self, sender=None, app_data=None, user_data=None):
         if self._completed_acquisition_payload is None:
             return
+        save_directory = self._resolve_save_directory(self.last_save_directory)
+        dpg.configure_item(self.save_dialog_id, default_path=save_directory)
         dpg.show_item(self.save_dialog_id)
+
+    def _show_open_dialog(self, sender=None, app_data=None, user_data=None):
+        dpg.show_item(self.open_dialog_id)
+
+    def _open_acquisition_preview(self, file_path):
+        if self._acquisition_preview_window is not None:
+            self._acquisition_preview_window.close()
+            self._acquisition_preview_window = None
+
+        self._acquisition_preview_window = AcquisitionPreviewWindow(file_path)
+
+    def _on_open_dialog_selected(self, sender, app_data, user_data=None):
+        file_path = str(app_data.get("file_path_name") or "").strip()
+        if not file_path:
+            return
+        if not file_path.lower().endswith(".npz"):
+            file_path = f"{file_path}.npz"
+        self._open_acquisition_preview(file_path)
 
     def _on_save_dialog_selected(self, sender, app_data, user_data=None):
         file_path = str(app_data.get("file_path_name") or "").strip()
@@ -1707,17 +1848,47 @@ class CameraSystem:
             return
         if not file_path.lower().endswith(".npz"):
             file_path = f"{file_path}.npz"
+        self.last_save_directory = self._resolve_save_directory(os.path.dirname(file_path))
 
         with self._acquisition_lock:
             payload = self._completed_acquisition_payload
 
-        if payload is None:
+        if payload is None or self._save_in_progress:
             return
 
-        camera = payload["camera"]
-        scope = payload["scope"] or {}
-        np.savez_compressed(file_path, **self._build_acquisition_save_arrays(camera, scope, payload))
-        self._set_acquisition_progress(1.0, f"Saved: {os.path.basename(file_path)}")
+        self._save_in_progress = True
+        self._save_thread = threading.Thread(
+            target=self._run_save_acquisition,
+            args=(file_path, payload),
+            name="AcquisitionSaveThread",
+            daemon=True,
+        )
+        self._save_progress_display_value = 0.0
+        self._save_progress_segment_start_value = 0.0
+        self._save_progress_segment_end_value = 0.0
+        self._save_progress_segment_key = None
+        self._save_progress_segment_started_at = time.perf_counter()
+        self._set_save_progress(0.0, "Saving 0%")
+        self._save_thread.start()
+
+    def _resolve_save_directory(self, directory):
+        requested_directory = str(directory or "").strip()
+        if requested_directory:
+            normalized_directory = os.path.abspath(requested_directory)
+            if os.path.isdir(normalized_directory):
+                return normalized_directory
+
+        spool_directory = str(getattr(self, "spool_to_disk_directory", "") or "").strip()
+        if spool_directory:
+            normalized_spool_directory = os.path.abspath(spool_directory)
+            if os.path.isdir(normalized_spool_directory):
+                return normalized_spool_directory
+
+        experiments_directory = os.path.abspath(os.path.join(os.getcwd(), "Experiments"))
+        if os.path.isdir(experiments_directory):
+            return experiments_directory
+
+        return os.getcwd()
 
     def toggle_preview(self):
         if self.Andor.is_capturing:
@@ -1946,10 +2117,40 @@ class CameraSystem:
         setattr(self.camera, prop, dpg.get_value(setting))
         self._refresh_hardware_requirements(force=True)
 
+    def _update_bottom_controls_layout(self):
+        if not dpg.does_item_exist(self.window_id) or not dpg.does_item_exist(self.bottom_controls_group_id):
+            return
+
+        window_width, window_height = dpg.get_item_rect_size(self.window_id)
+        if window_width <= 0 or window_height <= 0:
+            return
+
+        padding = int(self._footer_padding)
+        footer_width = max(1, int(window_width) - (padding * 2))
+        for item_id in (
+            self.acquisition_progress_bar_id,
+            self.acquire_button_id,
+            self.start_button_id,
+            self.save_button_id,
+            self.save_progress_bar_id,
+            self.open_button_id,
+        ):
+            dpg.configure_item(item_id, width=footer_width)
+
+        footer_height = max(1, int(dpg.get_item_rect_size(self.bottom_controls_group_id)[1]))
+        footer_y = max(padding, int(window_height) - footer_height - padding)
+        dpg.set_item_pos(self.bottom_controls_group_id, (padding, footer_y))
+
+        content_height = max(1, footer_y - padding)
+        dpg.configure_item(self.content_area_id, height=content_height)
+
 
     def render(self):
         self.camera_feed.render()
         self.z_axis_controls.render()
+        if self._acquisition_preview_window is not None:
+            if not self._acquisition_preview_window.render():
+                self._acquisition_preview_window = None
         self._render_frame_scope_window(force=self.Andor.frame_ready_event.is_set())
         self._sync_camera_cooler_readout()
 
@@ -1957,6 +2158,7 @@ class CameraSystem:
             self.preview_zero_reference_pending = not self.camera_feed.ensure_zero_reference_from_latest_frame()
 
         self._apply_pending_acquisition_result()
+        self._apply_pending_save_result()
         self._refresh_hardware_requirements()
 
         if self.acquisition_in_progress and self.acquisition_started_at is not None:
@@ -1966,7 +2168,7 @@ class CameraSystem:
             scope_sample_count = len(scope_controller.driver.get_timestamps()) if scope_controller is not None else 0
             scope_progress = min(1.0, scope_sample_count / max(self.acquisition_scope_target_samples, 1))
             progress_value = min(camera_progress, scope_progress)
-            overlay = f"{self.Andor.frameIdx}/{self.acquisition_target_frames} frames | {scope_sample_count}/{self.acquisition_scope_target_samples} scope samples | {elapsed_seconds:0.1f}s"
+            overlay = f"{self.Andor.frameIdx}/{self.acquisition_target_frames} frames | {elapsed_seconds:0.1f}s"
             self._set_acquisition_progress(progress_value, overlay)
 
         # Disable the button if we are capturing something unrelated to experiment
@@ -2021,15 +2223,23 @@ class CameraSystem:
         self._update_acquisition_button_state()
         self._update_acquisition_awg_visibility()
         self._update_spool_to_disk_controls()
-        dpg.configure_item(self.save_button_id, enabled=self._completed_acquisition_payload is not None)
+        displayed_save_progress = self._get_animated_save_progress_value()
+        save_progress_overlay = self._get_save_progress_overlay(displayed_save_progress)
+        dpg.configure_item(self.save_button_id, enabled=self._completed_acquisition_payload is not None and not self._save_in_progress)
+        dpg.configure_item(self.save_button_id, show=not self._save_in_progress)
+        dpg.configure_item(self.save_progress_bar_id, show=self._save_in_progress)
+        dpg.set_value(self.save_progress_bar_id, displayed_save_progress)
+        dpg.configure_item(self.save_progress_bar_id, overlay=save_progress_overlay)
         dpg.set_value(self.acquisition_progress_bar_id, self._acquisition_progress_value)
         dpg.configure_item(self.acquisition_progress_bar_id, overlay=self._acquisition_progress_overlay)
+        self._update_bottom_controls_layout()
 
     def SaveState(self):
         save_state_file(
             type(self).__name__,
             {
                 "window": capture_window_state(self.window_id),
+                "sections": capture_item_open_states(self.section_node_ids),
                 "exposure_time": float(dpg.get_value(self.settings_exposure_time)),
                 "max_exposure": bool(dpg.get_value(self.settings_max_exposure_checkbox_id)),
                 "trigger_mode": str(dpg.get_value(self.settings_trigger_mode)),
@@ -2041,7 +2251,7 @@ class CameraSystem:
                 "image_left": int(dpg.get_value(self.settings_image_left)),
                 "image_top": int(dpg.get_value(self.settings_image_top)),
                 "image_auto_center": bool(dpg.get_value(self.settings_aoi_auto_center_checkbox_id)),
-                "frame_storage_dtype": str(dpg.get_value(self.settings_storage_dtype_combo_id) or self.Andor.storage_dtype_name),
+                "frame_storage_dtype": str(self.Andor.storage_dtype_name),
                 "preview_max_frames": int(dpg.get_value(self.settings_preview_max_frames)),
                 "acquisition_duration_seconds": float(dpg.get_value(self.acquisition_duration_input_id)),
                 "acquisition_frame_rate_hz": float(dpg.get_value(self.acquisition_frame_rate_input_id)),
@@ -2057,11 +2267,10 @@ class CameraSystem:
                 "acquisition_awg_periodic_offset_volts": float(dpg.get_value(self.acquisition_awg_periodic_offset_input_id)),
                 "acquisition_awg_start_after_seconds": float(dpg.get_value(self.acquisition_awg_start_after_input_id)),
                 "hardware_storage_drive": str(dpg.get_value(self.hardware_drive_combo_id) or ""),
+                "last_save_directory": str(self.last_save_directory or ""),
                 "spool_to_disk_enabled": bool(dpg.get_value(self.spool_to_disk_enabled_checkbox_id)),
                 "spool_to_disk_directory": str(dpg.get_value(self.spool_to_disk_directory_input_id) or ""),
                 "spool_to_disk_filename": str(dpg.get_value(self.spool_to_disk_filename_input_id) or ""),
-                "spool_write_difference": bool(dpg.get_value(self.spool_write_difference_checkbox_id)),
-                "spool_write_contrast": bool(dpg.get_value(self.spool_write_contrast_checkbox_id)),
                 "spool_write_scope": bool(dpg.get_value(self.spool_write_scope_checkbox_id)),
                 "spool_write_power": bool(dpg.get_value(self.spool_write_power_checkbox_id)),
             },
@@ -2072,11 +2281,14 @@ class CameraSystem:
             self.camera_feed.SaveState()
         if self.frame_scope_window is not None:
             self.frame_scope_window.SaveState()
+        if self._acquisition_preview_window is not None and hasattr(self._acquisition_preview_window, "SaveState"):
+            self._acquisition_preview_window.SaveState()
 
     def LoadState(self):
         state = load_state_file(type(self).__name__)
         if state:
             apply_window_state(self.window_id, state.get("window"))
+            apply_item_open_states(self.section_node_ids, state.get("sections"))
 
             property_map = (
                 ("exposure_time", "ExposureTime", self.settings_exposure_time),
@@ -2120,11 +2332,6 @@ class CameraSystem:
                     dpg.set_value(self.settings_temp_set_input_id, requested_option)
                     self.Andor.set_temperature_setpoint_option(requested_option)
 
-            if "frame_storage_dtype" in state:
-                dpg.set_value(self.settings_storage_dtype_combo_id, canonicalize_storage_bit_depth_name(state["frame_storage_dtype"], fallback=self.Andor.storage_dtype_name))
-            elif "acquisition_storage_dtype" in state:
-                dpg.set_value(self.settings_storage_dtype_combo_id, canonicalize_storage_bit_depth_name(state["acquisition_storage_dtype"], fallback=self.Andor.storage_dtype_name))
-
             if "max_exposure" in state:
                 dpg.set_value(self.settings_max_exposure_checkbox_id, bool(state["max_exposure"]))
                 self.max_exposure = bool(state["max_exposure"])
@@ -2163,10 +2370,8 @@ class CameraSystem:
                 dpg.set_value(self.spool_to_disk_directory_input_id, str(state["spool_to_disk_directory"]))
             if "spool_to_disk_filename" in state:
                 dpg.set_value(self.spool_to_disk_filename_input_id, str(state["spool_to_disk_filename"]))
-            if "spool_write_difference" in state:
-                dpg.set_value(self.spool_write_difference_checkbox_id, bool(state["spool_write_difference"]))
-            if "spool_write_contrast" in state:
-                dpg.set_value(self.spool_write_contrast_checkbox_id, bool(state["spool_write_contrast"]))
+            self.spool_to_disk_directory = str(dpg.get_value(self.spool_to_disk_directory_input_id) or "")
+            self.last_save_directory = self._resolve_save_directory(state.get("last_save_directory", self.spool_to_disk_directory))
             if "spool_write_scope" in state:
                 dpg.set_value(self.spool_write_scope_checkbox_id, bool(state["spool_write_scope"]))
             if "spool_write_power" in state:
@@ -2177,7 +2382,6 @@ class CameraSystem:
             self._apply_frame_rate_exposure_constraints("FrameRate")
             self.acquisition_frame_rate_hz = float(dpg.get_value(self.acquisition_frame_rate_input_id))
             self.acquisition_scope_sample_rate_hz = float(dpg.get_value(self.acquisition_scope_rate_input_id))
-            self.Andor.set_storage_dtype(canonicalize_storage_bit_depth_name(dpg.get_value(self.settings_storage_dtype_combo_id), fallback=self.Andor.storage_dtype_name))
             self.acquisition_storage_dtype_name = self.Andor.storage_dtype_name
             self.max_exposure = bool(dpg.get_value(self.settings_max_exposure_checkbox_id))
             self.acquisition_zero_on_start = bool(dpg.get_value(self.acquisition_zero_on_start_checkbox_id))
@@ -2193,8 +2397,6 @@ class CameraSystem:
             self.spool_to_disk_enabled = bool(dpg.get_value(self.spool_to_disk_enabled_checkbox_id))
             self.spool_to_disk_directory = str(dpg.get_value(self.spool_to_disk_directory_input_id) or "")
             self.spool_to_disk_filename = str(dpg.get_value(self.spool_to_disk_filename_input_id) or "")
-            self.spool_write_difference = bool(dpg.get_value(self.spool_write_difference_checkbox_id))
-            self.spool_write_contrast = bool(dpg.get_value(self.spool_write_contrast_checkbox_id))
             self.spool_write_scope = bool(dpg.get_value(self.spool_write_scope_checkbox_id))
             self.spool_write_power = bool(dpg.get_value(self.spool_write_power_checkbox_id))
             self._sync_camera_cooler_readout()

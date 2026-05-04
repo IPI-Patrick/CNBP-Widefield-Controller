@@ -5,6 +5,7 @@ import dearpygui.dearpygui as dpg
 
 GLOBAL_FONT_REGISTRY_TAG = "__global_font_registry"
 SEGMDL2_ICON_FONT_12_TAG = "__segmdl2_icon_font_12"
+SEGMDL2_SHARED_GLYPHS = [0xE117, 0xE71B, 0xE768, 0xE769, 0xE8EE, 0xE8CD]
 
 
 def _ensure_global_font_registry():
@@ -27,5 +28,5 @@ def get_segmdl2_icon_font(size=12):
     font_registry = _ensure_global_font_registry()
     font_path = os.path.abspath("src/Assets/Fonts/SegMDL2.ttf")
     font_id = dpg.add_font(font_path, 12, parent=font_registry, tag=SEGMDL2_ICON_FONT_12_TAG)
-    dpg.add_font_chars(chars=[0xE117, 0xE71B, 0xE8CD], parent=font_id)
+    dpg.add_font_chars(chars=SEGMDL2_SHARED_GLYPHS, parent=font_id)
     return font_id

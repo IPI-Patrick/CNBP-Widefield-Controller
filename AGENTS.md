@@ -51,8 +51,9 @@ This is the main camera workflow controller.
 - Owns the `CameraFeedWindow` subwindow tree.
 - Coordinates preview start/stop.
 - Coordinates fixed-length acquisitions that run camera capture and PicoScope collection together.
-- Saves acquisition results to `.npz`, including camera raw, difference, and contrast buffers plus scope traces.
+- Saves acquisition results to a compressed `.npz` file via the **Save** button, which is enabled once a fixed acquisition completes or is stopped early.
 - The Camera Controls `Hardware Reqs` estimate must stay aligned with every captured payload element. If acquisition capture or save contents change, update that calculation too so RAM, disk-space, and bitrate estimates still include all captured data.
+- **If you add a new setting widget to Camera Controls, you must also add it to `_collect_settings_snapshot()`** so it is included in every saved `.npz`. See the Acquisition Save Format section below for the full picture.
 
 It also contains cross-device experiment logic, including:
 
@@ -290,6 +291,55 @@ If you introduce a new high-rate feature, prefer this pattern:
 
 - appears to be legacy/unused compared with the current `CameraControls` + `CameraFeedWindow` flow
 
+## Acquisition Save Format
+
+Pressing **Save** after a fixed acquisition writes a `np.savez_compressed` file. The data flow is:
+
+1. `_on_acquire_button_pressed()` — snaps all current UI values via `_collect_settings_snapshot()` into `self._acquisition_settings_snapshot` right before `Andor.start_capture_fixed()` is called.
+2. When the acquisition ends (or is stopped), `_run_acquisition()` calls `_build_completed_acquisition_payload(stopped_early)`, which combines `Andor.get_snapshot()`, an optional PicoScope snapshot, the acquisition parameters stored on `self`, and the settings snapshot into a single dict stored in `self._pending_acquisition_result`.
+3. `render()` transfers `_pending_acquisition_result` to `self._completed_acquisition_payload` via `_apply_pending_acquisition_result()` and enables the Save button.
+4. `_on_save_dialog_selected()` calls `_build_acquisition_save_arrays(camera, scope, payload)` and passes the result to `np.savez_compressed`.
+
+### Arrays written to the `.npz`
+
+**Camera frame buffers** (one array per frame, shaped `[N, H, W]`):
+
+| Key | Content | dtype |
+|-----|---------|-------|
+| `camera_acquisitions` | Raw frames at storage bitness | raw storage dtype |
+| `camera_filtered` | LP-filtered frames (or copy of raw if filter off) | raw storage dtype |
+| `camera_difference` | `filtered − zero` | signed storage dtype |
+| `camera_contrast` | `(filtered − zero) / zero × 100` | signed storage dtype |
+| `camera_timestamps` | Per-frame hardware timestamps (seconds) | float64 |
+| `camera_mean_buffer` | Per-frame mean intensity | float64 |
+| `camera_zero` | Zero-reference frame used during acquisition | raw storage dtype |
+| `camera_storage_dtype` | Storage bit-depth label (e.g. `"16"`) | string array |
+
+**Oscilloscope per-frame mean buffers** (one array per enabled channel, length `N`):
+
+| Key | Content | dtype |
+|-----|---------|-------|
+| `scope_channel_A`, `scope_channel_B`, … | Mean voltage sampled during each camera frame | float16 |
+| `scope_timestamps` | Camera timestamps aligned to scope | float64 |
+| `scope_paired_camera_timestamps` | Same as above | float64 |
+| `scope_unpaired_camera_timestamps` | Camera timestamps with no matching scope sample | float64 |
+| `scope_actual_sample_rate_hz` | Scope sample rate that was active | float64 |
+| `scope_history_seconds` | Scope ring-buffer duration | float64 |
+
+**Acquisition parameters** (scalars):
+
+`requested_duration_seconds`, `requested_frame_rate_hz`, `requested_scope_sample_rate_hz`, `requested_storage_dtype`, `requested_scope_storage_dtype`, `requested_scope_sample_count`, `paired_scope_sample_count`, `requested_scope_buffer_seconds`, `zero_on_start`, `set_awg_on_start`, `awg_waveform`, `awg_start_after_seconds`, `stopped_early`
+
+**Camera Controls settings snapshot** — captured at acquisition-start time, prefixed `settings_`:
+
+`settings_exposure_time`, `settings_max_exposure`, `settings_trigger_mode`, `settings_cooler_enabled`, `settings_temperature_setpoint`, `settings_pixel_binning`, `settings_image_width`, `settings_image_height`, `settings_image_left`, `settings_image_top`, `settings_image_auto_center`, `settings_frame_storage_dtype`, `settings_preview_max_frames`, `settings_acquisition_duration_seconds`, `settings_acquisition_frame_rate_hz`, `settings_acquisition_scope_sample_rate_hz`, `settings_acquisition_zero_on_start`, `settings_calculate_frame_mean`, `settings_auto_scope_freq`, `settings_set_awg_on_start`, `settings_awg_waveform`, `settings_awg_dc_offset_volts`, `settings_awg_frequency_hz`, `settings_awg_amplitude_vpp_volts`, `settings_awg_periodic_offset_volts`, `settings_awg_start_after_seconds`, `settings_hardware_storage_drive`, `settings_spool_to_disk_enabled`, `settings_spool_to_disk_directory`, `settings_spool_to_disk_filename`, `settings_spool_write_difference`, `settings_spool_write_contrast`, `settings_spool_write_scope`, `settings_spool_write_power`
+
+### Keeping the settings snapshot in sync
+
+`_collect_settings_snapshot()` in `CameraControls.py` is the single source of truth for which settings are saved. **Whenever a new widget is added to the Camera Controls window, add a corresponding entry to `_collect_settings_snapshot()`.**
+
+The serialization loop in `_build_acquisition_save_arrays()` handles all Python primitive types automatically (`bool` → `np.bool_`, `int` → `np.int64`, `float` → `np.float64`, anything else → string array), so only the dict entry in `_collect_settings_snapshot()` needs updating — no changes to the serialization loop are needed.
+
 ## Practical Rules For Future Agents
 
 1. Start from the owning window or driver, not from a random callback. Many behaviors are split across a UI class, a driver cache, and one or more worker threads.
@@ -301,6 +351,7 @@ If you introduce a new high-rate feature, prefer this pattern:
 7. Keep the render-thread boundary explicit: worker threads and control callbacks can update shared model state, but frontend re-renders and visible widget mutations should happen from the owning window `render()` only.
 8. When refactoring threaded code, move the smallest useful unit toward a `worker publishes state -> render consumes state` shape instead of adding more callback-driven UI synchronization.
 9. Validate both hardware-present and hardware-absent startup paths. When no Andor camera is present, the app falls back to `Mocks.MockCamera`.
+10. When adding a new setting widget to Camera Controls, add it to three places: `SaveState()` / `LoadState()` for UI persistence, and `_collect_settings_snapshot()` for acquisition save. See the Acquisition Save Format section for the full list of already-saved settings.
 
 ## Suggested Entry Points For Common Tasks
 

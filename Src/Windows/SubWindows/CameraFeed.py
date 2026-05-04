@@ -94,6 +94,10 @@ class CameraFeedWindow:
         self.displayed_feed_fps = 0.0
         self._display_fps_window_started_at = time.perf_counter()
         self._display_fps_window_frame_count = 0
+        self._display_processing_last_frame_idx = -1
+        self._display_processing_state_key = None
+        self._display_filter_previous_input = None
+        self._display_filter_previous_output = None
 
         with dpg.window(
             label=self.name,
@@ -404,12 +408,14 @@ class CameraFeedWindow:
         return get_raw_storage_max_value(self.Andor.storage_dtype_name)
 
     def _get_active_source_frame_locked(self):
-        if self.lp_filter_enabled:
-            return self.Andor.latest_filtered
-
-        if self.Andor.latest_frame is None:
+        latest_frame, _, has_frames, _ = self.Andor.get_processed_frame_view_locked(
+            display_mode="Normal",
+            lp_filter_enabled=self.lp_filter_enabled,
+            include_history=False,
+        )
+        if not has_frames:
             return None
-        return self.Andor.latest_frame
+        return latest_frame
 
     def _build_custom_colormap_lut(self, colormap_name, samples):
         if colormap_name == "Cividis":
@@ -489,9 +495,19 @@ class CameraFeedWindow:
 
     def set_roi_history_capacity(self, max_points):
         max_points = max(1, int(max_points))
+        updated_tags = []
         for roi in self.rois:
             with roi.data_lock:
+                if roi.max_points == max_points:
+                    continue
                 roi.max_points = max_points
+                updated_tags.append(roi.tag)
+
+        if updated_tags:
+            self.rois_window.invalidate_autoscale_cache(pending_tags=updated_tags)
+            for roi in self.rois:
+                if roi.tag in updated_tags:
+                    roi.request_trace_rebuild(clear_existing=True)
 
     def recalculate_rois(self):
         self._request_all_roi_rebuilds()
@@ -558,6 +574,131 @@ class CameraFeedWindow:
         self.scale_min, self.scale_max = self._compute_display_bounds()
         self._sync_scale_inputs_from_values()
 
+    def _get_display_processing_state_key_locked(self):
+        return (
+            str(self.display_mode),
+            bool(self.lp_filter_enabled),
+            float(self.lp_filter_cutoff_hz),
+            int(getattr(self.Andor, "zero_version", 0)),
+            str(self.Andor.storage_dtype_name),
+        )
+
+    def _reset_display_processing_state(self):
+        self._display_processing_last_frame_idx = -1
+        self._display_processing_state_key = None
+        self._display_filter_previous_input = None
+        self._display_filter_previous_output = None
+
+    def _process_analysis_frame(self, frame, zero_frame=None):
+        if frame is None:
+            return None
+
+        if self._is_difference_mode_active():
+            reference_frame = self.Andor.zero if zero_frame is None else zero_frame
+            difference_frame = np.asarray(frame, dtype=np.float32) - np.asarray(reference_frame, dtype=np.float32)
+            return np.array(self.Andor.coerce_signed_frame_to_storage(difference_frame), copy=True)
+
+        if self._is_contrast_mode_active():
+            reference_frame = self.Andor.zero if zero_frame is None else zero_frame
+            frame_float = np.asarray(frame, dtype=np.float32)
+            zero_float = np.asarray(reference_frame, dtype=np.float32)
+            difference_frame = frame_float - zero_float
+            contrast_frame = np.zeros_like(frame_float, dtype=np.float32)
+            np.divide(
+                difference_frame,
+                zero_float,
+                out=contrast_frame,
+                where=np.abs(zero_float) > 0.0,
+            )
+            contrast_frame *= 100.0
+            return np.array(self.Andor.coerce_signed_frame_to_storage(contrast_frame), copy=True)
+
+        return np.array(frame, copy=True)
+
+    def process_analysis_frame(self, frame, zero_frame=None):
+        return self._process_analysis_frame(frame, zero_frame=zero_frame)
+
+    def _get_display_frame_updates_locked(self, force_rebuild=False):
+        current_frame_idx = int(self.Andor.frameIdx)
+        frame_count = len(self.Andor.acquisitions)
+        if frame_count <= 0:
+            return None, current_frame_idx, None, False
+
+        first_available_frame_idx = max(0, current_frame_idx - frame_count) + 1
+        state_key = self._get_display_processing_state_key_locked()
+        needs_reset = bool(force_rebuild) or self._display_processing_state_key != state_key
+        if self._display_processing_last_frame_idx < (first_available_frame_idx - 1):
+            needs_reset = True
+
+        if needs_reset:
+            if self.lp_filter_enabled:
+                window_size = self.Andor.get_display_filter_window_size()
+                start_frame_idx = max(first_available_frame_idx, current_frame_idx - window_size + 1)
+            else:
+                start_frame_idx = current_frame_idx
+        else:
+            start_frame_idx = max(int(self._display_processing_last_frame_idx) + 1, first_available_frame_idx)
+
+        if start_frame_idx > current_frame_idx:
+            return None, current_frame_idx, state_key, needs_reset
+
+        start_offset = max(0, start_frame_idx - first_available_frame_idx)
+        sample_count = max(0, frame_count - start_offset)
+        raw_frames = self.Andor.acquisitions.range_array(start_offset, sample_count, copy=True)
+        if raw_frames.size <= 0:
+            return None, current_frame_idx, state_key, needs_reset
+
+        zero_frame = None
+        if self._is_signed_zero_reference_mode_active():
+            zero_frame = np.array(self.Andor.zero, copy=True)
+
+        return (raw_frames, zero_frame), current_frame_idx, state_key, needs_reset
+
+    def _process_display_frame_updates(self, raw_frames, zero_frame=None, reset_state=False):
+        if raw_frames is None or len(raw_frames) <= 0:
+            return None
+
+        if reset_state:
+            self._display_filter_previous_input = None
+            self._display_filter_previous_output = None
+
+        coefficients = self.Andor.get_lp_filter_coefficients() if self.lp_filter_enabled else None
+        latest_source_frame = None
+
+        for raw_frame in raw_frames:
+            if self.lp_filter_enabled:
+                current_input = np.asarray(raw_frame, dtype=np.float32)
+                filtered_output = self.Andor.apply_lp_filter_step(
+                    current_input,
+                    self._display_filter_previous_input,
+                    self._display_filter_previous_output,
+                    coefficients,
+                )
+                self._display_filter_previous_input = np.array(current_input, copy=True)
+                self._display_filter_previous_output = np.array(filtered_output, copy=True)
+                latest_source_frame = np.array(self.Andor.coerce_raw_frame_to_storage(filtered_output), copy=True)
+            else:
+                latest_source_frame = np.array(raw_frame, copy=True)
+
+        if not self.lp_filter_enabled:
+            self._display_filter_previous_input = None
+            self._display_filter_previous_output = None
+
+        return self._process_analysis_frame(latest_source_frame, zero_frame=zero_frame)
+
+    def _get_latest_display_frame(self, force_rebuild=False):
+        with self.Andor.frame_lock:
+            update_payload, current_frame_idx, state_key, needs_reset = self._get_display_frame_updates_locked(force_rebuild=force_rebuild)
+
+        if update_payload is None:
+            return None
+
+        raw_frames, zero_frame = update_payload
+        processed_frame = self._process_display_frame_updates(raw_frames, zero_frame=zero_frame, reset_state=needs_reset)
+        self._display_processing_last_frame_idx = current_frame_idx
+        self._display_processing_state_key = state_key
+        return processed_frame
+
     def _set_zero_reference_frame(self, frame):
         if frame is None:
             return False
@@ -579,18 +720,21 @@ class CameraFeedWindow:
         return self._set_zero_reference_frame(latest_frame)
 
     def _get_active_frame_locked(self):
-        if self._is_difference_mode_active():
-            if len(self.Andor.difference) == 0:
-                return self.Andor.latest_difference
-            return self.Andor.difference[-1]
-        if self._is_contrast_mode_active():
-            if len(self.Andor.contrast) == 0:
-                return self.Andor.latest_contrast
-            return self.Andor.contrast[-1]
-        return self._get_active_source_frame_locked()
+        latest_frame, _, has_frames, _ = self.Andor.get_processed_frame_view_locked(
+            display_mode=self.display_mode,
+            lp_filter_enabled=self.lp_filter_enabled,
+            include_history=False,
+        )
+        if not has_frames:
+            return None
+        return latest_frame
 
     def _refresh_display_image(self):
-        self.imageArray = self._process_frame(None)
+        latest_frame = self._get_latest_display_frame(force_rebuild=True)
+        if latest_frame is None:
+            self.imageArray = self._process_frame(None)
+        else:
+            self.imageArray = self._frame_to_rgba(self._prepare_analysis_frame(latest_frame))
         self.image_dirty = True
 
     def _request_zero_window_refresh(self):
@@ -642,24 +786,12 @@ class CameraFeedWindow:
 
     def get_analysis_snapshot(self, include_history=False, include_timestamps=False, history_start_frame_idx=None):
         with self.Andor.frame_lock:
-            latest_frame = self._get_active_frame_locked()
-            current_frame_idx = int(self.Andor.frameIdx)
-
-            if self._is_difference_mode_active():
-                active_history = self.Andor.difference
-            elif self._is_contrast_mode_active():
-                active_history = self.Andor.contrast
-            elif self.lp_filter_enabled:
-                active_history = self.Andor.filtered
-            else:
-                active_history = self.Andor.acquisitions
-
-            has_frames = len(active_history) > 0
-            history_start_offset = 0
-            if include_history and history_start_frame_idx is not None:
-                first_available_frame_idx = max(0, current_frame_idx - len(active_history)) + 1
-                next_frame_idx = max(int(history_start_frame_idx) + 1, first_available_frame_idx)
-                history_start_offset = max(0, next_frame_idx - first_available_frame_idx)
+            latest_frame, current_frame_idx, has_frames, active_history = self.Andor.get_processed_frame_view_locked(
+                display_mode=self.display_mode,
+                lp_filter_enabled=self.lp_filter_enabled,
+                include_history=include_history,
+                history_start_frame_idx=history_start_frame_idx,
+            )
 
             timestamps = None
             if include_timestamps:
@@ -675,9 +807,61 @@ class CameraFeedWindow:
                     timestamps = [float(self.Andor.timestamps[-1])]
                 else:
                     timestamps = []
-            acquisitions = active_history[history_start_offset:] if include_history else None
+            acquisitions = active_history if include_history else None
 
         return latest_frame, current_frame_idx, has_frames, acquisitions, timestamps
+
+    def get_roi_processing_update(self, bounds, include_history=False, include_timestamps=False, history_start_frame_idx=None):
+        x1, y1, x2, y2 = self._normalize_bounds(bounds)
+        if x2 <= x1 or y2 <= y1:
+            return None, 0, False, None, None, None, None, 0
+
+        with self.Andor.frame_lock:
+            current_frame_idx = int(self.Andor.frameIdx)
+            frame_count = len(self.Andor.acquisitions)
+            if frame_count <= 0:
+                return None, current_frame_idx, False, None, None, None, None, 0
+
+            first_available_frame_idx = max(0, current_frame_idx - frame_count) + 1
+            if include_history:
+                if history_start_frame_idx is None:
+                    start_frame_idx = first_available_frame_idx
+                else:
+                    start_frame_idx = max(int(history_start_frame_idx) + 1, first_available_frame_idx)
+            else:
+                start_frame_idx = current_frame_idx
+
+            if start_frame_idx > current_frame_idx:
+                return None, current_frame_idx, False, None, None, None, None, first_available_frame_idx
+
+            start_offset = max(0, start_frame_idx - first_available_frame_idx)
+            sample_count = max(0, frame_count - start_offset)
+            raw_frames = self.Andor.acquisitions.range_array(start_offset, sample_count, copy=True)
+            if raw_frames.size <= 0:
+                return None, current_frame_idx, False, None, None, None, None, first_available_frame_idx
+
+            raw_crops = np.array(raw_frames[:, y1:y2, x1:x2], copy=True)
+            if raw_crops.size <= 0:
+                return None, current_frame_idx, False, None, None, None, None, first_available_frame_idx
+
+            timestamps = None
+            if include_timestamps:
+                timestamp_start_offset = start_offset
+                timestamp_values = self.Andor.timestamps.range_array(timestamp_start_offset, sample_count, copy=True)
+                timestamps = timestamp_values.tolist()
+
+            zero_crop = np.array(self.Andor.zero[y1:y2, x1:x2], copy=True)
+            state_key = (
+                str(self.display_mode),
+                bool(self.lp_filter_enabled),
+                float(self.lp_filter_cutoff_hz),
+                int(getattr(self.Andor, "zero_version", 0)),
+                str(self.Andor.storage_dtype_name),
+                (x1, y1, x2, y2),
+            )
+
+        latest_crop = np.array(raw_crops[-1], copy=True)
+        return latest_crop, current_frame_idx, True, raw_crops, timestamps, zero_crop, state_key, first_available_frame_idx
 
     def _on_set_zero(self, sender=None, app_data=None, user_data=None):
         self.ensure_zero_reference_from_latest_frame()
@@ -831,10 +1015,45 @@ class CameraFeedWindow:
         return self._frame_to_rgba(self._prepare_analysis_frame(latest_frame))
 
     def get_roi_frame(self, bounds):
-        latest_frame, frame_idx, _, _, _ = self.get_analysis_snapshot(include_history=False)
-        crop = self.extract_roi_frame(latest_frame, bounds)
+        crop, frame_idx, has_frames, _, _, zero_crop, state_key, first_available_frame_idx = self.get_roi_processing_update(
+            bounds,
+            include_history=False,
+            include_timestamps=False,
+        )
+        if not has_frames or crop is None:
+            return None, frame_idx
 
-        return crop, frame_idx
+        raw_crops = np.expand_dims(crop, axis=0)
+        lp_filter_enabled = bool(state_key[1]) if state_key is not None else False
+        if lp_filter_enabled:
+            window_size = self.Andor.get_display_filter_window_size()
+            if window_size > 1:
+                history_start_frame_idx = max(first_available_frame_idx - 1, frame_idx - window_size)
+                _, _, has_frames, raw_crops, _, zero_crop, state_key, _ = self.get_roi_processing_update(
+                    bounds,
+                    include_history=True,
+                    include_timestamps=False,
+                    history_start_frame_idx=history_start_frame_idx,
+                )
+                if not has_frames or raw_crops is None:
+                    return None, frame_idx
+
+        latest_processed_crop = None
+        filter_previous_input = None
+        filter_previous_output = None
+        coefficients = self.Andor.get_lp_filter_coefficients() if lp_filter_enabled else None
+        for raw_crop in raw_crops:
+            if lp_filter_enabled:
+                current_input = np.asarray(raw_crop, dtype=np.float32)
+                filtered_output = self.Andor.apply_lp_filter_step(current_input, filter_previous_input, filter_previous_output, coefficients)
+                filter_previous_input = np.array(current_input, copy=True)
+                filter_previous_output = np.array(filtered_output, copy=True)
+                source_crop = np.array(self.Andor.coerce_raw_frame_to_storage(filtered_output), copy=True)
+            else:
+                source_crop = np.array(raw_crop, copy=True)
+            latest_processed_crop = self._process_analysis_frame(source_crop, zero_frame=zero_crop)
+
+        return latest_processed_crop, frame_idx
 
     def _get_canvas_size(self):
         width, height = dpg.get_item_rect_size(self.canvas_id)
@@ -1276,20 +1495,21 @@ class CameraFeedWindow:
         while True:
 
             try:
-                if self.Andor.frame_ready_event.is_set():
-                    processed_image = self._process_frame()
+                if self.Andor.frame_ready_event.wait(0.016):
+                    self.Andor.frame_ready_event.clear()
+                    latest_frame = self._get_latest_display_frame(force_rebuild=False)
+                    processed_image = self._frame_to_rgba(self._prepare_analysis_frame(latest_frame)) if latest_frame is not None else self._process_frame()
                     with self._image_state_lock:
                         self.imageArray = processed_image
                         self.image_dirty = True
                     self._request_zero_window_refresh()
-                    self.Andor.frame_ready_event.clear()
 
             except Exception as e:
                 print("Error updating camera feed:")
                 print(e)
                 print()
 
-            time.sleep(0.016)
+            time.sleep(0.001)
 
     def _on_left_mouse_down(self, sender, app_data):
         self._on_mouse_down(sender, app_data, dpg.mvMouseButton_Left)

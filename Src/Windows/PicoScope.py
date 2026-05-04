@@ -5,7 +5,7 @@ import threading
 from Drivers.PicoScope import PicoScope as PicoScope4000Driver
 from Drivers.PicoScope2000 import PicoScope2000
 from Utils.fonts import get_segmdl2_icon_font
-from Utils.state_persistence import apply_window_state, capture_window_state, load_state_file, save_state_file
+from Utils.state_persistence import apply_item_open_states, apply_window_state, capture_item_open_states, capture_window_state, load_state_file, save_state_file
 from Utils.themes import red_green_button_enabled, red_green_button_disabled
 from Windows.SubWindows.FunctionGenerator import FunctionGeneratorWindow
 from Windows.SubWindows.Oscilloscope import OscilloscopeWindow
@@ -47,6 +47,9 @@ class PicoScopeControl:
         self.oscilloscope_window = None
         self.function_generator_window = None
         self._oscilloscope_render_snapshot = None
+        self._scope_samples_axis = np.zeros((0,), dtype=np.float64)
+        self._scope_estimated_time_axis = np.zeros((0,), dtype=np.float64)
+        self.section_node_ids = {}
 
         mdl = get_segmdl2_icon_font()
 
@@ -70,64 +73,78 @@ class PicoScopeControl:
         ):
             self.window_id = dpg.last_item()
 
-            dpg.add_text("Connection Settings")
+            with dpg.tree_node(label="Connection Settings", default_open=True, span_full_width=True) as connection_settings_node_id:
+                self.section_node_ids["connection_settings"] = connection_settings_node_id
+                with dpg.group(horizontal=True):
+                    self.device_combo_id = dpg.add_combo(
+                        label="Device",
+                        width=-120,
+                        items=[],
+                        default_value="No devices found",
+                        callback=self._on_device_selected,
+                    )
+                    self.refresh_devices_button_id = dpg.add_button(
+                        label="\uE117",
+                        width=40,
+                        callback=self._refresh_available_devices,
+                    )
+
+                    with dpg.tooltip(self.refresh_devices_button_id):
+                        dpg.add_text("Refresh devices")
+
+                    dpg.bind_item_font(self.refresh_devices_button_id, mdl)
+
+                with dpg.group(horizontal=True):
+                    self.open_button_id = dpg.add_button(label="Open", width=-180, callback=self._open_device)
+                    self.close_button_id = dpg.add_button(label="Close", width=-1, callback=self._close_device)
+
+                with dpg.group(horizontal=True):
+                    self.start_button_id = dpg.add_button(label="Start", width=-180, callback=self._start_collection)
+                    self.stop_button_id = dpg.add_button(label="Stop", width=-1, callback=self._stop_collection)
+
+                self.connection_status_id = dpg.add_text("Status: Idle")
+
             dpg.add_separator()
 
-            with dpg.group(horizontal=True):
-                self.device_combo_id = dpg.add_combo(
-                    label="Device",
+            with dpg.tree_node(label="Sample Settings", default_open=True, span_full_width=True) as sample_settings_node_id:
+                self.section_node_ids["sample_settings"] = sample_settings_node_id
+                self.sample_rate_input_id = dpg.add_input_float(
+                    label="Sample Rate",
                     width=-120,
-                    items=[],
-                    default_value="No devices found",
-                    callback=self._on_device_selected,
-                )
-                self.refresh_devices_button_id = dpg.add_button(
-                    label="\uE117",
-                    width=40,
-                    callback=self._refresh_available_devices,
+                    default_value=max(1000.0, self.driver.sample_rate_hz),
+                    min_value=1000.0,
+                    step=100.0,
+                    callback=self._on_sample_rate_changed,
                 )
 
-                with dpg.tooltip(self.refresh_devices_button_id):
-                    dpg.add_text("Refresh devices")
+                self.seconds_input_id = dpg.add_input_float(
+                    label="Seconds",
+                    width=-120,
+                    default_value=self.driver.history_seconds,
+                    min_value=0.01,
+                    step=0.1,
+                    callback=self._on_history_seconds_changed,
+                )
 
-                dpg.bind_item_font(self.refresh_devices_button_id, mdl)
-
-            with dpg.group(horizontal=True):
-                self.open_button_id = dpg.add_button(label="Open", width=-180, callback=self._open_device)
-                self.close_button_id = dpg.add_button(label="Close", width=-1, callback=self._close_device)
-
-            with dpg.group(horizontal=True):
-                self.start_button_id = dpg.add_button(label="Start", width=-180, callback=self._start_collection)
-                self.stop_button_id = dpg.add_button(label="Stop", width=-1, callback=self._stop_collection)
-
-            self.connection_status_id = dpg.add_text("Status: Idle")
-
-            dpg.add_spacer(height=10)
-            dpg.add_text("Sample Settings")
             dpg.add_separator()
 
-            self.sample_rate_input_id = dpg.add_input_float(
-                label="Sample Rate",
-                width=-120,
-                default_value=max(1000.0, self.driver.sample_rate_hz),
-                min_value=1000.0,
-                step=100.0,
-                callback=self._on_sample_rate_changed,
-            )
+            with dpg.tree_node(label="Channels", default_open=True, span_full_width=True) as channels_node_id:
+                self.section_node_ids["channels"] = channels_node_id
+                with dpg.child_window(border=False, autosize_x=True, autosize_y=True):
+                    self.channels_container_id = dpg.last_item()
 
-            self.seconds_input_id = dpg.add_input_float(
-                label="Seconds",
-                width=-120,
-                default_value=self.driver.history_seconds,
-                min_value=0.01,
-                step=0.1,
-                callback=self._on_history_seconds_changed,
-            )
+            dpg.add_separator()
 
-            dpg.add_spacer(height=10)
+            with dpg.tree_node(label="Function Generator", default_open=True, span_full_width=True) as function_generator_node_id:
+                self.section_node_ids["function_generator"] = function_generator_node_id
+                self.function_generator_window = FunctionGeneratorWindow(
+                    lambda: self.driver,
+                    lambda error_message: self._set_status(self.status_message, error=error_message),
+                    parent=dpg.last_container(),
+                    embedded=True,
+                )
 
-            with dpg.child_window(border=False, autosize_x=True, autosize_y=True):
-                self.channels_container_id = dpg.last_item()
+            dpg.add_separator()
 
         for channel_spec in CHANNEL_PANEL_SPECS:
             self._create_channel_panel(channel_spec)
@@ -139,10 +156,7 @@ class PicoScopeControl:
             state_name="OscilloscopeWindow",
             tag="#Oscilloscope",
         )
-        self.function_generator_window = FunctionGeneratorWindow(
-            lambda: self.driver,
-            lambda error_message: self._set_status(self.status_message, error=error_message),
-        )
+        self._configure_scope_plot_axes()
         self._refresh_available_devices()
         self._sync_driver_channels()
         self._refresh_status_labels()
@@ -188,7 +202,29 @@ class PicoScopeControl:
 
         self.driver = new_driver
         self.driver_family = requested_family
+        self._configure_scope_plot_axes(sample_rate_hz, history_seconds)
         self._sync_driver_channels()
+
+    def _configure_scope_plot_axes(self, sample_rate_hz=None, history_seconds=None):
+        sample_rate_hz = max(float(self.driver.sample_rate_hz if sample_rate_hz is None else sample_rate_hz), 1e-12)
+        history_seconds = max(float(self.driver.history_seconds if history_seconds is None else history_seconds), 0.0)
+        sample_count = max(1, int(getattr(self.driver, "buffer_capacity", 0) or round(sample_rate_hz * history_seconds) or 1))
+        self._scope_samples_axis = np.arange(sample_count, dtype=np.float64)
+        self._scope_estimated_time_axis = self._scope_samples_axis / sample_rate_hz
+
+    def _get_scope_estimated_time_axis(self, sample_count, total_samples_received):
+        sample_count = max(0, int(sample_count))
+        if sample_count <= 0:
+            return np.zeros((0,), dtype=np.float64)
+
+        axis_values = self._scope_estimated_time_axis
+        if axis_values.size <= 0:
+            return np.zeros((0,), dtype=np.float64)
+
+        sample_count = min(sample_count, int(axis_values.size))
+        if int(total_samples_received) >= int(axis_values.size):
+            return np.array(axis_values[-sample_count:], copy=True)
+        return np.array(axis_values[:sample_count], copy=True)
 
     def _set_status(self, message, error=None):
         self.status_message = message
@@ -406,10 +442,12 @@ class PicoScopeControl:
     def _on_sample_rate_changed(self, sender, app_data, user_data):
         if not self._apply_stopped_configuration(lambda: self.driver.set_sample_capture_rate(app_data)):
             dpg.set_value(self.sample_rate_input_id, self.driver.sample_rate_hz)
+        self._configure_scope_plot_axes()
 
     def _on_history_seconds_changed(self, sender, app_data, user_data):
         if not self._apply_stopped_configuration(lambda: self.driver.set_history_seconds(app_data)):
             dpg.set_value(self.seconds_input_id, self.driver.history_seconds)
+        self._configure_scope_plot_axes()
 
     def _on_panel_name_changed(self, sender, app_data, panel_id):
         panel = self._get_panel(panel_id)
@@ -450,7 +488,6 @@ class PicoScopeControl:
         snapshot = self._oscilloscope_render_snapshot
         if snapshot is None:
             snapshot = self.driver.get_buffer_snapshot(channel_names=(channel_name,))
-        timestamps = np.asarray(snapshot.get("timestamps", []), dtype=np.float64)
 
         raw_samples = np.asarray(snapshot.get("channels", {}).get(channel_name, []), dtype=np.float32)
         if raw_samples.size <= 0:
@@ -458,15 +495,18 @@ class PicoScopeControl:
             y_values = np.zeros((0,), dtype=np.float32)
         else:
             sample_count = int(raw_samples.size)
-            if timestamps.size >= sample_count:
-                x_array = timestamps[-sample_count:]
-                x_values = x_array - x_array[0]
-            else:
-                x_values = np.arange(sample_count, dtype=np.float64)
+            axis_capacity = int(self._scope_estimated_time_axis.size)
+            if axis_capacity <= 0 or axis_capacity != int(getattr(self.driver, "buffer_capacity", axis_capacity)):
+                self._configure_scope_plot_axes(
+                    snapshot.get("actual_sample_rate_hz", self.driver.sample_rate_hz),
+                    snapshot.get("history_seconds", self.driver.history_seconds),
+                )
+            total_samples_received = int(snapshot.get("total_samples_received", sample_count))
+            x_values = self._get_scope_estimated_time_axis(sample_count, total_samples_received)
 
             y_values = self.driver.convert_samples_to_volts(channel_name, raw_samples).astype(np.float32, copy=False)
 
-        abs_last_x = float(timestamps[-1]) if timestamps.size > 0 else 0.0
+        abs_last_x = float(x_values[-1]) if x_values.size > 0 else 0.0
         return {
             "panel_id": panel["id"],
             "label": panel["display_name"],
@@ -480,6 +520,7 @@ class PicoScopeControl:
         try:
             self.driver.set_sample_capture_rate(dpg.get_value(self.sample_rate_input_id))
             self.driver.set_history_seconds(dpg.get_value(self.seconds_input_id))
+            self._configure_scope_plot_axes()
             self._sync_driver_channels()
             self.driver.start_collection()
             self._set_status("Collecting", error=None)
@@ -568,6 +609,7 @@ class PicoScopeControl:
             type(self).__name__,
             {
                 "window": capture_window_state(self.window_id),
+                "sections": capture_item_open_states(self.section_node_ids),
                 "device_driver_family": self.driver_family,
                 "device_serial": self.driver.serial_number,
                 "sample_rate_hz": float(dpg.get_value(self.sample_rate_input_id)),
@@ -586,6 +628,7 @@ class PicoScopeControl:
             return
 
         apply_window_state(self.window_id, state.get("window"))
+        apply_item_open_states(self.section_node_ids, state.get("sections"))
 
         saved_driver_family = str(state.get("device_driver_family") or self.driver_family).strip().lower()
         if saved_driver_family in DRIVER_FACTORIES:
@@ -602,6 +645,8 @@ class PicoScopeControl:
         if history_seconds is not None:
             dpg.set_value(self.seconds_input_id, float(history_seconds))
             self.driver.set_history_seconds(float(history_seconds))
+
+        self._configure_scope_plot_axes()
 
         saved_serial = str(state.get("device_serial") or "").strip()
         if saved_serial:

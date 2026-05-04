@@ -20,11 +20,14 @@ class ROIsWindow:
     DEFAULT_Y_SCALE_GRACE_PERCENT = 5.0
     
 
-    def __init__(self):
-        self.width = 640
-        self.height = 400
-        self.name = "ROIs"
-        self.tag = "ROIsWindow"
+    def __init__(self, *, name="ROIs", tag="ROIsWindow", width=640, height=400, pos=(935, 10), state_name=None, parent=None):
+        self.width = int(width)
+        self.height = int(height)
+        self.name = str(name)
+        self.tag = str(tag)
+        self._state_name_value = str(state_name or type(self).__name__)
+        self.parent_id = parent
+        self.is_embedded = parent is not None
         self._current_roi_tags = []
         self._rois = []
         self._roi_ui = {}
@@ -53,76 +56,95 @@ class ROIsWindow:
             with dpg.theme_component(dpg.mvAll):
                 dpg.add_theme_color(dpg.mvPlotCol_AxisText, [255, 255, 255, 24], category=dpg.mvThemeCat_Plots)
 
-        with dpg.window(
-            label=self.name,
-            tag=f"{self.tag}_Window",
-            width=self.width,
-            height=self.height,
-            pos=(935, 10),
-            no_scrollbar=True,
-            no_scroll_with_mouse=True,
-            no_resize=False,
-        ):
-            self.window_id = dpg.last_item()
+        with dpg.theme() as self._marker_series_theme:
+            with dpg.theme_component(dpg.mvLineSeries):
+                dpg.add_theme_color(dpg.mvPlotCol_Line, [220, 40, 40, 255], category=dpg.mvThemeCat_Plots)
 
-            with dpg.group():
-                dpg.add_text("Y-Axis Scaling")
-                self.trace_metric_combo_id = dpg.add_combo(
-                    items=list(self.TRACE_METRIC_OPTIONS),
-                    label="Metric",
-                    width=-60,
-                    default_value=self.trace_metric,
-                    callback=self._on_trace_metric_changed,
-                )
-                self.y_scale_min_input_id = dpg.add_input_float(
-                    label="Min",
-                    width=-60,
-                    default_value=self.y_scale_min,
-                    callback=self._on_y_scale_min_changed,
-                )
-                self.y_scale_max_input_id = dpg.add_input_float(
-                    label="Max",
-                    width=-60,
-                    default_value=self.y_scale_max,
-                    callback=self._on_y_scale_max_changed,
-                )
-                self.y_scale_auto_checkbox_id = dpg.add_checkbox(
-                    label="Auto",
-                    default_value=self.y_scale_auto,
-                    callback=self._on_y_scale_auto_changed,
-                )
-                self.y_scale_grace_input_id = dpg.add_input_float(
-                    label="Grace (%)",
-                    width=-60,
-                    default_value=self.y_scale_grace_percent,
-                    callback=self._on_y_scale_grace_changed,
-                )
-                self.y_scale_mirrored_checkbox_id = dpg.add_checkbox(
-                    label="Mirrored",
-                    default_value=self.y_scale_mirrored,
-                    callback=self._on_y_scale_mirrored_changed,
-                )
-
-            dpg.add_separator()
-
-            with dpg.child_window(border=False, width=-1, height=-1):
-                self.content_id = dpg.last_item()
-
+        if self.is_embedded:
             with dpg.child_window(
+                parent=self.parent_id,
+                tag=f"{self.tag}_Embedded",
+                width=-1,
+                height=self.height,
                 border=False,
-                width=1,
-                height=1,
-                pos=(0, 0),
                 no_scrollbar=True,
                 no_scroll_with_mouse=True,
             ):
-                self.overlay_id = dpg.last_item()
-                dpg.bind_item_theme(self.overlay_id, transparent_plot_theme)
-
-            with dpg.handler_registry():
-                dpg.add_mouse_wheel_handler(callback=self._on_overlay_mouse_wheel)
+                self.window_id = dpg.last_item()
+                self._build_ui()
+        else:
+            with dpg.window(
+                label=self.name,
+                tag=f"{self.tag}_Window",
+                width=self.width,
+                height=self.height,
+                pos=pos,
+                no_scrollbar=True,
+                no_scroll_with_mouse=True,
+                no_resize=False,
+            ):
+                self.window_id = dpg.last_item()
+                self._build_ui()
 
         self._sync_y_scale_inputs()
+
+    def _build_ui(self):
+        with dpg.group():
+            dpg.add_text("Y-Axis Scaling")
+            self.trace_metric_combo_id = dpg.add_combo(
+                items=list(self.TRACE_METRIC_OPTIONS),
+                label="Metric",
+                width=-60,
+                default_value=self.trace_metric,
+                callback=self._on_trace_metric_changed,
+            )
+            self.y_scale_min_input_id = dpg.add_input_float(
+                label="Min",
+                width=-60,
+                default_value=self.y_scale_min,
+                callback=self._on_y_scale_min_changed,
+            )
+            self.y_scale_max_input_id = dpg.add_input_float(
+                label="Max",
+                width=-60,
+                default_value=self.y_scale_max,
+                callback=self._on_y_scale_max_changed,
+            )
+            self.y_scale_auto_checkbox_id = dpg.add_checkbox(
+                label="Auto",
+                default_value=self.y_scale_auto,
+                callback=self._on_y_scale_auto_changed,
+            )
+            self.y_scale_grace_input_id = dpg.add_input_float(
+                label="Grace (%)",
+                width=-60,
+                default_value=self.y_scale_grace_percent,
+                callback=self._on_y_scale_grace_changed,
+            )
+            self.y_scale_mirrored_checkbox_id = dpg.add_checkbox(
+                label="Mirrored",
+                default_value=self.y_scale_mirrored,
+                callback=self._on_y_scale_mirrored_changed,
+            )
+
+        dpg.add_separator()
+
+        with dpg.child_window(border=False, width=-1, height=-1):
+            self.content_id = dpg.last_item()
+
+        with dpg.child_window(
+            border=False,
+            width=1,
+            height=1,
+            pos=(0, 0),
+            no_scrollbar=True,
+            no_scroll_with_mouse=True,
+        ):
+            self.overlay_id = dpg.last_item()
+            dpg.bind_item_theme(self.overlay_id, transparent_plot_theme)
+
+        with dpg.handler_registry():
+            dpg.add_mouse_wheel_handler(callback=self._on_overlay_mouse_wheel)
 
     def is_visible(self):
         return dpg.does_item_exist(self.window_id) and dpg.is_item_shown(self.window_id)
@@ -515,6 +537,8 @@ class ROIsWindow:
                                 opposite=True,
                             )
                             series_id = dpg.add_line_series([], [], label=roi.name, parent=y_axis_id)
+                            marker_series_id = dpg.add_line_series([], [], label="", parent=y_axis_id)
+                            dpg.bind_item_theme(marker_series_id, self._marker_series_theme)
 
                     dpg.bind_item_theme(plot_id, transparent_plot_theme)
 
@@ -525,6 +549,7 @@ class ROIsWindow:
                         "x_axis_id": x_axis_id,
                         "y_axis_id": y_axis_id,
                         "series_id": series_id,
+                        "marker_series_id": marker_series_id,
                         "x_range": None,
                     })
 
@@ -583,8 +608,33 @@ class ROIsWindow:
             return
         self._refresh_autoscale_if_ready()
         self._apply_shared_y_axis_limits()
+        self._update_roi_markers()
         self._update_overlay_positions()
         self._sync_xaxis()
+
+    def _get_current_roi_marker_x(self):
+        if not self._rois:
+            return None
+        parent = getattr(self._rois[0], "parent", None)
+        if parent is None or not hasattr(parent, "get_current_roi_marker_x"):
+            return None
+        return parent.get_current_roi_marker_x()
+
+    def _update_roi_markers(self):
+        marker_x = self._get_current_roi_marker_x()
+        if marker_x is None:
+            for ui in self._roi_ui.values():
+                marker_series_id = ui.get("marker_series_id")
+                if marker_series_id and dpg.does_item_exist(marker_series_id):
+                    dpg.set_value(marker_series_id, [[], []])
+            return
+
+        marker_x_values = [float(marker_x), float(marker_x)]
+        marker_y_values = [float(self.y_scale_min), float(self.y_scale_max)]
+        for ui in self._roi_ui.values():
+            marker_series_id = ui.get("marker_series_id")
+            if marker_series_id and dpg.does_item_exist(marker_series_id):
+                dpg.set_value(marker_series_id, [marker_x_values, marker_y_values])
 
     def _sync_xaxis(self):
         if not self._xaxis_ui or not self._roi_ui:
@@ -684,21 +734,20 @@ class ROIsWindow:
             dpg.delete_item(old_tex)
 
     def _state_name(self):
-        return f"{type(self).__name__}"
+        return self._state_name_value
 
     def SaveState(self):
-        save_state_file(
-            self._state_name(),
-            {
-                "window": capture_window_state(self.window_id),
-                "trace_metric": self.trace_metric,
-                "y_scale_min": self.y_scale_min,
-                "y_scale_max": self.y_scale_max,
-                "y_scale_auto": self.y_scale_auto,
-                "y_scale_mirrored": self.y_scale_mirrored,
-                "y_scale_grace_percent": self.y_scale_grace_percent,
-            },
-        )
+        state = {
+            "trace_metric": self.trace_metric,
+            "y_scale_min": self.y_scale_min,
+            "y_scale_max": self.y_scale_max,
+            "y_scale_auto": self.y_scale_auto,
+            "y_scale_mirrored": self.y_scale_mirrored,
+            "y_scale_grace_percent": self.y_scale_grace_percent,
+        }
+        if not self.is_embedded:
+            state["window"] = capture_window_state(self.window_id)
+        save_state_file(self._state_name(), state)
 
     def LoadState(self):
         state = load_state_file(self._state_name())
@@ -723,4 +772,5 @@ class ROIsWindow:
         dpg.set_value(self.y_scale_mirrored_checkbox_id, self.y_scale_mirrored)
         self._sync_y_scale_inputs()
         self._mark_y_axis_limits_dirty()
-        apply_window_state(self.window_id, state.get("window"))
+        if not self.is_embedded:
+            apply_window_state(self.window_id, state.get("window"))

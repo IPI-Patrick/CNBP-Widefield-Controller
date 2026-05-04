@@ -172,7 +172,7 @@ def update_performance_overlay():
         except Exception:
             capture_fps = 0.0
 
-    label = f"{ui_fps:0.1f} UI FPS | {capture_fps:0.1f} Capture FPS"
+    label = f"{int(ui_fps)} UI FPS | {int(capture_fps)} Capture FPS"
     dpg.set_value("SoftwarePerformanceOverlayText", label)
 
     viewport_width = dpg.get_viewport_client_width()
