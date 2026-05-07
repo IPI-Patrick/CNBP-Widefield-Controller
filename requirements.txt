@@ -17,6 +17,7 @@ pywin32
 
 # Additional libraries used by included driver modules
 matplotlib==3.10.3
+scikit-image==0.25.2
 pandas==2.2.3
 pillow==11.2.1
 PyVISA==1.15.0

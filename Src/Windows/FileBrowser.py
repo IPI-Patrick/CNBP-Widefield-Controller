@@ -1,7 +1,10 @@
+import io
 import os
 import threading
+import zipfile
 from pathlib import Path
 
+import numpy as np
 import dearpygui.dearpygui as dpg
 
 from Utils.state_persistence import apply_window_state, capture_window_state, load_state_file, save_state_file
@@ -122,6 +125,34 @@ class FileBrowser:
             last_generation = watch_generation
             self._stop_event.wait(1.0)
 
+    @staticmethod
+    def _read_npz_metadata(path):
+        meta = {}
+        try:
+            with zipfile.ZipFile(str(path), mode="r") as zf:
+                names = set(zf.namelist())
+                for key in ("meta_type", "meta_frame_count", "meta_created_at"):
+                    npy_name = f"{key}.npy"
+                    if npy_name not in names:
+                        continue
+                    with zf.open(npy_name) as f:
+                        buf = io.BytesIO(f.read())
+                    arr = np.lib.format.read_array(buf, allow_pickle=False)
+                    meta[key] = arr.item() if arr.shape == () else str(arr)
+        except Exception:
+            pass
+        return meta
+
+    @staticmethod
+    def _format_created_at(iso_string):
+        if not iso_string:
+            return "-"
+        try:
+            date_part, time_part = str(iso_string).split("T", 1)
+            return f"{date_part} {time_part[:5]}"
+        except Exception:
+            return str(iso_string)[:16]
+
     def _scan_directory(self, directory_path):
         selected_path = str(directory_path or "").strip()
         if not selected_path:
@@ -149,6 +180,12 @@ class FileBrowser:
             resolved_path = str(npz_path.resolve())
             size_bytes = int(stats.st_size)
             modified_ns = int(getattr(stats, "st_mtime_ns", int(stats.st_mtime * 1_000_000_000)))
+
+            meta = self._read_npz_metadata(npz_path)
+            meta_type = str(meta["meta_type"]).strip() if "meta_type" in meta else None
+            meta_frame_count = int(meta["meta_frame_count"]) if "meta_frame_count" in meta else None
+            meta_created_at = str(meta["meta_created_at"]).strip() if "meta_created_at" in meta else None
+
             entries.append(
                 {
                     "path": resolved_path,
@@ -156,6 +193,9 @@ class FileBrowser:
                     "filename": npz_path.name,
                     "size_bytes": size_bytes,
                     "size_label": self._format_size(size_bytes),
+                    "meta_type": meta_type,
+                    "meta_frame_count": meta_frame_count,
+                    "meta_created_at": meta_created_at,
                 }
             )
             signature.append((resolved_path, size_bytes, modified_ns))
@@ -171,9 +211,7 @@ class FileBrowser:
             size_value /= 1024.0
             unit_index += 1
 
-        if unit_index == 0:
-            return f"{int(size_value)} {units[unit_index]}"
-        return f"{size_value:.2f} {units[unit_index]}"
+        return f"{int(round(size_value))} {units[unit_index]}"
 
     def _apply_pending_directory_snapshot(self):
         with self._state_lock:
@@ -224,16 +262,30 @@ class FileBrowser:
             resizable=True,
             policy=dpg.mvTable_SizingStretchProp,
         ):
-            dpg.add_table_column(label="Title", init_width_or_weight=0.6)
-            dpg.add_table_column(label="Size", init_width_or_weight=0.2)
-            dpg.add_table_column(label="Preview", init_width_or_weight=0.2)
+            dpg.add_table_column(label="Title",  init_width_or_weight=0.36)
+            dpg.add_table_column(label="Type",   init_width_or_weight=0.12)
+            dpg.add_table_column(label="Frames", init_width_or_weight=0.09)
+            dpg.add_table_column(label="Date",   init_width_or_weight=0.23)
+            dpg.add_table_column(label="Size",   init_width_or_weight=0.10)
+            dpg.add_table_column(label="",       init_width_or_weight=0.10)
 
             for entry in self.file_entries:
+                meta_type        = entry.get("meta_type")
+                meta_frame_count = entry.get("meta_frame_count")
+                meta_created_at  = entry.get("meta_created_at")
+
+                type_label   = meta_type.capitalize() if meta_type else "-"
+                frames_label = str(meta_frame_count) if meta_frame_count is not None else "-"
+                date_label   = self._format_created_at(meta_created_at)
+
                 with dpg.table_row():
                     title_text_id = dpg.add_text(str(entry["title"]))
                     with dpg.tooltip(title_text_id):
                         dpg.add_text(str(entry["filename"]))
                         dpg.add_text(str(entry["path"]))
+                    dpg.add_text(type_label)
+                    dpg.add_text(frames_label)
+                    dpg.add_text(date_label)
                     dpg.add_text(str(entry["size_label"]))
                     dpg.add_button(
                         label="Open",

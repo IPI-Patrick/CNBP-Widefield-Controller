@@ -130,6 +130,20 @@ class MockCamera:
                 }
             )
 
+        # Add in an extra blob that doesn't grow and shrink
+        blobs.append(
+            {
+                "x": 10,
+                "y": 10,
+                "sigma": float(rng.uniform(min_sigma, max_sigma)),
+                "base": float(rng.uniform(0.30, 0.50)),
+                "amplitude": 0.0,
+                "period": 60.0,
+                "phase": 0.0,
+                "twinkle": 0.0,
+            }
+        )
+
         state = {
             "width": width,
             "height": height,
@@ -153,11 +167,17 @@ class MockCamera:
         frame = np.zeros((height, width), dtype=np.float32)
         frame += background_floor
 
+        drift_speed = 0.5  # 1.0 = original speed; lower values = slower drift
+        drift_amplitude_x = max(4, int(min(width, height) * 0.030))
+        drift_amplitude_y = max(4, int(min(width, height) * 0.022))
+        drift_offset_x = int(round(drift_amplitude_x * np.sin(2.0 * np.pi * frame_index * drift_speed / 300.0)))
+        drift_offset_y = int(round(drift_amplitude_y * np.sin(2.0 * np.pi * frame_index * drift_speed / 420.0 + 1.1)))
+
         for blob in state["blobs"]:
             sigma = blob["sigma"]
             radius = max(3, int(np.ceil(3.5 * sigma)))
-            x_center = blob["x"]
-            y_center = blob["y"]
+            x_center = blob["x"] + drift_offset_x
+            y_center = blob["y"] + drift_offset_y
 
             x_min = max(0, x_center - radius)
             x_max = min(width, x_center + radius + 1)
@@ -173,10 +193,13 @@ class MockCamera:
             modulation = 0.5 + 0.35 * np.sin(phase) + blob["twinkle"] * np.sin((phase * 0.5) + blob["phase"])
             intensity = max_value * np.clip(blob["base"] + (blob["amplitude"] * modulation), 0.03, 0.92)
 
-            frame[y_min:y_max, x_min:x_max] += gaussian_patch * intensity
+            frame[y_min:y_max, x_min:x_max] += gaussian_patch * intensity        
 
-        frame += rng.normal(0.0, max_value * 0.004, size=(height, width)).astype(np.float32)
-        frame = np.clip(frame, background_floor, max_value).astype(dtype)
+        # Shot noise: lower shot_noise_photons = noisier image (good for testing LP filter)
+        shot_noise_photons = 300.0
+        photons = np.clip(frame * (shot_noise_photons / max_value), 0.0, None)
+        frame = rng.poisson(photons).astype(np.float32) * (max_value / shot_noise_photons)
+        frame = np.clip(frame, 0.0, max_value).astype(dtype)
         state["frame_index"] += 1
         return Acquisition(frame, self.BitDepth)
 

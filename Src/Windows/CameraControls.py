@@ -1,6 +1,7 @@
 import ctypes
 from collections import deque
-import os  
+import datetime
+import os
 import shutil
 import tempfile
 import threading
@@ -1170,9 +1171,14 @@ class CameraSystem:
         channel_payload = camera.get("scope_frame_mean_buffers", {})
         settings_payload = payload.get("settings", {}) or {}
 
+        acquisitions_array = np.asarray(camera["acquisitions"])
+        frame_count = int(acquisitions_array.shape[0]) if acquisitions_array.ndim >= 1 else 0
         save_arrays = {
-            "camera_acquisitions": np.asarray(camera["acquisitions"]),
+            "camera_acquisitions": acquisitions_array,
             "camera_timestamps": np.asarray(camera["timestamps"], dtype=np.float64),
+            "meta_type": np.asarray("video"),
+            "meta_frame_count": np.asarray(frame_count, dtype=np.int64),
+            "meta_created_at": np.asarray(datetime.datetime.now().isoformat()),
         }
 
         for channel_name, samples in sorted(channel_payload.items()):
@@ -1859,6 +1865,9 @@ class CameraSystem:
                 "camera_acquisitions": frame_data["acquisitions"],
                 "camera_timestamps": frame_data["timestamps"],
                 "camera_storage_dtype": frame_data["camera_storage_dtype"],
+                "meta_type": np.asarray("snapshot"),
+                "meta_frame_count": np.asarray(1, dtype=np.int64),
+                "meta_created_at": np.asarray(datetime.datetime.now().isoformat()),
             }
             if "camera_zero" in frame_data:
                 save_arrays["camera_zero"] = frame_data["camera_zero"]
@@ -2265,7 +2274,7 @@ class CameraSystem:
             elapsed_seconds = max(0.0, time.perf_counter() - self.acquisition_started_at)
             camera_progress = min(1.0, self.Andor.frameIdx / max(self.acquisition_target_frames, 1))
             scope_controller = self._get_scope_controller()
-            scope_sample_count = len(scope_controller.driver.get_timestamps()) if scope_controller is not None else 0
+            scope_sample_count = len(scope_controller.driver.timestamps) if scope_controller is not None else 0
             scope_progress = min(1.0, scope_sample_count / max(self.acquisition_scope_target_samples, 1))
             progress_value = min(camera_progress, scope_progress)
             overlay = f"{self.Andor.frameIdx}/{self.acquisition_target_frames} frames | {elapsed_seconds:0.1f}s"

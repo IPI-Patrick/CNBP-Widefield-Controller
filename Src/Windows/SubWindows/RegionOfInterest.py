@@ -30,13 +30,12 @@ class RegionOfInterest:
         self.last_frame_idx = -1
         self.trace_min_value = 0.0
         self.trace_max_value = 0.0
-        self._processing_state_key = None
-        self._filter_previous_input = None
-        self._filter_previous_output = None
+        self._last_processed_frame_idx = -1
 
-        initial_crop, _ = self.parent.get_roi_frame(self.bounds)
-        if initial_crop is None:
-            initial_crop = np.zeros((1, 1), dtype=self.Andor.storage_dtype)
+        with self.Andor.processed_frame_condition:
+            proc_frame = self.Andor.processed_frame
+        x1, y1, x2, y2 = self._normalize_bounds(self.bounds)
+        initial_crop = np.array(proc_frame[y1:y2, x1:x2], copy=True) if proc_frame is not None and x2 > x1 and y2 > y1 else np.zeros((1, 1), dtype=np.float32)
         self.image_width = max(1, int(initial_crop.shape[1]))
         self.image_height = max(1, int(initial_crop.shape[0]))
         self.pending_image_rgba = self._frame_to_rgba(initial_crop)
@@ -67,7 +66,7 @@ class RegionOfInterest:
     def request_trace_rebuild(self, clear_existing=False):
         if clear_existing:
             with self.data_lock:
-                self.last_frame_idx = -1
+                self._last_processed_frame_idx = -1
                 self.pending_plot_data = ([], [])
                 self.trace_min_value = 0.0
                 self.trace_max_value = 0.0
@@ -83,88 +82,46 @@ class RegionOfInterest:
     def _get_plot_x_axis(self, point_count):
         return self.Andor.get_estimated_time_axis_values(point_count).tolist()
 
-    def _build_history_trace(self, frames):
-        y_axis = []
+    def _worker_loop(self):
+        y_axis = deque(maxlen=self.max_points)
+        trace_min_value = 0.0
+        trace_max_value = 0.0
 
-        for frame in frames:
-            if frame is None or frame.size == 0:
+        while not self.stop_event.is_set():
+            rebuild_requested = self.rebuild_event.is_set()
+
+            with self.Andor.processed_frame_condition:
+                current_idx = self.Andor.processed_frame_idx
+                if not rebuild_requested and current_idx == self._last_processed_frame_idx:
+                    self.Andor.processed_frame_condition.wait(timeout=0.05)
+                    continue
+                frame_ref = self.Andor.processed_frame
+
+            if frame_ref is None:
+                self._last_processed_frame_idx = current_idx
+                time.sleep(0.01)
                 continue
-            y_axis.append(self.rois_window.compute_trace_value(frame))
 
-        return y_axis[-self.max_points:]
+            if rebuild_requested:
+                self.rebuild_event.clear()
+                y_axis.clear()
+                trace_min_value = 0.0
+                trace_max_value = 0.0
 
-    def _reset_processing_state(self):
-        self._processing_state_key = None
-        self._filter_previous_input = None
-        self._filter_previous_output = None
-
-    def _process_crops(self, raw_crops, zero_crop, state_key, reset_state=False):
-        if raw_crops is None or len(raw_crops) <= 0:
-            return []
-
-        if reset_state or self._processing_state_key != state_key:
-            self._reset_processing_state()
-
-        lp_filter_enabled = bool(state_key[1]) if state_key is not None else False
-        coefficients = self.Andor.get_lp_filter_coefficients() if lp_filter_enabled else None
-        processed_crops = []
-
-        for raw_crop in raw_crops:
-            if lp_filter_enabled:
-                current_input = np.asarray(raw_crop, dtype=np.float32)
-                filtered_output = self.Andor.apply_lp_filter_step(
-                    current_input,
-                    self._filter_previous_input,
-                    self._filter_previous_output,
-                    coefficients,
-                )
-                self._filter_previous_input = np.array(current_input, copy=True)
-                self._filter_previous_output = np.array(filtered_output, copy=True)
-                source_crop = np.array(self.Andor.coerce_raw_frame_to_storage(filtered_output), copy=True)
-            else:
-                source_crop = np.array(raw_crop, copy=True)
-
-            processed_crops.append(self.parent.process_analysis_frame(source_crop, zero_frame=zero_crop))
-
-        if not lp_filter_enabled:
-            self._filter_previous_input = None
-            self._filter_previous_output = None
-
-        self._processing_state_key = state_key
-        return processed_crops
-
-    def _queue_update(self, crop, frame_idx, y_axis, trace_min_value, trace_max_value):
-        plot_x_axis = self._get_plot_x_axis(len(y_axis))
-        with self.data_lock:
-            self.last_frame_idx = frame_idx
-            self.trace_min_value = float(trace_min_value)
-            self.trace_max_value = float(trace_max_value)
-            if crop is not None and crop.size > 0:
-                self.pending_image_shape = crop.shape
-                self.pending_image_rgba = self._frame_to_rgba(crop)
-            self.pending_plot_data = (plot_x_axis, list(y_axis))
-            self.pending_version += 1
-
-    def _append_trace_points_from_history(self, bounds, acquisitions, timestamps, current_frame_idx, processed_frame_idx, x_axis, y_axis, trace_min_value, trace_max_value):
-        if not acquisitions:
-            return x_axis, y_axis, trace_min_value, trace_max_value, None
-
-        start_frame_idx = max(0, int(current_frame_idx) - len(acquisitions))
-        first_available_frame_number = start_frame_idx + 1
-        next_frame_number = max(int(processed_frame_idx) + 1, first_available_frame_number)
-        start_offset = max(0, next_frame_number - first_available_frame_number)
-        latest_valid_crop = None
-
-        for local_index, frame in enumerate(acquisitions[start_offset:], start=start_offset):
-            frame_number = start_frame_idx + local_index + 1
-            crop = self.parent.extract_roi_frame(frame, bounds)
-            if crop is None or crop.size == 0:
+            bounds = self.get_bounds()
+            x1, y1, x2, y2 = self.parent._normalize_bounds(bounds)
+            if x2 <= x1 or y2 <= y1:
+                self._last_processed_frame_idx = current_idx
                 continue
-            latest_valid_crop = crop
-            x_value = float(timestamps[local_index]) if timestamps and len(timestamps) > local_index else float(frame_number)
+
+            crop = np.array(frame_ref[y1:y2, x1:x2], copy=True)
+            if crop.size == 0:
+                self._last_processed_frame_idx = current_idx
+                continue
+
             y_value = self.rois_window.compute_trace_value(crop)
-            x_axis.append(x_value)
             y_axis.append(y_value)
+
             if len(y_axis) == 1:
                 trace_min_value = y_value
                 trace_max_value = y_value
@@ -172,73 +129,17 @@ class RegionOfInterest:
                 trace_min_value = min(trace_min_value, y_value)
                 trace_max_value = max(trace_max_value, y_value)
 
-        return x_axis, y_axis, trace_min_value, trace_max_value, latest_valid_crop
+            plot_x_axis = self._get_plot_x_axis(len(y_axis))
 
-    def _worker_loop(self):
-        processed_frame_idx = -1
-        y_axis = deque(maxlen=self.max_points)
-        trace_min_value = 0.0
-        trace_max_value = 0.0
+            with self.data_lock:
+                self.last_frame_idx = current_idx
+                self.trace_min_value = float(trace_min_value)
+                self.trace_max_value = float(trace_max_value)
+                self.pending_image_rgba = self._frame_to_rgba(crop)
+                self.pending_plot_data = (plot_x_axis, list(y_axis))
+                self.pending_version += 1
 
-        while not self.stop_event.is_set():
-            rebuild_requested = self.rebuild_event.is_set()
-            bounds = self.get_bounds()
-            latest_crop, current_frame_idx, has_acquisitions, raw_crops, _, zero_crop, state_key, first_available_frame_idx = self.parent.get_roi_processing_update(
-                bounds,
-                include_history=rebuild_requested,
-                include_timestamps=False,
-                history_start_frame_idx=processed_frame_idx if not rebuild_requested else None,
-            )
-
-            if rebuild_requested:
-                self.rebuild_event.clear()
-                processed_crops = self._process_crops(raw_crops, zero_crop, state_key, reset_state=True)
-                rebuilt_y_axis = self._build_history_trace(processed_crops)
-                y_axis = deque(rebuilt_y_axis, maxlen=self.max_points)
-                trace_min_value = min(y_axis) if y_axis else 0.0
-                trace_max_value = max(y_axis) if y_axis else 0.0
-                crop = None
-                if latest_crop is not None and getattr(latest_crop, "size", 0) > 0:
-                    crop = self.parent.process_analysis_frame(np.array(latest_crop, copy=True), zero_frame=zero_crop)
-                elif processed_crops:
-                    crop = processed_crops[-1]
-                if crop is not None and crop.size == 0:
-                    crop = None
-                self._queue_update(crop, current_frame_idx, y_axis, trace_min_value, trace_max_value)
-                processed_frame_idx = current_frame_idx
-
-            elif has_acquisitions and latest_crop is not None and current_frame_idx != processed_frame_idx:
-                reset_state = self._processing_state_key != state_key or processed_frame_idx < (first_available_frame_idx - 1)
-                processed_crops = self._process_crops(raw_crops, zero_crop, state_key, reset_state=reset_state)
-                if processed_crops:
-                    for crop in processed_crops:
-                        y_value = self.rois_window.compute_trace_value(crop)
-                        y_axis.append(y_value)
-                        if len(y_axis) == 1:
-                            trace_min_value = y_value
-                            trace_max_value = y_value
-                        else:
-                            trace_min_value = min(trace_min_value, y_value)
-                            trace_max_value = max(trace_max_value, y_value)
-
-                    latest_processed_crop = processed_crops[-1]
-                    self._queue_update(latest_processed_crop, current_frame_idx, y_axis, trace_min_value, trace_max_value)
-                processed_frame_idx = current_frame_idx
-
-            elif latest_crop is not None:
-                state_changed = self._processing_state_key != state_key
-                if current_frame_idx == processed_frame_idx and not state_changed:
-                    time.sleep(0.01)
-                    continue
-                if state_changed:
-                    self._reset_processing_state()
-                    self._processing_state_key = state_key
-                processed_crop = self.parent.process_analysis_frame(np.array(latest_crop, copy=True), zero_frame=zero_crop)
-                if processed_crop is not None and getattr(processed_crop, "size", 0) > 0:
-                    self._queue_update(processed_crop, current_frame_idx, y_axis, trace_min_value, trace_max_value)
-                processed_frame_idx = current_frame_idx
-
-            time.sleep(0.01)
+            self._last_processed_frame_idx = current_idx
 
     def _frame_to_rgba(self, frame):
         return self.parent.frame_to_rgba(frame)

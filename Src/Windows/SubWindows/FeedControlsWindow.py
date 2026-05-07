@@ -116,9 +116,57 @@ class FeedControlsWindow:
                     dpg.add_item_deactivated_after_edit_handler(callback=self.parent._on_lp_filter_cutoff_changed)
                 dpg.bind_item_handler_registry(self.lp_filter_cutoff_input_id, f"{self.parent.tag}_LpFilterCutoffHandler")
 
+                self.drift_correction_checkbox_id = dpg.add_checkbox(
+                    label="Drift Correction",
+                    default_value=self.parent.drift_correction_enabled,
+                    callback=self.parent._on_drift_correction_changed,
+                )
+
+            dpg.add_separator()
+
+            with dpg.tree_node(label="Focus Level", default_open=True, span_full_width=True) as focus_level_node_id:
+                self.section_node_ids["focus_level"] = focus_level_node_id
+                self._focus_bar_w = 256
+                self._focus_bar_h = 18
+                with dpg.drawlist(width=self._focus_bar_w, height=self._focus_bar_h):
+                    self._focus_drawlist_id = dpg.last_item()
+                    # Background
+                    dpg.draw_rectangle([0, 0], [self._focus_bar_w, self._focus_bar_h],
+                                       fill=[60, 60, 60], color=[0, 0, 0, 0])
+                    # Green in-focus zone (centre ±10 %)
+                    _gz_l = int(self._focus_bar_w * 0.44)
+                    _gz_r = int(self._focus_bar_w * 0.56)
+                    dpg.draw_rectangle([_gz_l, 1], [_gz_r, self._focus_bar_h - 1],
+                                       fill=[50, 190, 80, 200], color=[0, 0, 0, 0])
+                    # Centre tick
+                    _cx = self._focus_bar_w // 2
+                    dpg.draw_line([_cx, 0], [_cx, self._focus_bar_h],
+                                  color=[180, 180, 180, 120], thickness=1)
+                    # Position marker (starts at centre, updated each frame)
+                    self._focus_marker_id = dpg.draw_rectangle(
+                        [_cx - 2, 1], [_cx + 2, self._focus_bar_h - 1],
+                        fill=[255, 255, 255], color=[0, 0, 0, 0],
+                    )
+                self._focus_label_id = dpg.add_text("No reference set")
+
             dpg.add_separator()
             dpg.add_button(label="Set Zero", width=-1, callback=self.parent._on_set_zero)
             dpg.add_button(label="Reset Zoom", width=-1, callback=self.parent._reset_zoom)
+
+    def update_focus_indicator(self, focus_level, has_reference):
+        if not dpg.does_item_exist(self._focus_marker_id):
+            return
+        w = self._focus_bar_w
+        h = self._focus_bar_h
+        x = int((float(focus_level) + 1.0) * 0.5 * w)
+        x = max(2, min(w - 2, x))
+        dpg.configure_item(self._focus_marker_id, pmin=[x - 2, 1], pmax=[x + 2, h - 1])
+        if dpg.does_item_exist(self._focus_label_id):
+            if not has_reference:
+                dpg.set_value(self._focus_label_id, "No reference — press Set Zero")
+            else:
+                pct = int(focus_level * 100)
+                dpg.set_value(self._focus_label_id, f"Focus offset: {pct:+d}%")
 
     def _state_name(self):
         return f"{type(self).__name__}_{self.parent.tag}"

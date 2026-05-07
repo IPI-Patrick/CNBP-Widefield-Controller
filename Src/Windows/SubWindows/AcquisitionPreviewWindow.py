@@ -1,3 +1,4 @@
+import io
 import os
 import threading
 import time
@@ -46,6 +47,10 @@ class PreviewAndorAdapter:
         self.parent = parent
         self.storage_dtype = np.dtype(np.uint16)
         self.max_acquisitions = 0
+        self.processed_frame = np.zeros((1, 1), dtype=np.float32)
+        self.processed_frame_idx = -1
+        self.processed_frame_condition = threading.Condition()
+        self.frame_lock = threading.Lock()
 
     def update_from_payload(self, payload):
         acquisitions = np.asarray(payload.get("acquisitions", []))
@@ -60,10 +65,22 @@ class PreviewAndorAdapter:
         return timestamps[: int(point_count)]
 
     def get_lp_filter_coefficients(self):
-        return None
+        payload = self.parent.get_loaded_payload()
+        if payload is None:
+            return None
+        sample_rate_hz = max(float(self.parent.playback_fps), 1e-6)
+        nyquist_hz = sample_rate_hz * 0.5
+        cutoff_hz = float(np.clip(self.parent.lp_filter_cutoff_hz, 1e-6, max(1e-6, nyquist_hz * 0.99)))
+        k = float(np.tan(np.pi * cutoff_hz / sample_rate_hz))
+        norm = 1.0 / (1.0 + k)
+        return (k * norm), (k * norm), ((k - 1.0) * norm)
 
-    def apply_lp_filter_step(self, current_input, _previous_input, _previous_output, _coefficients):
-        return np.asarray(current_input, dtype=np.float32)
+    def apply_lp_filter_step(self, current_input, previous_input, previous_output, coefficients):
+        if coefficients is None or previous_input is None or previous_output is None:
+            return np.asarray(current_input, dtype=np.float32)
+        b0, b1, a1 = coefficients
+        filtered = b0 * current_input + b1 * previous_input - a1 * previous_output
+        return np.clip(filtered, 0.0, float(self.parent.display_max)).astype(np.float32)
 
     def coerce_raw_frame_to_storage(self, frame):
         return np.asarray(frame, dtype=self.storage_dtype)
@@ -159,7 +176,11 @@ class AcquisitionPreviewWindow:
         self.autoscale_grace_percent = 5.0
         self.mirrored_difference_scale = False
         self.lp_filter_enabled = False
-        self.lp_filter_cutoff_hz = 0.0
+        self.lp_filter_cutoff_hz = 5.0
+        self._lp_filter_frames_cache = None
+        self._lp_filter_cache_key = None
+        self.lp_filter_checkbox_id = None
+        self.lp_filter_cutoff_input_id = None
         self.colormap_name = "Viridis"
         self._colormap_per_mode = {
             "Normal": self.single_sided_colormap_names[0],
@@ -313,6 +334,29 @@ class AcquisitionPreviewWindow:
                                 callback=self._on_colormap_changed,
                             )
                             dpg.add_button(label="Set Zero", width=-1, callback=self._on_set_zero)
+
+                        dpg.add_separator()
+
+                        with dpg.tree_node(label="Signal Processing", default_open=True, span_full_width=True):
+                            self.section_node_ids["signal_processing"] = dpg.last_item()
+                            self.lp_filter_checkbox_id = dpg.add_checkbox(
+                                label="LP Filter",
+                                default_value=self.lp_filter_enabled,
+                                callback=self._on_lp_filter_enabled_changed,
+                            )
+                            self.lp_filter_cutoff_input_id = dpg.add_input_float(
+                                label="Cutoff (Hz)",
+                                width=-120,
+                                default_value=self.lp_filter_cutoff_hz,
+                                min_value=0.001,
+                                min_clamped=True,
+                                step=0.5,
+                                on_enter=True,
+                                callback=self._on_lp_filter_cutoff_changed,
+                            )
+                            with dpg.item_handler_registry(tag=f"{self.tag}_LpCutoffHandler"):
+                                dpg.add_item_deactivated_after_edit_handler(callback=self._on_lp_filter_cutoff_changed)
+                            dpg.bind_item_handler_registry(self.lp_filter_cutoff_input_id, f"{self.tag}_LpCutoffHandler")
 
                         dpg.add_separator()
 
@@ -526,6 +570,7 @@ class AcquisitionPreviewWindow:
             return
 
         self._loaded_payload = payload
+        self._invalidate_lp_cache()
         self.Andor.update_from_payload(payload)
         self.current_frame_index = 0
         self.playback_fps = float(payload["playback_fps"])
@@ -539,7 +584,7 @@ class AcquisitionPreviewWindow:
         self._sync_scale_inputs_from_values()
         self._update_settings_controls_state()
         self._initialize_loaded_ui()
-        self._mark_image_dirty()
+        self._mark_image_dirty()   # also calls _push_processed_frame
 
         if dpg.does_item_exist(self.loading_text_id):
             dpg.set_value(self.loading_text_id, os.path.basename(self.file_path))
@@ -611,6 +656,66 @@ class AcquisitionPreviewWindow:
 
     def _mark_image_dirty(self):
         self.image_dirty = True
+        self._push_processed_frame()
+
+    def _push_processed_frame(self):
+        frame = self._get_display_frame()
+        if frame is None:
+            return
+        processed = np.asarray(frame, dtype=np.float32)
+        with self.Andor.processed_frame_condition:
+            self.Andor.processed_frame = processed
+            self.Andor.processed_frame_idx += 1
+            self.Andor.processed_frame_condition.notify_all()
+
+    def _invalidate_lp_cache(self):
+        self._lp_filter_frames_cache = None
+        self._lp_filter_cache_key = None
+
+    def _get_lp_cache_key(self):
+        if self._loaded_payload is None:
+            return None
+        return (self.lp_filter_cutoff_hz, self.playback_fps, self._loaded_payload["acquisitions"].shape)
+
+    def _ensure_lp_filter_cache(self):
+        key = self._get_lp_cache_key()
+        if key is None or key == self._lp_filter_cache_key:
+            return
+        acquisitions = np.asarray(self._loaded_payload["acquisitions"])
+        if acquisitions.ndim < 3:
+            return
+        sample_rate_hz = max(float(self.playback_fps), 1e-6)
+        nyquist_hz = sample_rate_hz * 0.5
+        cutoff_hz = float(np.clip(self.lp_filter_cutoff_hz, 1e-6, max(1e-6, nyquist_hz * 0.99)))
+        k = float(np.tan(np.pi * cutoff_hz / sample_rate_hz))
+        norm = 1.0 / (1.0 + k)
+        b0, b1, a1 = (k * norm), (k * norm), ((k - 1.0) * norm)
+        max_value = float(self.display_max)
+        out = np.empty_like(acquisitions)
+        prev_in = prev_out = None
+        for i in range(len(acquisitions)):
+            cur_in = np.asarray(acquisitions[i], dtype=np.float32)
+            if prev_in is None:
+                out[i] = acquisitions[i]
+            else:
+                out[i] = np.clip(b0 * cur_in + b1 * prev_in - a1 * prev_out, 0.0, max_value).astype(acquisitions.dtype)
+            prev_in = cur_in
+            prev_out = np.asarray(out[i], dtype=np.float32)
+        self._lp_filter_frames_cache = out
+        self._lp_filter_cache_key = key
+
+    def _on_lp_filter_enabled_changed(self, sender, app_data):
+        self.lp_filter_enabled = bool(app_data)
+        self._mark_image_dirty()
+        self._request_all_roi_rebuilds()
+
+    def _on_lp_filter_cutoff_changed(self, sender=None, app_data=None):
+        if self.lp_filter_cutoff_input_id is not None and dpg.does_item_exist(self.lp_filter_cutoff_input_id):
+            self.lp_filter_cutoff_hz = max(1e-3, float(dpg.get_value(self.lp_filter_cutoff_input_id)))
+        self._invalidate_lp_cache()
+        if self.lp_filter_enabled:
+            self._mark_image_dirty()
+            self._request_all_roi_rebuilds()
 
     def _get_frame_count(self):
         if self._loaded_payload is None:
@@ -622,6 +727,10 @@ class AcquisitionPreviewWindow:
             return None
         frame_index = self.current_frame_index if frame_index is None else int(frame_index)
         frame_index = int(np.clip(frame_index, 0, self._get_frame_count() - 1))
+        if self.lp_filter_enabled:
+            self._ensure_lp_filter_cache()
+            if self._lp_filter_frames_cache is not None:
+                return self._lp_filter_frames_cache[frame_index]
         return self._loaded_payload["normal_frames"][frame_index]
 
     def _compute_difference_frame(self, frame):

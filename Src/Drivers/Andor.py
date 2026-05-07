@@ -64,6 +64,9 @@ class Andor:
         self.lp_filter_enabled  = False
         self.lp_filter_cutoff_hz = min(10.0, max(0.5, self.get_frame_rate() * 0.1))
         self.zero_version       = 0
+        self.processed_frame      = np.zeros(frame_shape, dtype=np.float32)
+        self.processed_frame_idx  = -1
+        self.processed_frame_condition = threading.Condition()
         self.scope_frame_mean_channels = ()
         self.scope_frame_mean_capacity = 0
         self.scope_frame_mean_buffers = {}
@@ -409,6 +412,8 @@ class Andor:
             if zero_shape_changed:
                 self.zero = np.zeros(frame_shape, dtype=self.raw_storage_dtype)
                 self.zero_version = 0
+            self.processed_frame = np.zeros(frame_shape, dtype=np.float32)
+            self.processed_frame_idx = -1
             self.latest_frame = np.zeros(frame_shape, dtype=self.raw_storage_dtype)
             if reset_frame_index:
                 self.frameIdx = 0

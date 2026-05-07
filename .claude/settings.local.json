@@ -4,7 +4,9 @@
       "WebFetch(domain:dearpygui.readthedocs.io)",
       "WebSearch",
       "Bash(git -C \"c:\\\\CodingProjects\\\\Widefield-Controller\" diff --stat HEAD)",
-      "Bash(git -C \"c:\\\\CodingProjects\\\\Widefield-Controller\" diff HEAD \"Src/Windows/CameraControls.py\")"
+      "Bash(git -C \"c:\\\\CodingProjects\\\\Widefield-Controller\" diff HEAD \"Src/Windows/CameraControls.py\")",
+      "WebFetch(domain:scikit-image.org)",
+      "WebFetch(domain:www.nature.com)"
     ]
   }
 }
