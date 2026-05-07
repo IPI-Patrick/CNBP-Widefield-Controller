@@ -9,12 +9,13 @@ from Utils.themes import no_padding_theme
 
 class OscilloscopeWindow:
 
-	def __init__(self, trace_getters, *, title="Oscilloscope", channel_headers=None, width=880, height=420, pos=(625, 825), state_name=None, tag=None):
+	def __init__(self, trace_getters, *, title="Oscilloscope", channel_headers=None, width=880, height=420, pos=(625, 825), state_name=None, tag=None, parent=None, embedded=False):
 		self._title = str(title)
 		self._trace_getters = list(trace_getters)
 		self._channel_headers = list(channel_headers or [])
 		self._state_name = str(state_name or type(self).__name__)
 		self._tag = str(tag or f"#{self._state_name}")
+		self._embedded = bool(embedded)
 		self._trace_items = {}
 		self._trace_layout = ()
 		self._subplots_id = None
@@ -26,26 +27,34 @@ class OscilloscopeWindow:
 		self._x_data_limits = (0.0, 1.0)
 		self._min_x_range_seconds = 1e-6
 		self._x_pan_state = None
+		self.window_id = None
+		self.root_container_id = None
 
 		with dpg.font_registry():
 			label_font_path = os.path.abspath("src/Assets/Fonts/arial.ttf")
 			self.channel_label_font = dpg.add_font(label_font_path, 18)
 
-		with dpg.window(
-			label=self._title,
-			tag=self._tag,
-			width=width,
-			height=height,
-			pos=pos,
-			no_scrollbar=True,
-			no_resize=False,
-			no_scroll_with_mouse=True,
-		):
-			self.window_id = dpg.last_item()
-			dpg.bind_item_theme(self.window_id, no_padding_theme)
+		if self._embedded:
+			with dpg.group(parent=parent) as self.root_container_id:
+				with dpg.child_window(border=False, width=-1, height=height, no_scrollbar=True, no_scroll_with_mouse=True):
+					self.content_container_id = dpg.last_item()
+		else:
+			with dpg.window(
+				label=self._title,
+				tag=self._tag,
+				width=width,
+				height=height,
+				pos=pos,
+				no_scrollbar=True,
+				no_resize=False,
+				no_scroll_with_mouse=True,
+			):
+				self.window_id = dpg.last_item()
+				self.root_container_id = self.window_id
+				dpg.bind_item_theme(self.window_id, no_padding_theme)
 
-			with dpg.child_window(border=False, autosize_x=True, autosize_y=True):
-				self.content_container_id = dpg.last_item()
+				with dpg.child_window(border=False, autosize_x=True, autosize_y=True):
+					self.content_container_id = dpg.last_item()
 
 		handler_tag = f"{self._state_name}_MouseHandlers"
 		with dpg.handler_registry(tag=handler_tag):
@@ -92,7 +101,8 @@ class OscilloscopeWindow:
 		}
 
 	def is_visible(self):
-		return dpg.does_item_exist(self.window_id) and dpg.is_item_shown(self.window_id)
+		container_id = self.root_container_id or self.window_id
+		return container_id is not None and dpg.does_item_exist(container_id) and dpg.is_item_shown(container_id)
 
 	def _get_traces(self):
 		traces = []
@@ -390,21 +400,21 @@ class OscilloscopeWindow:
 		self._apply_y_limits()
 
 	def SaveState(self):
-		save_state_file(
-			self._state_name,
-			{
-				"window": capture_window_state(self.window_id),
-				"y_half_range_volts": float(self._y_half_range_volts),
-				"x_view_limits": list(self._x_view_limits) if self._x_view_limits is not None else None,
-			},
-		)
+		payload = {
+			"y_half_range_volts": float(self._y_half_range_volts),
+			"x_view_limits": list(self._x_view_limits) if self._x_view_limits is not None else None,
+		}
+		if not self._embedded:
+			payload["window"] = capture_window_state(self.window_id)
+		save_state_file(self._state_name, payload)
 
 	def LoadState(self):
 		state = load_state_file(self._state_name)
 		if not state:
 			return
 
-		apply_window_state(self.window_id, state.get("window"))
+		if not self._embedded:
+			apply_window_state(self.window_id, state.get("window"))
 		if "y_half_range_volts" in state:
 			self._y_half_range_volts = min(
 				self._max_half_range_volts,
