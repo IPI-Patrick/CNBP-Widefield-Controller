@@ -137,6 +137,7 @@ class AcquisitionPreviewWindow:
         self.display_mode_combo_id = None
         self.color_scale_combo_id = None
         self.scope_container_id = None
+        self.roi_scaling_panel_id = None
         self.rois_status_text_id = None
         self.rois_panel_id = None
         self.settings_container_id = None
@@ -323,10 +324,17 @@ class AcquisitionPreviewWindow:
 
                         dpg.add_separator()
 
+                        with dpg.tree_node(label="ROI Scaling", default_open=True, span_full_width=True):
+                            self.section_node_ids["roi_scaling"] = dpg.last_item()
+                            with dpg.child_window(height=180, border=False, autosize_x=True, no_scrollbar=True, no_scroll_with_mouse=True):
+                                self.roi_scaling_panel_id = dpg.last_item()
+
+                        dpg.add_separator()
+
                         with dpg.tree_node(label="ROIs", default_open=True, span_full_width=True):
                             self.section_node_ids["rois"] = dpg.last_item()
                             self.rois_status_text_id = dpg.add_text("0 ROIs")
-                            with dpg.child_window(height=420, border=False, autosize_x=True):
+                            with dpg.child_window(height=1, border=False, autosize_x=True, no_scrollbar=True, no_scroll_with_mouse=True):
                                 self.rois_panel_id = dpg.last_item()
 
                         dpg.add_separator()
@@ -364,7 +372,8 @@ class AcquisitionPreviewWindow:
             width=640,
             height=420,
             state_name=self.rois_state_name,
-            parent=self.rois_panel_id,
+            controls_parent=self.roi_scaling_panel_id,
+            content_parent=self.rois_panel_id,
         )
         self._reset_zoom(redraw=False)
         self.LoadState()
@@ -434,6 +443,12 @@ class AcquisitionPreviewWindow:
                 scope_channels[channel_name] = np.asarray(archive[key], dtype=np.float32)
 
         scope_plot_channels = self._build_scope_plot_channels(scope_channels, relative_timestamps)
+        saved_settings = self._extract_saved_settings(archive)
+
+        if "camera_zero" in archive:
+            candidate = np.asarray(archive["camera_zero"])
+            if np.issubdtype(candidate.dtype, np.integer):
+                zero_frame = candidate
 
         if zero_frame is None or tuple(np.shape(zero_frame)) != tuple(normal_frames[0].shape):
             zero_frame = np.array(normal_frames[0], copy=True)
@@ -451,7 +466,37 @@ class AcquisitionPreviewWindow:
             "zero_frame": np.array(zero_frame, copy=True),
             "scope_channels": scope_channels,
             "scope_plot_channels": scope_plot_channels,
+            "saved_settings": saved_settings,
         }
+
+    def _extract_saved_settings(self, archive):
+        saved_settings = {}
+        for key in archive.files:
+            if not key.startswith("settings_"):
+                continue
+            setting_name = key[len("settings_"):]
+            raw_value = np.asarray(archive[key])
+            saved_settings[setting_name] = self._coerce_saved_setting_value(raw_value)
+        return saved_settings
+
+    def _coerce_saved_setting_value(self, raw_value):
+        if getattr(raw_value, "shape", None) == ():
+            return raw_value.item()
+        if getattr(raw_value, "size", 0) == 1:
+            return raw_value.reshape(()).item()
+        return raw_value.tolist()
+
+    def _format_setting_label(self, setting_name):
+        return str(setting_name).replace("_", " ").strip().title()
+
+    def _format_setting_value(self, value):
+        if isinstance(value, bool):
+            return "True" if value else "False"
+        if isinstance(value, float):
+            return f"{value:.6g}"
+        if isinstance(value, (list, tuple)):
+            return ", ".join(self._format_setting_value(item) for item in value)
+        return str(value)
 
     def _build_scope_plot_channels(self, scope_channels, relative_timestamps):
         plot_channels = {}
@@ -1009,7 +1054,7 @@ class AcquisitionPreviewWindow:
             )
 
         dpg.configure_item(self.image_draw_id, texture_tag=self.texture_id)
-        self._update_image_draw_transform()
+        self._update_image_draw_transform  ()
         self._update_layout()
 
     def _update_layout(self):
@@ -1040,9 +1085,17 @@ class AcquisitionPreviewWindow:
             dpg.set_item_pos(self.frame_slider_id, (controls_x, max(8, controls_y - 28)))
         if self.playback_controls_group_id is not None and dpg.does_item_exist(self.playback_controls_group_id):
             dpg.set_item_pos(self.playback_controls_group_id, (controls_x, controls_y))
+        self._update_roi_panel_height()
         dpg.configure_item(self.canvas_id, width=max(1, left_width), height=max(1, content_height))
         self._update_image_draw_transform()
         self._redraw_overlay()
+
+    def _update_roi_panel_height(self):
+        if self.rois_panel_id is None or not dpg.does_item_exist(self.rois_panel_id):
+            return
+        if self.rois_window is None or not hasattr(self.rois_window, "get_required_content_height"):
+            return
+        dpg.configure_item(self.rois_panel_id, height=max(1, int(self.rois_window.get_required_content_height())))
 
     def _on_window_resize(self, sender=None, app_data=None):
         self._update_layout()
@@ -1762,7 +1815,31 @@ class AcquisitionPreviewWindow:
 
     def _rebuild_settings_table(self):
         dpg.delete_item(self.settings_container_id, children_only=True)
-        dpg.add_text("This file format does not store acquisition settings.", parent=self.settings_container_id, wrap=360)
+        if self._loaded_payload is None:
+            dpg.add_text("No acquisition settings loaded.", parent=self.settings_container_id, wrap=360)
+            return
+
+        saved_settings = self._loaded_payload.get("saved_settings", {})
+        if not saved_settings:
+            dpg.add_text("This file format does not store acquisition settings.", parent=self.settings_container_id, wrap=360)
+            return
+
+        with dpg.table(
+            parent=self.settings_container_id,
+            header_row=False,
+            resizable=False,
+            borders_innerV=False,
+            borders_outerV=False,
+            borders_innerH=False,
+            borders_outerH=False,
+            policy=dpg.mvTable_SizingStretchProp,
+        ):
+            dpg.add_table_column(init_width_or_weight=0.46)
+            dpg.add_table_column(init_width_or_weight=0.54)
+            for setting_name, value in sorted(saved_settings.items()):
+                with dpg.table_row():
+                    dpg.add_text(self._format_setting_label(setting_name))
+                    dpg.add_text(self._format_setting_value(value), wrap=180)
 
     def _update_frame_display(self):
         if self._loaded_payload is None:

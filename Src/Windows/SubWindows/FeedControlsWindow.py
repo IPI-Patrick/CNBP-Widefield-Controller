@@ -65,6 +65,12 @@ class FeedControlsWindow:
                     callback=self.parent._on_mirrored_difference_changed,
                 )
 
+                self.colorbar_checkbox_id = dpg.add_checkbox(
+                    label="Color Scale Bar",
+                    default_value=self.parent.colorbar_enabled,
+                    callback=self.parent._on_colorbar_enabled_changed,
+                )
+
             dpg.add_separator()
 
             with dpg.tree_node(label="Zero-Referenced Display", default_open=True, span_full_width=True) as zero_referenced_display_node_id:

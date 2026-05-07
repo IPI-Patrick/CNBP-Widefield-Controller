@@ -47,11 +47,6 @@ class CameraSystem:
         self.acquisition_scope_buffer_seconds = 0.0
         self.acquisition_started_at = None
         self.acquisition_scope_duration_seconds = 0.0
-        self.spool_to_disk_enabled = False
-        self.spool_to_disk_directory = os.path.join(os.getcwd(), "Experiments")
-        self.spool_to_disk_filename = "acquisition"
-        self.spool_write_scope = True
-        self.spool_write_power = False
         self._acquisition_thread = None
         self._acquisition_awg_thread = None
         self._acquisition_awg_stop_event = None
@@ -88,6 +83,14 @@ class CameraSystem:
         self._preview_scope_started_collection = False
         self.preview_zero_reference_pending = False
         self.last_save_directory = os.path.join(os.getcwd(), "Experiments")
+        self.save_directory = os.path.join(os.getcwd(), "Experiments")
+        self.save_base_filename = "data"
+        self.save_file_index = 0
+        self.save_prompt_every_time = True
+        self._snapshot_thread = None
+        self._snapshot_in_progress = False
+        self._pending_snapshot_result = None
+        self._save_dialog_mode = "acquisition"
         self.aoi_auto_center_enabled = False
         self.preview_max_frames = int(getattr(Andor, "max_acquisitions", 200))
         self._storage_devices = []
@@ -428,51 +431,42 @@ class CameraSystem:
                     )
                     dpg.bind_item_theme(self.hardware_bitrate_value_id, self.hardware_readout_theme)
 
-                    self.hardware_spooling_value_id = dpg.add_input_text(
-                        label="Spool to Disk",
-                        width=-110,
-                        default_value="Unknown",
-                        readonly=True,
-                    )
-                    dpg.bind_item_theme(self.hardware_spooling_value_id, self.hardware_readout_theme)
-
                 dpg.add_separator()
-                with dpg.tree_node(label="Spool to Disk", default_open=True, span_full_width=True) as spool_to_disk_node_id:
-                    self.section_node_ids["spool_to_disk"] = spool_to_disk_node_id
-                    self.spool_to_disk_enabled_checkbox_id = dpg.add_checkbox(
-                        label="Enable Spooling",
-                        default_value=self.spool_to_disk_enabled,
-                        callback=self._on_spool_to_disk_changed,
-                    )
+                with dpg.tree_node(label="Saving", default_open=True, span_full_width=True) as saving_node_id:
+                    self.section_node_ids["saving"] = saving_node_id
 
-                    with dpg.group(horizontal=True) as self.spool_to_disk_location_row_id:
-                        self.spool_to_disk_directory_input_id = dpg.add_input_text(
-                            label="Location",
+                    with dpg.group(horizontal=True) as self.save_directory_row_id:
+                        self.save_directory_input_id = dpg.add_input_text(
+                            label="Save Dir",
                             width=-145,
-                            default_value=self.spool_to_disk_directory,
+                            default_value=self.save_directory,
                             readonly=True,
                         )
-                        dpg.bind_item_theme(self.spool_to_disk_directory_input_id, self.hardware_readout_theme)
-                        self.spool_to_disk_browse_button_id = dpg.add_button(
+                        dpg.bind_item_theme(self.save_directory_input_id, self.hardware_readout_theme)
+                        self.save_directory_browse_button_id = dpg.add_button(
                             label="Browse",
                             width=-1,
-                            callback=self._show_spool_location_dialog,
+                            callback=self._show_save_directory_dialog,
                         )
 
-                    self.spool_to_disk_filename_input_id = dpg.add_input_text(
-                        label="Filename",
+                    self.save_base_filename_input_id = dpg.add_input_text(
+                        label="Base Name",
                         width=-110,
-                        default_value=self.spool_to_disk_filename,
+                        default_value=self.save_base_filename,
                     )
 
-                    self.spool_write_scope_checkbox_id = dpg.add_checkbox(
-                        label="Write Scope",
-                        default_value=self.spool_write_scope,
+                    self.save_file_index_input_id = dpg.add_input_int(
+                        label="Index",
+                        width=-110,
+                        default_value=self.save_file_index,
+                        min_value=0,
+                        min_clamped=True,
+                        step=1,
                     )
 
-                    self.spool_write_power_checkbox_id = dpg.add_checkbox(
-                        label="Write Power",
-                        default_value=self.spool_write_power,
+                    self.save_prompt_every_time_checkbox_id = dpg.add_checkbox(
+                        label="Prompt Every Time",
+                        default_value=self.save_prompt_every_time,
                     )
 
                 dpg.add_separator()
@@ -500,6 +494,13 @@ class CameraSystem:
                     height=36,
                     callback=self.toggle_preview,
                     tag="start_camera_button"
+                )
+
+                self.snapshot_button_id = dpg.add_button(
+                    label="Snapshot",
+                    width=-1,
+                    height=36,
+                    callback=self._on_snapshot_pressed,
                 )
 
                 self.save_button_id = dpg.add_button(
@@ -548,17 +549,16 @@ class CameraSystem:
             with dpg.file_dialog(
                 directory_selector=True,
                 show=False,
-                callback=self._on_spool_location_selected,
+                callback=self._on_save_directory_selected,
                 width=700,
                 height=400,
                 modal=True,
-            ) as self.spool_location_dialog_id:
+            ) as self.save_directory_dialog_id:
                 pass
 
         self._update_preview_button_state()
         self._update_acquisition_button_state()
         self._update_acquisition_awg_visibility()
-        self._update_spool_to_disk_controls()
         self._refresh_storage_devices()
         self._set_acquisition_progress(0.0, "Idle")
         self._set_save_progress(0.0, "Save")
@@ -746,27 +746,6 @@ class CameraSystem:
     def _on_acquisition_awg_waveform_changed(self, sender, app_data, user_data=None):
         self.acquisition_awg_waveform = str(app_data).strip().lower()
         self._refresh_hardware_requirements(force=True)
-
-    def _update_spool_to_disk_controls(self):
-        controls_enabled = bool(dpg.get_value(self.spool_to_disk_enabled_checkbox_id)) and not self.acquisition_in_progress
-        dpg.configure_item(self.spool_to_disk_directory_input_id, enabled=controls_enabled)
-        dpg.configure_item(self.spool_to_disk_browse_button_id, enabled=controls_enabled)
-        dpg.configure_item(self.spool_to_disk_filename_input_id, enabled=controls_enabled)
-        dpg.configure_item(self.spool_write_scope_checkbox_id, enabled=controls_enabled)
-        dpg.configure_item(self.spool_write_power_checkbox_id, enabled=controls_enabled)
-
-    def _on_spool_to_disk_changed(self, sender=None, app_data=None, user_data=None):
-        self.spool_to_disk_enabled = bool(app_data)
-
-    def _show_spool_location_dialog(self, sender=None, app_data=None, user_data=None):
-        dpg.show_item(self.spool_location_dialog_id)
-
-    def _on_spool_location_selected(self, sender, app_data, user_data=None):
-        selected_path = str(app_data.get("file_path_name") or "").strip()
-        if not selected_path:
-            return
-        self.spool_to_disk_directory = selected_path
-        dpg.set_value(self.spool_to_disk_directory_input_id, selected_path)
 
     def _collect_acquisition_awg_config(self):
         waveform_type = str(dpg.get_value(self.acquisition_awg_waveform_combo_id)).strip().lower()
@@ -1321,7 +1300,6 @@ class CameraSystem:
 
         total_bitrate_value, total_bitrate_unit = self._format_bitrate(requirements["total_bits_per_second"])
         if requirements["drive_speed_bps"] is not None:
-            spooling_text = "Available" if requirements["total_bits_per_second"] <= (requirements["drive_speed_bps"] * 8.0) else "Unavailable"
             drive_bitrate_value, drive_bitrate_unit = self._format_bitrate(requirements["drive_speed_bps"] * 8.0)
             bitrate_unit = "Gbps" if "Gbps" in (total_bitrate_unit, drive_bitrate_unit) else "Mbps"
             bitrate_scale = float(1000.0) if bitrate_unit == "Gbps" and total_bitrate_unit == "Mbps" else 1.0
@@ -1331,19 +1309,15 @@ class CameraSystem:
                 self.hardware_bitrate_value_id,
                 f"{total_bitrate_value / bitrate_scale:0.2f} / {drive_bitrate_value / drive_bitrate_scale:0.2f}",
             )
-            dpg.set_value(self.hardware_spooling_value_id, spooling_text)
         elif requirements["drive_error"]:
             dpg.configure_item(self.hardware_bitrate_value_id, label=f"Bitrate ({total_bitrate_unit})")
             dpg.set_value(self.hardware_bitrate_value_id, f"{total_bitrate_value:0.2f} / Unknown")
-            dpg.set_value(self.hardware_spooling_value_id, "Unknown")
         elif selected_label:
             dpg.configure_item(self.hardware_bitrate_value_id, label=f"Bitrate ({total_bitrate_unit})")
             dpg.set_value(self.hardware_bitrate_value_id, f"{total_bitrate_value:0.2f} / Unknown")
-            dpg.set_value(self.hardware_spooling_value_id, "Unknown")
         else:
             dpg.configure_item(self.hardware_bitrate_value_id, label=f"Bitrate ({total_bitrate_unit})")
             dpg.set_value(self.hardware_bitrate_value_id, f"{total_bitrate_value:0.2f} / Unknown")
-            dpg.set_value(self.hardware_spooling_value_id, "Unknown")
 
     def _set_acquisition_progress(self, progress_value, overlay_text):
         self._acquisition_progress_value = max(0.0, min(1.0, float(progress_value)))
@@ -1551,11 +1525,10 @@ class CameraSystem:
             "awg_periodic_offset_volts":        float(dpg.get_value(self.acquisition_awg_periodic_offset_input_id)),
             "awg_start_after_seconds":          float(dpg.get_value(self.acquisition_awg_start_after_input_id)),
             "hardware_storage_drive":           str(dpg.get_value(self.hardware_drive_combo_id) or ""),
-            "spool_to_disk_enabled":            bool(dpg.get_value(self.spool_to_disk_enabled_checkbox_id)),
-            "spool_to_disk_directory":          str(dpg.get_value(self.spool_to_disk_directory_input_id) or ""),
-            "spool_to_disk_filename":           str(dpg.get_value(self.spool_to_disk_filename_input_id) or ""),
-            "spool_write_scope":                bool(dpg.get_value(self.spool_write_scope_checkbox_id)),
-            "spool_write_power":                bool(dpg.get_value(self.spool_write_power_checkbox_id)),
+            "save_directory":                   str(dpg.get_value(self.save_directory_input_id) or ""),
+            "save_base_filename":               str(dpg.get_value(self.save_base_filename_input_id) or ""),
+            "save_file_index":                  int(dpg.get_value(self.save_file_index_input_id)),
+            "save_prompt_every_time":           bool(dpg.get_value(self.save_prompt_every_time_checkbox_id)),
         }
 
     def _build_completed_acquisition_payload(self, stopped_early):
@@ -1817,12 +1790,157 @@ class CameraSystem:
             self._update_acquisition_button_state()
             self._set_acquisition_progress(0.0, f"Error: {exc}")
 
+    def _show_save_directory_dialog(self, sender=None, app_data=None, user_data=None):
+        dpg.show_item(self.save_directory_dialog_id)
+
+    def _on_save_directory_selected(self, sender, app_data, user_data=None):
+        selected_path = str(app_data.get("file_path_name") or "").strip()
+        if selected_path:
+            self.save_directory = os.path.abspath(selected_path)
+            dpg.set_value(self.save_directory_input_id, self.save_directory)
+            self.last_save_directory = self.save_directory
+
+    def _build_auto_save_path(self):
+        save_dir = self._resolve_save_directory(
+            str(dpg.get_value(self.save_directory_input_id) or "").strip()
+        )
+        os.makedirs(save_dir, exist_ok=True)
+        base_name = str(dpg.get_value(self.save_base_filename_input_id) or "data").strip() or "data"
+        index = max(0, int(dpg.get_value(self.save_file_index_input_id)))
+        while True:
+            file_path = os.path.join(save_dir, f"{base_name}_{index:04d}.npz")
+            if not os.path.exists(file_path):
+                break
+            index += 1
+        return file_path, index
+
+    def _do_save_acquisition(self, file_path):
+        with self._acquisition_lock:
+            payload = self._completed_acquisition_payload
+        if payload is None or self._save_in_progress:
+            return
+        self._save_in_progress = True
+        self._save_thread = threading.Thread(
+            target=self._run_save_acquisition,
+            args=(file_path, payload),
+            name="AcquisitionSaveThread",
+            daemon=True,
+        )
+        self._save_progress_display_value = 0.0
+        self._save_progress_segment_start_value = 0.0
+        self._save_progress_segment_end_value = 0.0
+        self._save_progress_segment_key = None
+        self._save_progress_segment_started_at = time.perf_counter()
+        self._set_save_progress(0.0, "Saving 0%")
+        self._save_thread.start()
+
+    def _capture_snapshot_data(self):
+        settings = self._collect_settings_snapshot()
+        with self.Andor.frame_lock:
+            if self.Andor.latest_frame is None:
+                return None
+            acquisitions = np.expand_dims(np.array(self.Andor.latest_frame, copy=True), axis=0)
+            zero_frame = np.array(self.Andor.zero, copy=True) if self.Andor.zero is not None else None
+            storage_dtype = str(self.Andor.storage_dtype_name)
+        data = {
+            "acquisitions": acquisitions,
+            "timestamps": np.array([0.0], dtype=np.float64),
+            "camera_storage_dtype": np.asarray(storage_dtype),
+            "settings": settings,
+        }
+        if zero_frame is not None:
+            data["camera_zero"] = zero_frame
+        return data
+
+    def _run_save_snapshot(self, file_path, frame_data):
+        save_name = os.path.basename(file_path)
+        try:
+            save_arrays = {
+                "camera_acquisitions": frame_data["acquisitions"],
+                "camera_timestamps": frame_data["timestamps"],
+                "camera_storage_dtype": frame_data["camera_storage_dtype"],
+            }
+            if "camera_zero" in frame_data:
+                save_arrays["camera_zero"] = frame_data["camera_zero"]
+            for key, value in sorted((frame_data.get("settings") or {}).items()):
+                if isinstance(value, (bool, np.bool_)):
+                    save_arrays[f"settings_{key}"] = np.asarray(value, dtype=np.bool_)
+                elif isinstance(value, (int, np.integer)):
+                    save_arrays[f"settings_{key}"] = np.asarray(value, dtype=np.int64)
+                elif isinstance(value, (float, np.floating)):
+                    save_arrays[f"settings_{key}"] = np.asarray(value, dtype=np.float64)
+                else:
+                    save_arrays[f"settings_{key}"] = np.asarray(str(value))
+            np.savez_compressed(file_path, **save_arrays)
+        except Exception as exc:
+            with self._acquisition_lock:
+                self._pending_snapshot_result = {"success": False, "file_path": file_path, "overlay": f"Snapshot failed: {exc}"}
+            return
+        with self._acquisition_lock:
+            self._pending_snapshot_result = {"success": True, "file_path": file_path, "overlay": f"Snapshot: {save_name}"}
+
+    def _apply_pending_snapshot_result(self):
+        with self._acquisition_lock:
+            result = self._pending_snapshot_result
+            self._pending_snapshot_result = None
+        if result is None:
+            return
+        self._snapshot_in_progress = False
+        self._snapshot_thread = None
+        if result["success"]:
+            self._set_acquisition_progress(1.0, result["overlay"])
+            self._open_acquisition_preview(result["file_path"])
+        else:
+            self._set_acquisition_progress(0.0, result["overlay"])
+
+    def _trigger_snapshot_save(self, file_path=None):
+        if self._snapshot_in_progress:
+            return
+        frame_data = self._capture_snapshot_data()
+        if frame_data is None:
+            self._set_acquisition_progress(0.0, "Snapshot: no frame available")
+            return
+        if file_path is None:
+            file_path, index = self._build_auto_save_path()
+            dpg.set_value(self.save_file_index_input_id, index + 1)
+            self.save_file_index = index + 1
+        self._snapshot_in_progress = True
+        self._snapshot_thread = threading.Thread(
+            target=self._run_save_snapshot,
+            args=(file_path, frame_data),
+            name="SnapshotSaveThread",
+            daemon=True,
+        )
+        self._snapshot_thread.start()
+
+    def _on_snapshot_pressed(self, sender=None, app_data=None, user_data=None):
+        if self._snapshot_in_progress:
+            return
+        if bool(dpg.get_value(self.save_prompt_every_time_checkbox_id)):
+            save_dir = self._resolve_save_directory(
+                str(dpg.get_value(self.save_directory_input_id) or "").strip()
+            )
+            self._save_dialog_mode = "snapshot"
+            dpg.configure_item(self.save_dialog_id, default_path=save_dir)
+            dpg.show_item(self.save_dialog_id)
+        else:
+            self._trigger_snapshot_save()
+
     def _show_save_dialog(self, sender=None, app_data=None, user_data=None):
         if self._completed_acquisition_payload is None:
             return
-        save_directory = self._resolve_save_directory(self.last_save_directory)
-        dpg.configure_item(self.save_dialog_id, default_path=save_directory)
-        dpg.show_item(self.save_dialog_id)
+        if not bool(dpg.get_value(self.save_prompt_every_time_checkbox_id)):
+            file_path, index = self._build_auto_save_path()
+            dpg.set_value(self.save_file_index_input_id, index + 1)
+            self.save_file_index = index + 1
+            self._do_save_acquisition(file_path)
+        else:
+            save_directory = self._resolve_save_directory(
+                str(dpg.get_value(self.save_directory_input_id) or "").strip()
+            )
+            self._save_dialog_mode = "acquisition"
+            dpg.configure_item(self.save_dialog_id, default_path=save_directory)
+            dpg.show_item(self.save_dialog_id)
 
     def _show_open_dialog(self, sender=None, app_data=None, user_data=None):
         dpg.show_item(self.open_dialog_id)
@@ -1850,26 +1968,12 @@ class CameraSystem:
             file_path = f"{file_path}.npz"
         self.last_save_directory = self._resolve_save_directory(os.path.dirname(file_path))
 
-        with self._acquisition_lock:
-            payload = self._completed_acquisition_payload
-
-        if payload is None or self._save_in_progress:
-            return
-
-        self._save_in_progress = True
-        self._save_thread = threading.Thread(
-            target=self._run_save_acquisition,
-            args=(file_path, payload),
-            name="AcquisitionSaveThread",
-            daemon=True,
-        )
-        self._save_progress_display_value = 0.0
-        self._save_progress_segment_start_value = 0.0
-        self._save_progress_segment_end_value = 0.0
-        self._save_progress_segment_key = None
-        self._save_progress_segment_started_at = time.perf_counter()
-        self._set_save_progress(0.0, "Saving 0%")
-        self._save_thread.start()
+        mode = getattr(self, "_save_dialog_mode", "acquisition")
+        self._save_dialog_mode = "acquisition"
+        if mode == "snapshot":
+            self._trigger_snapshot_save(file_path)
+        else:
+            self._do_save_acquisition(file_path)
 
     def _resolve_save_directory(self, directory):
         requested_directory = str(directory or "").strip()
@@ -1877,12 +1981,6 @@ class CameraSystem:
             normalized_directory = os.path.abspath(requested_directory)
             if os.path.isdir(normalized_directory):
                 return normalized_directory
-
-        spool_directory = str(getattr(self, "spool_to_disk_directory", "") or "").strip()
-        if spool_directory:
-            normalized_spool_directory = os.path.abspath(spool_directory)
-            if os.path.isdir(normalized_spool_directory):
-                return normalized_spool_directory
 
         experiments_directory = os.path.abspath(os.path.join(os.getcwd(), "Experiments"))
         if os.path.isdir(experiments_directory):
@@ -2131,6 +2229,7 @@ class CameraSystem:
             self.acquisition_progress_bar_id,
             self.acquire_button_id,
             self.start_button_id,
+            self.snapshot_button_id,
             self.save_button_id,
             self.save_progress_bar_id,
             self.open_button_id,
@@ -2159,6 +2258,7 @@ class CameraSystem:
 
         self._apply_pending_acquisition_result()
         self._apply_pending_save_result()
+        self._apply_pending_snapshot_result()
         self._refresh_hardware_requirements()
 
         if self.acquisition_in_progress and self.acquisition_started_at is not None:
@@ -2222,9 +2322,9 @@ class CameraSystem:
         self._update_preview_button_state()
         self._update_acquisition_button_state()
         self._update_acquisition_awg_visibility()
-        self._update_spool_to_disk_controls()
         displayed_save_progress = self._get_animated_save_progress_value()
         save_progress_overlay = self._get_save_progress_overlay(displayed_save_progress)
+        dpg.configure_item(self.snapshot_button_id, enabled=not self._snapshot_in_progress)
         dpg.configure_item(self.save_button_id, enabled=self._completed_acquisition_payload is not None and not self._save_in_progress)
         dpg.configure_item(self.save_button_id, show=not self._save_in_progress)
         dpg.configure_item(self.save_progress_bar_id, show=self._save_in_progress)
@@ -2268,11 +2368,10 @@ class CameraSystem:
                 "acquisition_awg_start_after_seconds": float(dpg.get_value(self.acquisition_awg_start_after_input_id)),
                 "hardware_storage_drive": str(dpg.get_value(self.hardware_drive_combo_id) or ""),
                 "last_save_directory": str(self.last_save_directory or ""),
-                "spool_to_disk_enabled": bool(dpg.get_value(self.spool_to_disk_enabled_checkbox_id)),
-                "spool_to_disk_directory": str(dpg.get_value(self.spool_to_disk_directory_input_id) or ""),
-                "spool_to_disk_filename": str(dpg.get_value(self.spool_to_disk_filename_input_id) or ""),
-                "spool_write_scope": bool(dpg.get_value(self.spool_write_scope_checkbox_id)),
-                "spool_write_power": bool(dpg.get_value(self.spool_write_power_checkbox_id)),
+                "save_directory": str(dpg.get_value(self.save_directory_input_id) or ""),
+                "save_base_filename": str(dpg.get_value(self.save_base_filename_input_id) or ""),
+                "save_file_index": int(dpg.get_value(self.save_file_index_input_id)),
+                "save_prompt_every_time": bool(dpg.get_value(self.save_prompt_every_time_checkbox_id)),
             },
         )
         if hasattr(self.z_axis_controls, "SaveState"):
@@ -2364,18 +2463,19 @@ class CameraSystem:
                 dpg.set_value(self.acquisition_awg_periodic_offset_input_id, float(state["acquisition_awg_periodic_offset_volts"]))
             if "acquisition_awg_start_after_seconds" in state:
                 dpg.set_value(self.acquisition_awg_start_after_input_id, float(state["acquisition_awg_start_after_seconds"]))
-            if "spool_to_disk_enabled" in state:
-                dpg.set_value(self.spool_to_disk_enabled_checkbox_id, bool(state["spool_to_disk_enabled"]))
-            if "spool_to_disk_directory" in state:
-                dpg.set_value(self.spool_to_disk_directory_input_id, str(state["spool_to_disk_directory"]))
-            if "spool_to_disk_filename" in state:
-                dpg.set_value(self.spool_to_disk_filename_input_id, str(state["spool_to_disk_filename"]))
-            self.spool_to_disk_directory = str(dpg.get_value(self.spool_to_disk_directory_input_id) or "")
-            self.last_save_directory = self._resolve_save_directory(state.get("last_save_directory", self.spool_to_disk_directory))
-            if "spool_write_scope" in state:
-                dpg.set_value(self.spool_write_scope_checkbox_id, bool(state["spool_write_scope"]))
-            if "spool_write_power" in state:
-                dpg.set_value(self.spool_write_power_checkbox_id, bool(state["spool_write_power"]))
+            self.last_save_directory = self._resolve_save_directory(state.get("last_save_directory", ""))
+            if "save_directory" in state:
+                dpg.set_value(self.save_directory_input_id, str(state["save_directory"]))
+                self.save_directory = str(state["save_directory"])
+            if "save_base_filename" in state:
+                dpg.set_value(self.save_base_filename_input_id, str(state["save_base_filename"]))
+                self.save_base_filename = str(state["save_base_filename"])
+            if "save_file_index" in state:
+                dpg.set_value(self.save_file_index_input_id, int(state["save_file_index"]))
+                self.save_file_index = int(state["save_file_index"])
+            if "save_prompt_every_time" in state:
+                dpg.set_value(self.save_prompt_every_time_checkbox_id, bool(state["save_prompt_every_time"]))
+                self.save_prompt_every_time = bool(state["save_prompt_every_time"])
             self._refresh_storage_devices(state.get("hardware_storage_drive"))
 
             self.acquisition_duration_seconds = float(dpg.get_value(self.acquisition_duration_input_id))
@@ -2394,14 +2494,8 @@ class CameraSystem:
             self.acquisition_awg_amplitude_vpp_volts = float(dpg.get_value(self.acquisition_awg_amplitude_input_id))
             self.acquisition_awg_periodic_offset_volts = float(dpg.get_value(self.acquisition_awg_periodic_offset_input_id))
             self.acquisition_awg_start_after_seconds = float(dpg.get_value(self.acquisition_awg_start_after_input_id))
-            self.spool_to_disk_enabled = bool(dpg.get_value(self.spool_to_disk_enabled_checkbox_id))
-            self.spool_to_disk_directory = str(dpg.get_value(self.spool_to_disk_directory_input_id) or "")
-            self.spool_to_disk_filename = str(dpg.get_value(self.spool_to_disk_filename_input_id) or "")
-            self.spool_write_scope = bool(dpg.get_value(self.spool_write_scope_checkbox_id))
-            self.spool_write_power = bool(dpg.get_value(self.spool_write_power_checkbox_id))
             self._sync_camera_cooler_readout()
             self._update_acquisition_awg_visibility()
-            self._update_spool_to_disk_controls()
             self._refresh_hardware_requirements(force=True)
 
         if self.frame_scope_window is not None:

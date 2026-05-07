@@ -510,11 +510,45 @@ class PicoScope:
     def get_max_sample_rate_hz(self):
         return float(MAX_SAMPLE_RATE_HZ)
 
+    def get_state(self) -> dict:
+        return {
+            "connected": self.is_open,
+            "collecting": self.is_collecting,
+            "actual_sample_rate_hz": self.actual_sample_rate_hz,
+            "active_scope_series": self.active_scope_series,
+            "last_error": self.last_error,
+            "frame_pairing_enabled": self.frame_pairing_enabled,
+            "awg_enabled": self.awg_enabled,
+        }
+
+    def get_settings(self) -> dict:
+        return {
+            "sample_rate_hz": self.sample_rate_hz,
+            "history_seconds": self.history_seconds,
+            "data_bits": self.data_bits,
+            "channel_configs": {name: dict(cfg) for name, cfg in self.channels.items()},
+            "awg_config": dict(self.awg_config),
+        }
+
+    def set_settings(self, **kwargs):
+        if self.is_collecting:
+            raise RuntimeError("Stop collection before changing settings.")
+        if "sample_rate_hz" in kwargs:
+            hz = float(kwargs["sample_rate_hz"])
+            if hz <= 0:
+                raise ValueError("sample_rate_hz must be > 0")
+            self.sample_rate_hz = hz
+        if "history_seconds" in kwargs:
+            secs = float(kwargs["history_seconds"])
+            if secs <= 0:
+                raise ValueError("history_seconds must be > 0")
+            self.history_seconds = secs
+            self._reset_buffers()
+
     def get_channel_input_range_volts(self, channel_name):
         normalized_name = str(channel_name).upper()
         if normalized_name not in self.channels:
             raise ValueError(f"Unsupported channel '{channel_name}'.")
-
         range_name = _normalize_voltage_range(self.channels[normalized_name]["range"])
         return PS4000A_RANGE_MILLIVOLTS[range_name] / 1000.0
 
@@ -713,34 +747,7 @@ class PicoScope:
                 raise ValueError(f"Unsupported range '{voltage_range}' for 4824A hardware.")
             channel_config["range"] = range_name
 
-    def set_sample_capture_rate(self, sample_rate_hz):
-        if self.is_collecting:
-            raise RuntimeError("Stop collection before changing the sample capture rate.")
-        sample_rate_hz = float(sample_rate_hz)
-        if sample_rate_hz <= 0:
-            raise ValueError("sample_rate_hz must be > 0")
-        self.sample_rate_hz = sample_rate_hz
-
-    def set_history_seconds(self, history_seconds):
-        if self.is_collecting:
-            raise RuntimeError("Stop collection before changing the history duration.")
-        history_seconds = float(history_seconds)
-        if history_seconds <= 0:
-            raise ValueError("history_seconds must be > 0")
-        self.history_seconds = history_seconds
-        self._reset_buffers()
-
-    def set_max_samples(self, max_samples):
-        # Backward-compatible alias: interpret the value as a sample-count history target.
-        self.set_history_seconds(float(max_samples) / max(self.sample_rate_hz, 1e-12))
-
-    def set_data_bits(self, data_bits):
-        _ = data_bits
-        if self.is_collecting:
-            raise RuntimeError("Stop collection before changing data_bits.")
-        self.data_bits = SCOPE_STORAGE_DTYPE_NAME
-
-    def configure_awg(self, *, waveform_type=None, offset_volts=None, amplitude_vpp_volts=None, frequency_hz=None):
+    def configure_awg(self, *, waveform_type=None, offset_volts=None, amplitude_vpp_volts=None, frequency_hz=None, enabled=None):
         if waveform_type is not None:
             self.awg_config["waveform_type"] = _normalize_awg_waveform_type(waveform_type)
         if offset_volts is not None:
@@ -755,13 +762,9 @@ class PicoScope:
             if frequency_hz < 0:
                 raise ValueError("frequency_hz must be >= 0")
             self.awg_config["frequency_hz"] = frequency_hz
-
-        if self.is_open and self.awg_enabled:
-            self._apply_awg_state()
-
-    def set_awg_enabled(self, enabled):
-        self.awg_enabled = bool(enabled)
-        if self.is_open:
+        if enabled is not None:
+            self.awg_enabled = bool(enabled)
+        if self.is_open and (self.awg_enabled or enabled is not None):
             self._apply_awg_state()
 
     def _apply_awg_state(self):
@@ -807,11 +810,6 @@ class PicoScope:
             "timestamps": timestamps.tolist(),
             "voltages": voltages.tolist(),
         }
-
-    def set_serial_number(self, serial_number):
-        if self.is_open:
-            raise RuntimeError("Stop collection before changing the device selection.")
-        self.serial_number = str(serial_number or "").strip()
 
     def open_device(self):
         if self.is_open:
@@ -916,20 +914,6 @@ class PicoScope:
         self._handle = None
         self.actual_sample_rate_hz = None
 
-    def get_channel_samples(self, channel_name):
-        normalized_name = str(channel_name).upper()
-        if normalized_name not in self.channel_data:
-            raise ValueError(f"Unsupported channel '{channel_name}'.")
-        with self.data_lock:
-            return list(self.channel_data[normalized_name])
-
-    def get_timestamps(self):
-        with self.data_lock:
-            return list(self.timestamps)
-
-    def clear_buffers(self):
-        self._reset_buffers()
-
     def get_buffer_snapshot(self, channel_names=None):
         with self.data_lock:
             if channel_names is None:
@@ -967,6 +951,3 @@ class PicoScope:
                 "buffer_capacity": self.buffer_capacity,
                 "frame_pairing_enabled": bool(self.frame_pairing_enabled),
             }
-
-    def close(self):
-        self.close_device()

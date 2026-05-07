@@ -98,6 +98,11 @@ class CameraFeedWindow:
         self._display_processing_state_key = None
         self._display_filter_previous_input = None
         self._display_filter_previous_output = None
+        self.colorbar_enabled = False
+        self._colorbar_last_min = None
+        self._colorbar_last_max = None
+        self._last_frame_display_min = 0.0
+        self._last_frame_display_max = 1.0
 
         with dpg.window(
             label=self.name,
@@ -124,6 +129,8 @@ class CameraFeedWindow:
                     self.image_layer = dpg.last_item()
                 with dpg.draw_layer(tag=f"{self.tag}_OverlayLayer"):
                     self.overlay_layer = dpg.last_item()
+                with dpg.draw_layer(tag=f"{self.tag}_ColorbarLayer"):
+                    self.colorbar_layer = dpg.last_item()
 
             with dpg.handler_registry(tag=f"{self.tag}_MouseHandler"):
                 dpg.add_mouse_down_handler(button=dpg.mvMouseButton_Left, callback=self._on_left_mouse_down)
@@ -258,6 +265,7 @@ class CameraFeedWindow:
         self._clamp_view_center()
         self._update_image_draw_transform()
         self._redraw_overlay()
+        self._redraw_colorbar()
 
     def _update_settings_controls_state(self):
         is_signed_zero_reference_mode = self._is_signed_zero_reference_mode_active()
@@ -316,6 +324,7 @@ class CameraFeedWindow:
         self.scale_max = scale_max
         self._sync_scale_inputs_from_values()
         self._refresh_display_image()
+        self._redraw_colorbar()
 
     def _on_autoscale_grace_changed(self, sender, app_data):
         self.autoscale_grace_percent = max(0.0, float(app_data))
@@ -884,6 +893,7 @@ class CameraFeedWindow:
         self._update_settings_controls_state()
         self._request_all_roi_rebuilds()
         self._update_zero_window()
+        self._redraw_colorbar()
 
     def _on_colormap_changed(self, sender, app_data):
         self.colormap_name = self._parse_colormap_label(app_data)
@@ -894,6 +904,7 @@ class CameraFeedWindow:
         self._refresh_display_image()
         self._request_all_roi_rebuilds()
         self._update_zero_window()
+        self._redraw_colorbar()
 
     def _prepare_analysis_frame(self, frame):
         if frame is None:
@@ -982,6 +993,8 @@ class CameraFeedWindow:
                 max_value = min_value + 1.0
 
             normalized = self._normalize_double_sided_frame(signed_frame, min_value, max_value)
+            self._last_frame_display_min = min_value
+            self._last_frame_display_max = max_value
             return self._apply_colormap(normalized, double_sided=True)
 
         if self.autoscale_enabled:
@@ -1003,6 +1016,8 @@ class CameraFeedWindow:
             max_value = min_value + 1
 
         scaled = np.clip((frame.astype(np.float32) - min_value) / (max_value - min_value), 0.0, 1.0)
+        self._last_frame_display_min = min_value
+        self._last_frame_display_max = max_value
         return self._apply_colormap(scaled, double_sided=False)
 
     def frame_to_rgba(self, frame):
@@ -1437,6 +1452,102 @@ class CameraFeedWindow:
         self._close_roi(tag)
         self._redraw_overlay()
 
+    def _on_colorbar_enabled_changed(self, sender, app_data):
+        self.colorbar_enabled = bool(app_data)
+        self._redraw_colorbar()
+
+    def _format_colorbar_value(self, value):
+        abs_val = abs(value)
+        if abs_val == 0.0:
+            return "0"
+        elif abs_val >= 10000:
+            return f"{value:.0f}"
+        elif abs_val >= 1000:
+            return f"{value:.1f}"
+        elif abs_val >= 10:
+            return f"{value:.2f}"
+        else:
+            return f"{value:.3f}"
+
+    def _redraw_colorbar(self):
+        if not hasattr(self, "colorbar_layer") or not dpg.does_item_exist(self.colorbar_layer):
+            return
+        dpg.delete_item(self.colorbar_layer, children_only=True)
+        if not self.colorbar_enabled:
+            return
+
+        canvas_w, canvas_h = self._get_canvas_size()
+        bar_w = 18
+        margin_r = 10
+        num_segments = 64
+        label_gap = 5
+        num_ticks = 5
+        bg_pad = 5
+
+        bar_h = max(40, min(220, canvas_h - 50))
+        bar_y1 = 20
+        bar_y2 = bar_y1 + bar_h
+
+        label_w = 58
+        bar_x2 = canvas_w - margin_r - label_w - label_gap
+        bar_x1 = bar_x2 - bar_w
+
+        if bar_x1 < 0:
+            return
+
+        is_double_sided = self._is_signed_zero_reference_mode_active()
+        lut = self._get_colormap_lut(double_sided=is_double_sided, samples=num_segments)
+
+        dpg.draw_rectangle(
+            (bar_x1 - bg_pad, bar_y1 - bg_pad - 8),
+            (bar_x2 + label_gap + label_w + bg_pad, bar_y2 + bg_pad + 8),
+            fill=(15, 15, 15, 160),
+            color=(0, 0, 0, 0),
+            parent=self.colorbar_layer,
+        )
+
+        seg_h = bar_h / num_segments
+        for i in range(num_segments):
+            lut_idx = num_segments - 1 - i
+            r, g, b = lut[lut_idx]
+            fill_color = (int(r * 255), int(g * 255), int(b * 255), 255)
+            dpg.draw_rectangle(
+                (bar_x1, bar_y1 + i * seg_h),
+                (bar_x2, bar_y1 + (i + 1) * seg_h),
+                fill=fill_color,
+                color=(0, 0, 0, 0),
+                parent=self.colorbar_layer,
+            )
+
+        dpg.draw_rectangle(
+            (bar_x1, bar_y1), (bar_x2, bar_y2),
+            color=(180, 180, 180, 180),
+            fill=(0, 0, 0, 0),
+            thickness=1,
+            parent=self.colorbar_layer,
+        )
+
+        scale_min = self._last_frame_display_min
+        scale_max = self._last_frame_display_max
+
+        for i in range(num_ticks):
+            t = i / (num_ticks - 1)
+            tick_y = bar_y1 + t * bar_h
+            value = scale_max + t * (scale_min - scale_max)
+            dpg.draw_line(
+                (bar_x2, tick_y), (bar_x2 + label_gap, tick_y),
+                color=(180, 180, 180, 200),
+                thickness=1,
+                parent=self.colorbar_layer,
+            )
+            dpg.draw_text(
+                (bar_x2 + label_gap + 2, tick_y - 6),
+                self._format_colorbar_value(value),
+                color=(230, 230, 230, 220),
+                size=12,
+                parent=self.colorbar_layer,
+            )
+
     def _redraw_overlay(self):
         if not hasattr(self, "overlay_layer") or not dpg.does_item_exist(self.overlay_layer):
             return
@@ -1719,6 +1830,7 @@ class CameraFeedWindow:
             {
                 "window": capture_window_state(self.window_id),
                 "autoscale_enabled": bool(self.autoscale_enabled),
+                "colorbar_enabled": bool(self.colorbar_enabled),
                 "scale_min": float(self.scale_min),
                 "scale_max": float(self.scale_max),
                 "scale_min_percent": float(self.get_scale_min_percent()),
@@ -1755,6 +1867,7 @@ class CameraFeedWindow:
         self._on_window_resize()
 
         self.autoscale_enabled = bool(state.get("autoscale_enabled", self.autoscale_enabled))
+        self.colorbar_enabled = bool(state.get("colorbar_enabled", self.colorbar_enabled))
         self.autoscale_grace_percent = float(state.get("autoscale_grace_percent", self.autoscale_grace_percent))
         self.display_mode = str(state.get("display_mode", self.display_mode))
         self.mirrored_difference_scale = bool(state.get("mirrored_difference_scale", self.mirrored_difference_scale))
@@ -1786,6 +1899,7 @@ class CameraFeedWindow:
         self.Andor.set_lp_filter_enabled(self.lp_filter_enabled)
 
         dpg.set_value(self.controls_window.autoscale_checkbox_id, self.autoscale_enabled)
+        dpg.set_value(self.controls_window.colorbar_checkbox_id, self.colorbar_enabled)
         self._sync_scale_inputs_from_values()
         dpg.set_value(self.controls_window.autoscale_grace_input_id, self.autoscale_grace_percent)
         dpg.set_value(self.controls_window.display_mode_combo_id, self.display_mode)
@@ -1798,6 +1912,7 @@ class CameraFeedWindow:
         self._update_image_draw_transform()
         self._update_settings_controls_state()
         self._refresh_display_image()
+        self._redraw_colorbar()
         self._update_zero_window_texture_binding()
         self._update_zero_window()
 
@@ -1841,6 +1956,14 @@ class CameraFeedWindow:
                 self.displayed_feed_fps = self._display_fps_window_frame_count / elapsed_seconds
                 self._display_fps_window_started_at = time.perf_counter()
                 self._display_fps_window_frame_count = 0
+
+            if self.colorbar_enabled:
+                curr_min = self._last_frame_display_min
+                curr_max = self._last_frame_display_max
+                if curr_min != self._colorbar_last_min or curr_max != self._colorbar_last_max:
+                    self._colorbar_last_min = curr_min
+                    self._colorbar_last_max = curr_max
+                    self._redraw_colorbar()
 
         if rois_window_visible:
             for roi in list(self.rois):

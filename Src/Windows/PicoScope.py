@@ -194,11 +194,9 @@ class PicoScopeControl:
         awg_enabled = self.function_generator_window.get_awg_enabled() if self.function_generator_window is not None else False
 
         new_driver = self._create_driver(requested_family)
-        new_driver.set_sample_capture_rate(sample_rate_hz)
-        new_driver.set_history_seconds(history_seconds)
-        new_driver.configure_awg(**awg_settings)
-        new_driver.set_awg_enabled(awg_enabled)
-        new_driver.set_serial_number(serial_number)
+        new_driver.set_settings(sample_rate_hz=sample_rate_hz, history_seconds=history_seconds)
+        new_driver.configure_awg(**awg_settings, enabled=awg_enabled)
+        new_driver.serial_number = serial_number
 
         self.driver = new_driver
         self.driver_family = requested_family
@@ -440,12 +438,12 @@ class PicoScopeControl:
         self._refresh_status_labels()
 
     def _on_sample_rate_changed(self, sender, app_data, user_data):
-        if not self._apply_stopped_configuration(lambda: self.driver.set_sample_capture_rate(app_data)):
+        if not self._apply_stopped_configuration(lambda: self.driver.set_settings(sample_rate_hz=app_data)):
             dpg.set_value(self.sample_rate_input_id, self.driver.sample_rate_hz)
         self._configure_scope_plot_axes()
 
     def _on_history_seconds_changed(self, sender, app_data, user_data):
-        if not self._apply_stopped_configuration(lambda: self.driver.set_history_seconds(app_data)):
+        if not self._apply_stopped_configuration(lambda: self.driver.set_settings(history_seconds=app_data)):
             dpg.set_value(self.seconds_input_id, self.driver.history_seconds)
         self._configure_scope_plot_axes()
 
@@ -518,8 +516,10 @@ class PicoScopeControl:
 
     def _start_collection(self, sender=None, app_data=None, user_data=None):
         try:
-            self.driver.set_sample_capture_rate(dpg.get_value(self.sample_rate_input_id))
-            self.driver.set_history_seconds(dpg.get_value(self.seconds_input_id))
+            self.driver.set_settings(
+                sample_rate_hz=dpg.get_value(self.sample_rate_input_id),
+                history_seconds=dpg.get_value(self.seconds_input_id),
+            )
             self._configure_scope_plot_axes()
             self._sync_driver_channels()
             self.driver.start_collection()
@@ -639,19 +639,19 @@ class PicoScopeControl:
         if sample_rate_hz is not None:
             sample_rate_hz = max(1000.0, float(sample_rate_hz))
             dpg.set_value(self.sample_rate_input_id, sample_rate_hz)
-            self.driver.set_sample_capture_rate(sample_rate_hz)
+            self.driver.set_settings(sample_rate_hz=sample_rate_hz)
 
         history_seconds = state.get("history_seconds")
         if history_seconds is not None:
             dpg.set_value(self.seconds_input_id, float(history_seconds))
-            self.driver.set_history_seconds(float(history_seconds))
+            self.driver.set_settings(history_seconds=float(history_seconds))
 
         self._configure_scope_plot_axes()
 
         saved_serial = str(state.get("device_serial") or "").strip()
         if saved_serial:
             self._loaded_device_serial = saved_serial
-            self.driver.set_serial_number(saved_serial)
+            self.driver.serial_number = saved_serial
 
         for panel_state in state.get("panels", []):
             try:

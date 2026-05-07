@@ -18,16 +18,21 @@ class ROIsWindow:
     ROI_CLOSE_BUTTON_SIZE = 20
     TRACE_METRIC_OPTIONS = ("Mean", "Max", "Max & Min")
     DEFAULT_Y_SCALE_GRACE_PERCENT = 5.0
+    EMPTY_CONTENT_HEIGHT = 1
+    CONTENT_BOTTOM_PADDING = 8
     
 
-    def __init__(self, *, name="ROIs", tag="ROIsWindow", width=640, height=400, pos=(935, 10), state_name=None, parent=None):
+    def __init__(self, *, name="ROIs", tag="ROIsWindow", width=640, height=400, pos=(935, 10), state_name=None, parent=None, controls_parent=None, content_parent=None):
         self.width = int(width)
         self.height = int(height)
         self.name = str(name)
         self.tag = str(tag)
         self._state_name_value = str(state_name or type(self).__name__)
         self.parent_id = parent
-        self.is_embedded = parent is not None
+        self.controls_parent_id = controls_parent
+        self.content_parent_id = content_parent
+        self.is_split_embedded = controls_parent is not None or content_parent is not None
+        self.is_embedded = parent is not None or self.is_split_embedded
         self._current_roi_tags = []
         self._rois = []
         self._roi_ui = {}
@@ -60,7 +65,21 @@ class ROIsWindow:
             with dpg.theme_component(dpg.mvLineSeries):
                 dpg.add_theme_color(dpg.mvPlotCol_Line, [220, 40, 40, 255], category=dpg.mvThemeCat_Plots)
 
-        if self.is_embedded:
+        if self.is_split_embedded:
+            if self.controls_parent_id is not None:
+                self._build_controls(parent=self.controls_parent_id)
+            with dpg.child_window(
+                parent=self.content_parent_id,
+                tag=f"{self.tag}_Embedded",
+                width=-1,
+                height=self.height,
+                border=False,
+                no_scrollbar=True,
+                no_scroll_with_mouse=True,
+            ):
+                self.window_id = dpg.last_item()
+                self._build_content_ui()
+        elif self.is_embedded:
             with dpg.child_window(
                 parent=self.parent_id,
                 tag=f"{self.tag}_Embedded",
@@ -71,7 +90,9 @@ class ROIsWindow:
                 no_scroll_with_mouse=True,
             ):
                 self.window_id = dpg.last_item()
-                self._build_ui()
+                self._build_controls()
+                dpg.add_separator()
+                self._build_content_ui()
         else:
             with dpg.window(
                 label=self.name,
@@ -84,12 +105,15 @@ class ROIsWindow:
                 no_resize=False,
             ):
                 self.window_id = dpg.last_item()
-                self._build_ui()
+                self._build_controls()
+                dpg.add_separator()
+                self._build_content_ui()
 
         self._sync_y_scale_inputs()
 
-    def _build_ui(self):
-        with dpg.group():
+    def _build_controls(self, parent=None):
+        group_kwargs = {"parent": parent} if parent is not None else {}
+        with dpg.group(**group_kwargs):
             dpg.add_text("Y-Axis Scaling")
             self.trace_metric_combo_id = dpg.add_combo(
                 items=list(self.TRACE_METRIC_OPTIONS),
@@ -127,8 +151,7 @@ class ROIsWindow:
                 callback=self._on_y_scale_mirrored_changed,
             )
 
-        dpg.add_separator()
-
+    def _build_content_ui(self):
         with dpg.child_window(border=False, width=-1, height=-1):
             self.content_id = dpg.last_item()
 
@@ -145,6 +168,11 @@ class ROIsWindow:
 
         with dpg.handler_registry():
             dpg.add_mouse_wheel_handler(callback=self._on_overlay_mouse_wheel)
+
+    def get_required_content_height(self):
+        if not self._rois:
+            return self.EMPTY_CONTENT_HEIGHT
+        return int((len(self._rois) * self.ROW_HEIGHT) + self.XAXIS_DEBUG_VISIBLE_HEIGHT + self.CONTENT_BOTTOM_PADDING)
 
     def is_visible(self):
         return dpg.does_item_exist(self.window_id) and dpg.is_item_shown(self.window_id)

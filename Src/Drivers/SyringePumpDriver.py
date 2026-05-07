@@ -1,287 +1,206 @@
 import serial
+import serial.tools.list_ports
 import threading
 import time
-from typing import Optional, Dict, Any
+from typing import Optional
 
-# NOTE: This driver talks to the firmware in `main.cpp` (peristaltic pump controller).
-# The firmware exposes a newline terminated text protocol with commands like STATUS, DO, STOP, etc.
-# A typical STATUS response looks like:
-#   State: RUN_DOSE | stepsPerMl=1000.0000 | pos=123 | movedSteps=456 | movedMl=0.4567 | targetSteps=1000 | speedStepsPerS=250.00 | elapsedMs=1234 | runDurationMs=5000
-# We poll the device periodically (poll_interval_ms) and parse these key/value pairs into attributes.
 
 class SyringePumpDriver:
-    # Public attributes (updated by polling thread)
-    connected: bool
-    state: str
-    position: Optional[int]
-    moved_steps: Optional[int]
-    moved_ml: Optional[float]
-    target_steps: Optional[int]
-    speed_steps_per_s: Optional[float]
-    elapsed_ms: Optional[int]
-    run_duration_ms: Optional[int]
-    steps_per_ml: Optional[float]
-    awaiting_cal: bool
 
-    def __init__(self, port: str | None, poll_interval_ms: int = 500, baud: int = 19200, serial_timeout: float = 0.05):
-        """
-        Initialize the syringe pump driver.
+    def __init__(self, port: Optional[str] = None, poll_interval_ms: int = 500,
+                 baud: int = 19200, serial_timeout: float = 0.05):
+        self.port = port
+        self._baud = baud
+        self._serial_timeout = serial_timeout
+        self._poll_interval_ms = poll_interval_ms
 
-        Args:
-            port: Serial port (e.g. 'COM5')
-            poll_interval_ms: How often to request STATUS from device.
-            baud: Serial baud rate (firmware uses 19200 in provided code).
-            serial_timeout: Timeout for serial read operations (seconds).
-        """
-        self.port               = port
-        self.baud               = baud
-        self.serial_timeout     = serial_timeout
-        self.poll_interval_ms   = poll_interval_ms
-
-        # Runtime / status values
-        self.connected          = False
-        self.state              = "Disconnected"
-        self.position           = None
-        self.moved_steps        = None
-        self.moved_ml           = None
-        self.target_steps       = None
-        self.speed_steps_per_s  = None
-        self.elapsed_ms         = None
-        self.run_duration_ms    = None
-        self.steps_per_ml       = None
-        self.awaiting_cal       = False
-
-        # Bookkeeping
-        self.last_status_line: Optional[str] = None
-        self.last_poll_time = 0.0
+        self.connected = False
+        self.state = "Disconnected"
+        self.position: Optional[int] = None
+        self.moved_ml: Optional[float] = None
+        self.target_steps: Optional[int] = None
+        self.steps_per_ml: Optional[float] = None
+        self.elapsed_ms: Optional[int] = None
+        self.run_duration_ms: Optional[int] = None
+        self.awaiting_cal = False
         self.last_error: Optional[str] = None
 
-        # Threading primitives
-        self.stop_event  = threading.Event()
-        self.lock        = threading.Lock()
-        self.ser: Optional[serial.Serial] = None
-        self.status_thread: Optional[threading.Thread] = None
+        self._last_status_line: Optional[str] = None
+        self._last_poll_time = 0.0
+        self._lock = threading.Lock()
+        self._stop_event = threading.Event()
+        self._serial: Optional[serial.Serial] = None
+        self._status_thread: Optional[threading.Thread] = None
 
         if self.port:
             self.connect(self.port)
 
+    @staticmethod
+    def list_ports() -> list:
+        try:
+            return [p.device for p in serial.tools.list_ports.comports()]
+        except Exception:
+            return []
 
-    # ---------------- Connection Management ----------------
-    def connect(self, port: Optional[str] = None):
+    def connect(self, port: Optional[str] = None) -> bool:
         if port:
             self.port = port
         if self.connected:
-            return
+            return True
         try:
-            self.state      = "Connecting"
-            self.ser        = serial.Serial(self.port, self.baud, timeout=self.serial_timeout)
-
-
-            # Perform handshake (multiple pings)
+            self.state = "Connecting"
+            self._serial = serial.Serial(self.port, self._baud, timeout=self._serial_timeout)
             if not self._handshake(attempts=5, per_attempt_timeout=0.5):
-                # Handshake failed
                 self.state = "Disconnected"
-                self.last_error = "Handshake failed (no STATUS response)"
+                self.last_error = "Handshake failed"
                 try:
-                    self.ser.close()
+                    self._serial.close()
                 except Exception:
                     pass
-                self.ser = None
-                return
-
-            self.connected  = True
+                self._serial = None
+                return False
+            self.connected = True
             self.last_error = None
-
-            # Start polling thread
-            self.stop_event.clear()
-            self.status_thread = threading.Thread(target=self._status_loop, daemon=True, name="SyringePumpPoll")
-            self.status_thread.start()
+            self._stop_event.clear()
+            self._status_thread = threading.Thread(
+                target=self._status_loop, daemon=True, name="SyringePumpPoll"
+            )
+            self._status_thread.start()
+            return True
         except Exception as e:
             self.last_error = f"Connect failed: {e}"
             self.connected = False
-            self.ser = None
+            self._serial = None
+            return False
 
     def disconnect(self):
-        if not self.connected:
-            return
-        self.state      = "Disconnected"
-        self.connected  = False
-
-        self.stop_event.set()
-        if self.status_thread and self.status_thread.is_alive():
-            self.status_thread.join(timeout=1.5)
-        self.status_thread = None
+        self.state = "Disconnected"
+        self.connected = False
+        self._stop_event.set()
+        if self._status_thread and self._status_thread.is_alive():
+            self._status_thread.join(timeout=1.5)
+        self._status_thread = None
         try:
-            if self.ser:
-                self.ser.close()
+            if self._serial:
+                self._serial.close()
         except Exception:
             pass
-        self.ser = None
+        self._serial = None
 
-    # ---------------- Polling Thread ----------------
+    def get_state(self) -> dict:
+        with self._lock:
+            return {
+                "connected": self.connected,
+                "state": self.state,
+                "position": self.position,
+                "moved_ml": self.moved_ml,
+                "target_steps": self.target_steps,
+                "steps_per_ml": self.steps_per_ml,
+                "elapsed_ms": self.elapsed_ms,
+                "run_duration_ms": self.run_duration_ms,
+                "awaiting_cal": self.awaiting_cal,
+                "last_error": self.last_error,
+            }
+
+    def snapshot(self) -> dict:
+        return self.get_state()
+
+    def start_dose(self, volume_ml: float, duration_s: float):
+        self._send_raw(f"DO {volume_ml} {duration_s}")
+
+    def stop(self):
+        self._send_raw("STOP")
+
+    def jog(self, steps: int):
+        self._send_raw(f"JOG {int(steps)}")
+
+    def goto(self, steps: int):
+        self._send_raw(f"GOTO_STEPS {int(steps)}")
+
+    def set_zero(self):
+        self._send_raw("ZERO")
+
+    def calibrate_start(self, volume_ml: float, duration_s: float):
+        self._send_raw(f"CAL_START {volume_ml} {duration_s}")
+
+    def calibrate(self, volume_ml: float, duration_s: float, actual_ml: float):
+        self._send_raw(f"CAL {volume_ml} {duration_s} {actual_ml}")
+
+    # --- Internal ---
+
+    def _send_raw(self, cmd: str):
+        if not self._serial or not self._serial.is_open:
+            return
+        try:
+            self._serial.write((cmd.strip() + "\n").encode())
+        except Exception as e:
+            self.last_error = f"Write error: {e}"
+
     def _status_loop(self):
-        """Continuously polls STATUS and reads any incoming lines."""
-        while not self.stop_event.is_set():
-            if not self.connected or not self.ser:
+        while not self._stop_event.is_set():
+            if not self.connected or not self._serial:
                 time.sleep(0.5)
                 continue
-
             now = time.time() * 1000.0
-            if now - self.last_poll_time >= self.poll_interval_ms:
-                self._send_raw("STATUS")  # ask for a fresh line
-                self.last_poll_time = now
-
-            # Read any available lines (non-blocking due to timeout)
+            if now - self._last_poll_time >= self._poll_interval_ms:
+                self._send_raw("STATUS")
+                self._last_poll_time = now
             try:
                 self._read_available_lines()
             except Exception as e:
                 self.last_error = f"Read error: {e}"
-                # If serial failures persist we could attempt reconnect; for now just wait
                 time.sleep(0.2)
-            # Sleep a short amount to avoid a tight loop
             time.sleep(0.01)
 
-    def send_command(self, cmd: str): 
-        """Public API to send a command line to the device."""
-        self._send_raw(cmd)
-
-    def _send_raw(self, cmd: str):
-        if not self.ser or not self.ser.is_open:
-            return
-        try:
-            line = (cmd.strip() + "\n").encode()
-            self.ser.write(line)
-        except Exception as e:
-            self.last_error = f"Write error: {e}"
-
-    def start_dose(self, volume, duration):
-        if self.connected:
-            self.send_command(f"DO {volume} {duration}")
-    
-    def get_status(self):
-        self.send_command("STATUS")
-
-
-    # ---------------- Handshake / Ping ----------------
-    def ping(self, timeout: float = 0.5) -> bool:
-        """
-        Send a STATUS and wait up to `timeout` seconds for a new status line.
-        Returns True if a fresh status line was parsed.
-        """
-        if not self.ser or not self.ser.is_open:
-            return False
-        start_line = self.last_status_line
-        start_time = time.time()
-        self._send_raw("STATUS")
-        while time.time() - start_time < timeout:
-            self._read_available_lines()
-            if self.last_status_line and self.last_status_line != start_line:
-                return True
-            time.sleep(0.02)
-        return False
-
     def _handshake(self, attempts: int = 3, per_attempt_timeout: float = 0.5) -> bool:
-        """
-        Try multiple pings to confirm the device responds.
-        """
         for _ in range(attempts):
-            if self.ping(timeout=per_attempt_timeout):
-                return True
+            start_line = self._last_status_line
+            start_time = time.time()
+            self._send_raw("STATUS")
+            while time.time() - start_time < per_attempt_timeout:
+                self._read_available_lines()
+                if self._last_status_line and self._last_status_line != start_line:
+                    return True
+                time.sleep(0.02)
         return False
 
-    # ---------------- Reading & Parsing ----------------
     def _read_available_lines(self):
-        """Read all currently available newline-terminated lines from serial."""
-        if not self.ser:
+        if not self._serial:
             return
-        # Loop until no more characters buffered
         while True:
-            try:
-                raw = self.ser.readline()  # uses timeout set in serial
-            except Exception as e:
-                raise e
+            raw = self._serial.readline()
             if not raw:
-                break  # no (more) data
+                break
             try:
-                line = raw.decode(errors='replace').strip()
+                line = raw.decode(errors="replace").strip()
             except Exception:
                 continue
-            if not line:
-                continue
-            # The firmware only emits status lines when asked; ignore other chatter
             if line.startswith("State:"):
-                with self.lock:
-                    self.last_status_line = line
+                with self._lock:
+                    self._last_status_line = line
                 self._parse_status_line(line)
 
-    # ---------------- Status Parsing ----------------
     def _parse_status_line(self, line: str):
-        """Parse a status line from the firmware and update attributes."""
         try:
-            parts = [p.strip() for p in line.split('|')]
-            if not parts:
-                return
-            if parts[0].startswith('State:'):
-                self.state = parts[0].split(':', 1)[1].strip()
-
+            parts = [p.strip() for p in line.split("|")]
+            if parts[0].startswith("State:"):
+                self.state = parts[0].split(":", 1)[1].strip()
             for p in parts[1:]:
-                if '=' in p:
-                    k, v = p.split('=', 1)
-                    k = k.strip(); v = v.strip()
+                if "=" in p:
+                    k, v = p.split("=", 1)
+                    k, v = k.strip(), v.strip()
                     try:
-                        if k == 'stepsPerMl':
-                            self.steps_per_ml = float(v)
-                        elif k == 'pos':
-                            self.position = int(v)
-                        elif k == 'movedSteps':
-                            self.moved_steps = int(v)
-                        elif k == 'movedMl':
-                            self.moved_ml = float(v)
-                        elif k == 'targetSteps':
-                            self.target_steps = int(v)
-                        elif k == 'speedStepsPerS':
-                            self.speed_steps_per_s = float(v)
-                        elif k == 'elapsedMs':
-                            self.elapsed_ms = int(v)
-                        elif k == 'runDurationMs':
-                            self.run_duration_ms = int(v)
+                        if k == "stepsPerMl":      self.steps_per_ml = float(v)
+                        elif k == "pos":           self.position = int(v)
+                        elif k == "movedMl":       self.moved_ml = float(v)
+                        elif k == "targetSteps":   self.target_steps = int(v)
+                        elif k == "elapsedMs":     self.elapsed_ms = int(v)
+                        elif k == "runDurationMs": self.run_duration_ms = int(v)
                     except Exception:
-                        # Ignore parse failures for individual fields
                         pass
-                if 'Awaiting CAL_ACTUAL' in p:
+                if "Awaiting CAL_ACTUAL" in p:
                     self.awaiting_cal = True
-            if 'Awaiting CAL_ACTUAL' not in line:
+            if "Awaiting CAL_ACTUAL" not in line:
                 self.awaiting_cal = False
         except Exception:
             pass
-
-    # ---------------- Helpers ----------------
-    def snapshot(self) -> Dict[str, Any]:
-        """Return a thread-safe copy of the current device status."""
-        with self.lock:
-            return {
-                'connected': self.connected,
-                'state': self.state,
-                'position': self.position,
-                'moved_steps': self.moved_steps,
-                'moved_ml': self.moved_ml,
-                'target_steps': self.target_steps,
-                'speed_steps_per_s': self.speed_steps_per_s,
-                'elapsed_ms': self.elapsed_ms,
-                'run_duration_ms': self.run_duration_ms,
-                'steps_per_ml': self.steps_per_ml,
-                'awaiting_cal': self.awaiting_cal,
-                'last_status_line': self.last_status_line,
-                'last_error': self.last_error,
-            }
-
-    # Context manager support
-    def close(self):  # alias
-        self.disconnect()
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc, tb):
-        self.disconnect()
-
