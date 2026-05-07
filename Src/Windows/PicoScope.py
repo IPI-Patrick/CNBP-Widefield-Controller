@@ -148,19 +148,21 @@ class PicoScopeControl:
 
             with dpg.tree_node(label="Oscilloscope Buffer", default_open=True, span_full_width=True) as oscilloscope_node_id:
                 self.section_node_ids["oscilloscope_buffer"] = oscilloscope_node_id
-                self.oscilloscope_window = OscilloscopeWindow(
-                    [self._make_oscilloscope_trace_getter(panel["id"]) for panel in self.channel_panels],
-                    channel_headers=[panel["display_name"] for panel in self.channel_panels],
-                    state_name="OscilloscopeWindow",
-                    parent=dpg.last_container(),
-                    embedded=True,
-                    height=320,
-                )
+                with dpg.group() as self.oscilloscope_container_id:
+                    pass
 
             dpg.add_separator()
 
         for channel_spec in CHANNEL_PANEL_SPECS:
             self._create_channel_panel(channel_spec)
+        self.oscilloscope_window = OscilloscopeWindow(
+            [self._make_oscilloscope_trace_getter(panel["id"]) for panel in self.channel_panels],
+            channel_headers=[panel["display_name"] for panel in self.channel_panels],
+            state_name="OscilloscopeWindow",
+            parent=self.oscilloscope_container_id,
+            embedded=True,
+            height=320,
+        )
         self._configure_scope_plot_axes()
         self._refresh_available_devices()
         self._sync_driver_channels()
