@@ -1841,7 +1841,9 @@ class CameraFeedWindow:
             self._create_roi(self.preview_bounds)
             self.preview_bounds = None
         elif self.interaction["mode"] in ("move", "resize"):
-            self.interaction["roi"].request_trace_rebuild()
+            # Use nan_pad=True so the existing trace data is preserved but
+            # marked as invalid (nan gaps) instead of being reset to x=0.
+            self.interaction["roi"].request_trace_rebuild(nan_pad=True)
 
         self.interaction = None
         self._redraw_overlay()
