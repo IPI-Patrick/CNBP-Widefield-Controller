@@ -1,4 +1,3 @@
-import io
 import os
 import threading
 import time
@@ -181,6 +180,14 @@ class AcquisitionPreviewWindow:
         self._lp_filter_cache_key = None
         self.lp_filter_checkbox_id = None
         self.lp_filter_cutoff_input_id = None
+        self.drift_correction_enabled = False
+        self._drift_shift_cache = {}        # {frame_index: (dy, dx)}
+        self._drift_cache_key = None
+        self.drift_correction_checkbox_id = None
+        self.bg_removal_enabled = False
+        self.bg_removal_sigma = 20.0
+        self.bg_removal_checkbox_id = None
+        self.bg_removal_sigma_input_id = None
         self.colormap_name = "Viridis"
         self._colormap_per_mode = {
             "Normal": self.single_sided_colormap_names[0],
@@ -357,6 +364,30 @@ class AcquisitionPreviewWindow:
                             with dpg.item_handler_registry(tag=f"{self.tag}_LpCutoffHandler"):
                                 dpg.add_item_deactivated_after_edit_handler(callback=self._on_lp_filter_cutoff_changed)
                             dpg.bind_item_handler_registry(self.lp_filter_cutoff_input_id, f"{self.tag}_LpCutoffHandler")
+                            self.drift_correction_checkbox_id = dpg.add_checkbox(
+                                label="Drift Correction",
+                                default_value=self.drift_correction_enabled,
+                                callback=self._on_drift_correction_changed,
+                            )
+                            self.bg_removal_checkbox_id = dpg.add_checkbox(
+                                label="BG Removal",
+                                default_value=self.bg_removal_enabled,
+                                callback=self._on_bg_removal_enabled_changed,
+                            )
+                            self.bg_removal_sigma_input_id = dpg.add_input_float(
+                                label="BG Sigma (px)",
+                                width=-120,
+                                default_value=self.bg_removal_sigma,
+                                min_value=1.0,
+                                max_value=200.0,
+                                step=1.0,
+                                format="%.1f",
+                                on_enter=True,
+                                callback=self._on_bg_removal_sigma_changed,
+                            )
+                            with dpg.item_handler_registry(tag=f"{self.tag}_BgRemovalSigmaHandler"):
+                                dpg.add_item_deactivated_after_edit_handler(callback=self._on_bg_removal_sigma_changed)
+                            dpg.bind_item_handler_registry(self.bg_removal_sigma_input_id, f"{self.tag}_BgRemovalSigmaHandler")
 
                         dpg.add_separator()
 
@@ -571,6 +602,7 @@ class AcquisitionPreviewWindow:
 
         self._loaded_payload = payload
         self._invalidate_lp_cache()
+        self._invalidate_drift_cache()
         self.Andor.update_from_payload(payload)
         self.current_frame_index = 0
         self.playback_fps = float(payload["playback_fps"])
@@ -713,7 +745,133 @@ class AcquisitionPreviewWindow:
         if self.lp_filter_cutoff_input_id is not None and dpg.does_item_exist(self.lp_filter_cutoff_input_id):
             self.lp_filter_cutoff_hz = max(1e-3, float(dpg.get_value(self.lp_filter_cutoff_input_id)))
         self._invalidate_lp_cache()
+        self._invalidate_drift_cache()   # drift is computed on LP-filtered frames
         if self.lp_filter_enabled:
+            self._mark_image_dirty()
+            self._request_all_roi_rebuilds()
+
+    # ── Drift correction ──────────────────────────────────────────────────
+
+    def _invalidate_drift_cache(self):
+        self._drift_shift_cache = {}
+        self._drift_cache_key = None
+
+    def _get_drift_cache_key(self):
+        if self._loaded_payload is None:
+            return None
+        return (
+            self.lp_filter_enabled,
+            self.lp_filter_cutoff_hz,
+            id(self._current_zero_frame),
+            id(self._loaded_payload),
+        )
+
+    def _get_drift_reference(self):
+        if self._current_zero_frame is not None:
+            return np.asarray(self._current_zero_frame, dtype=np.float32)
+        if self._loaded_payload is not None:
+            frames = self._loaded_payload["normal_frames"]
+            if len(frames) > 0:
+                return np.asarray(frames[0], dtype=np.float32)
+        return None
+
+    @staticmethod
+    def _shift_frame_for_display(frame, dy, dx):
+        if dy == 0 and dx == 0:
+            return frame
+        shifted = np.zeros_like(frame)
+        h, w = frame.shape[:2]
+        src_y = slice(max(0, -dy), h - max(0, dy))
+        dst_y = slice(max(0, dy), h - max(0, -dy))
+        src_x = slice(max(0, -dx), w - max(0, dx))
+        dst_x = slice(max(0, dx), w - max(0, -dx))
+        shifted[dst_y, dst_x] = frame[src_y, src_x]
+        return shifted
+
+    @staticmethod
+    def _shift_frame_subpixel(frame, dy, dx):
+        import math
+        frame_f32 = np.asarray(frame, dtype=np.float32)
+        dy_int = int(math.floor(dy))
+        dx_int = int(math.floor(dx))
+        fy = float(dy - dy_int)
+        fx = float(dx - dx_int)
+        s00 = AcquisitionPreviewWindow._shift_frame_for_display(frame_f32, dy_int, dx_int)
+        row0 = (1.0 - fx) * s00 + fx * AcquisitionPreviewWindow._shift_frame_for_display(frame_f32, dy_int, dx_int + 1) if fx > 1e-6 else s00
+        if fy > 1e-6:
+            s10 = AcquisitionPreviewWindow._shift_frame_for_display(frame_f32, dy_int + 1, dx_int)
+            row1 = (1.0 - fx) * s10 + fx * AcquisitionPreviewWindow._shift_frame_for_display(frame_f32, dy_int + 1, dx_int + 1) if fx > 1e-6 else s10
+            return (1.0 - fy) * row0 + fy * row1
+        return row0
+
+    @staticmethod
+    def _compute_drift_valid_mask(shape, dy, dx):
+        import math
+        h, w = shape
+        mask = np.ones(shape, dtype=bool)
+        top    = max(0, math.ceil(dy))
+        bottom = max(0, math.ceil(-dy))
+        left   = max(0, math.ceil(dx))
+        right  = max(0, math.ceil(-dx))
+        if top    > 0: mask[:top, :]        = False
+        if bottom > 0: mask[h - bottom:, :] = False
+        if left   > 0: mask[:, :left]       = False
+        if right  > 0: mask[:, w - right:]  = False
+        return mask
+
+    def _get_drift_corrected_frame(self, frame, frame_index):
+        """Return (corrected_frame, valid_mask | None)."""
+        if not self.drift_correction_enabled:
+            return frame, None
+        reference = self._get_drift_reference()
+        if reference is None:
+            return frame, None
+        # Invalidate cache when settings/reference/file change
+        key = self._get_drift_cache_key()
+        if key != self._drift_cache_key:
+            self._drift_shift_cache = {}
+            self._drift_cache_key = key
+        if frame_index not in self._drift_shift_cache:
+            from skimage.registration import phase_cross_correlation
+            frame_f32 = np.asarray(frame, dtype=np.float32)
+            shift, _, _ = phase_cross_correlation(reference, frame_f32, upsample_factor=10, normalization=None)
+            max_shift = min(frame_f32.shape[0], frame_f32.shape[1]) // 4
+            dy = float(np.clip(float(shift[0]), -max_shift, max_shift))
+            dx = float(np.clip(float(shift[1]), -max_shift, max_shift))
+            self._drift_shift_cache[frame_index] = (dy, dx)
+        dy, dx = self._drift_shift_cache[frame_index]
+        corrected = self._shift_frame_subpixel(np.asarray(frame, dtype=np.float32), dy, dx)
+        mask = self._compute_drift_valid_mask(corrected.shape, dy, dx)
+        return corrected, mask
+
+    def _on_drift_correction_changed(self, sender, app_data):
+        self.drift_correction_enabled = bool(app_data)
+        self._invalidate_drift_cache()
+        self._mark_image_dirty()
+        self._request_all_roi_rebuilds()
+
+    # ── Background removal ─────────────────────────────────────────────────────
+
+    @staticmethod
+    def _apply_background_removal(frame_f32, sigma):
+        from scipy.ndimage import gaussian_filter
+        bg = gaussian_filter(np.asarray(frame_f32, dtype=np.float32), sigma=float(sigma))
+        return np.clip(frame_f32 - bg, 0.0, None)
+
+    def _on_bg_removal_enabled_changed(self, sender, app_data):
+        self.bg_removal_enabled = bool(app_data)
+        enabled = self.bg_removal_enabled
+        if self.bg_removal_sigma_input_id is not None and dpg.does_item_exist(self.bg_removal_sigma_input_id):
+            from Utils.themes import read_only_theme
+            dpg.configure_item(self.bg_removal_sigma_input_id, enabled=enabled)
+            dpg.bind_item_theme(self.bg_removal_sigma_input_id, None if enabled else read_only_theme)
+        self._mark_image_dirty()
+        self._request_all_roi_rebuilds()
+
+    def _on_bg_removal_sigma_changed(self, sender, app_data):
+        self.bg_removal_sigma = max(1.0, float(dpg.get_value(self.bg_removal_sigma_input_id)))
+        dpg.set_value(self.bg_removal_sigma_input_id, self.bg_removal_sigma)
+        if self.bg_removal_enabled:
             self._mark_image_dirty()
             self._request_all_roi_rebuilds()
 
@@ -734,15 +892,17 @@ class AcquisitionPreviewWindow:
         return self._loaded_payload["normal_frames"][frame_index]
 
     def _compute_difference_frame(self, frame):
-        zero_frame = np.asarray(self._current_zero_frame, dtype=np.float32)
-        return np.asarray(frame, dtype=np.float32) - zero_frame
+        zero_float = np.asarray(self._current_zero_frame, dtype=np.float32)
+        if self.bg_removal_enabled:
+            zero_float = self._apply_background_removal(zero_float, self.bg_removal_sigma)
+        return np.asarray(frame, dtype=np.float32) - zero_float
 
     def _compute_contrast_frame(self, frame):
         frame_float = np.asarray(frame, dtype=np.float32)
-        zero_float = np.asarray(self._current_zero_frame, dtype=np.float32)
-        difference_frame = frame_float - zero_float
+        zero_orig = np.asarray(self._current_zero_frame, dtype=np.float32)
+        difference_frame = frame_float - zero_orig
         contrast_frame = np.zeros_like(frame_float, dtype=np.float32)
-        np.divide(difference_frame, zero_float, out=contrast_frame, where=np.abs(zero_float) > 0.0)
+        np.divide(difference_frame, zero_orig, out=contrast_frame, where=np.abs(zero_orig) > 0.0)
         contrast_frame *= 100.0
         return contrast_frame
 
@@ -750,28 +910,40 @@ class AcquisitionPreviewWindow:
         frame = self._get_normal_frame()
         if frame is None:
             return None
+        frame, drift_mask = self._get_drift_corrected_frame(frame, self.current_frame_index)
+        # BG removal is skipped for Contrast — contrast already normalises background.
+        if self.bg_removal_enabled and not self._is_contrast_mode_active():
+            frame = self._apply_background_removal(np.asarray(frame, dtype=np.float32), self.bg_removal_sigma)
         if self._is_difference_mode_active():
-            return self._compute_difference_frame(frame)
-        if self._is_contrast_mode_active():
-            return self._compute_contrast_frame(frame)
-        return frame
+            result = self._compute_difference_frame(frame)
+        elif self._is_contrast_mode_active():
+            result = self._compute_contrast_frame(frame)
+        else:
+            result = np.asarray(frame, dtype=np.float32) if (drift_mask is not None or self.bg_removal_enabled) else frame
+        if drift_mask is not None:
+            result = np.array(result, copy=True)
+            result[~drift_mask] = 0.0
+        return result
 
     def process_analysis_frame(self, frame, zero_frame=None):
         if frame is None:
             return None
+        frame_float = np.asarray(frame, dtype=np.float32)
+        is_contrast = self._is_contrast_mode_active()
+        if self.bg_removal_enabled and not is_contrast:
+            frame_float = self._apply_background_removal(frame_float, self.bg_removal_sigma)
         if self._is_difference_mode_active():
-            reference_frame = self._current_zero_frame if zero_frame is None else zero_frame
-            return np.asarray(frame, dtype=np.float32) - np.asarray(reference_frame, dtype=np.float32)
-        if self._is_contrast_mode_active():
-            reference_frame = self._current_zero_frame if zero_frame is None else zero_frame
-            frame_float = np.asarray(frame, dtype=np.float32)
-            zero_float = np.asarray(reference_frame, dtype=np.float32)
-            difference_frame = frame_float - zero_float
+            ref_raw = np.asarray(self._current_zero_frame if zero_frame is None else zero_frame, dtype=np.float32)
+            ref = self._apply_background_removal(ref_raw, self.bg_removal_sigma) if self.bg_removal_enabled else ref_raw
+            return frame_float - ref
+        if is_contrast:
+            ref_raw = np.asarray(self._current_zero_frame if zero_frame is None else zero_frame, dtype=np.float32)
+            difference_frame = np.asarray(frame, dtype=np.float32) - ref_raw
             contrast_frame = np.zeros_like(frame_float, dtype=np.float32)
-            np.divide(difference_frame, zero_float, out=contrast_frame, where=np.abs(zero_float) > 0.0)
+            np.divide(difference_frame, ref_raw, out=contrast_frame, where=np.abs(ref_raw) > 0.0)
             contrast_frame *= 100.0
             return contrast_frame
-        return np.array(frame, copy=True)
+        return frame_float
 
     def extract_roi_frame(self, frame, bounds):
         x1, y1, x2, y2 = self._normalize_bounds(bounds)

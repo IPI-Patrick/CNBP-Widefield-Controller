@@ -136,6 +136,7 @@ class RegionOfInterest:
                 self.trace_min_value = float(trace_min_value)
                 self.trace_max_value = float(trace_max_value)
                 self.pending_image_rgba = self._frame_to_rgba(crop)
+                self.pending_image_shape = (crop.shape[0], crop.shape[1])
                 self.pending_plot_data = (plot_x_axis, list(y_axis))
                 self.pending_version += 1
 

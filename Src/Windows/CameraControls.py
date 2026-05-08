@@ -66,6 +66,7 @@ class CameraSystem:
         self._save_progress_segment_key = None
         self._save_progress_overlay = "Save"
         self._save_progress_segment_started_at = time.perf_counter()
+        self._save_frame_progress = None
         self._acquisition_preview_window = None
         self._acquisition_scope_mean_thread = None
         self._acquisition_scope_mean_stop_event = None
@@ -88,6 +89,8 @@ class CameraSystem:
         self.save_base_filename = "data"
         self.save_file_index = 0
         self.save_prompt_every_time = True
+        self.auto_save_enabled = False
+        self.auto_save_checkbox_id = None
         self._snapshot_thread = None
         self._snapshot_in_progress = False
         self._pending_snapshot_result = None
@@ -468,6 +471,11 @@ class CameraSystem:
                     self.save_prompt_every_time_checkbox_id = dpg.add_checkbox(
                         label="Prompt Every Time",
                         default_value=self.save_prompt_every_time,
+                    )
+
+                    self.auto_save_checkbox_id = dpg.add_checkbox(
+                        label="Auto Save",
+                        default_value=self.auto_save_enabled,
                     )
 
                 dpg.add_separator()
@@ -1361,6 +1369,10 @@ class CameraSystem:
         if not self._save_in_progress:
             return self._save_progress_overlay
 
+        if self._save_frame_progress is not None:
+            completed, total = self._save_frame_progress
+            return f"Saving {completed}/{total} frames"
+
         percent = int(round(max(0.0, min(1.0, float(display_value))) * 100.0))
         if self._save_progress_segment_key:
             return f"Saving {percent}% ({self._save_progress_segment_key})"
@@ -1393,35 +1405,44 @@ class CameraSystem:
         return self._save_progress_display_value
 
     def _write_npz_with_progress(self, file_path, save_arrays):
-        entries = []
-        total_units = 0
+        import numpy.lib.format as _npfmt
 
-        for key, value in save_arrays.items():
-            array_value = np.asanyarray(value)
-            entry_units = max(int(array_value.nbytes), 1)
-            entries.append((key, array_value, entry_units))
-            total_units += entry_units
+        frame_key = "camera_acquisitions"
+        frame_array = np.ascontiguousarray(save_arrays[frame_key]) if frame_key in save_arrays else None
+        total_frames = int(frame_array.shape[0]) if frame_array is not None and frame_array.ndim >= 3 else 0
 
         directory = os.path.dirname(file_path) or os.getcwd()
         file_descriptor, temp_path = tempfile.mkstemp(prefix=".saving_", suffix=".npz", dir=directory)
         os.close(file_descriptor)
 
-        completed_units = 0
-        self._update_save_progress(0, total_units)
+        self._save_frame_progress = (0, total_frames)
+        self._set_save_progress(0.0, f"Saving 0/{total_frames} frames")
 
         try:
             with zipfile.ZipFile(temp_path, mode="w", compression=zipfile.ZIP_DEFLATED, allowZip64=True) as archive:
-                for key, array_value, entry_units in entries:
-                    next_completed_units = completed_units + entry_units
-                    self._set_save_progress_segment(
-                        completed_units / total_units,
-                        next_completed_units / total_units,
-                        current_key=key,
-                    )
+                for key, value in save_arrays.items():
+                    if key == frame_key:
+                        continue
                     with archive.open(f"{key}.npy", mode="w", force_zip64=True) as handle:
-                        np.lib.format.write_array(handle, array_value, allow_pickle=True)
-                    completed_units = next_completed_units
-                    self._update_save_progress(completed_units, total_units, current_key=key)
+                        np.lib.format.write_array(handle, np.asanyarray(value), allow_pickle=True)
+
+                if frame_array is not None:
+                    with archive.open(f"{frame_key}.npy", mode="w", force_zip64=True) as handle:
+                        if total_frames > 0:
+                            _npfmt.write_array_header_1_0(handle, {
+                                "descr": _npfmt.dtype_to_descr(frame_array.dtype),
+                                "fortran_order": False,
+                                "shape": frame_array.shape,
+                            })
+                            for frame_idx in range(total_frames):
+                                handle.write(frame_array[frame_idx].tobytes())
+                                self._save_frame_progress = (frame_idx + 1, total_frames)
+                                self._set_save_progress(
+                                    (frame_idx + 1) / total_frames,
+                                    f"Saving {frame_idx + 1}/{total_frames} frames",
+                                )
+                        else:
+                            np.lib.format.write_array(handle, frame_array, allow_pickle=True)
 
             os.replace(temp_path, file_path)
         except Exception:
@@ -1461,6 +1482,7 @@ class CameraSystem:
 
         self._save_in_progress = False
         self._save_thread = None
+        self._save_frame_progress = None
 
         if result["success"]:
             self._set_save_progress(1.0, result["overlay"])
@@ -1616,6 +1638,12 @@ class CameraSystem:
             self._set_acquisition_progress(1.0, f"Stopped ({frame_count} frames)")
         else:
             self._set_acquisition_progress(1.0, f"Complete ({frame_count} frames)")
+
+        if bool(dpg.get_value(self.auto_save_checkbox_id)):
+            file_path, index = self._build_auto_save_path()
+            dpg.set_value(self.save_file_index_input_id, index + 1)
+            self.save_file_index = index + 1
+            self._do_save_acquisition(file_path)
 
     def _run_acquisition(self, scope_controller):
         stopped_early = False
@@ -1837,6 +1865,7 @@ class CameraSystem:
         self._save_progress_segment_end_value = 0.0
         self._save_progress_segment_key = None
         self._save_progress_segment_started_at = time.perf_counter()
+        self._save_frame_progress = None
         self._set_save_progress(0.0, "Saving 0%")
         self._save_thread.start()
 
@@ -2270,14 +2299,12 @@ class CameraSystem:
         self._apply_pending_snapshot_result()
         self._refresh_hardware_requirements()
 
+        # Set the acquisition progress bar to the number of frames
         if self.acquisition_in_progress and self.acquisition_started_at is not None:
-            elapsed_seconds = max(0.0, time.perf_counter() - self.acquisition_started_at)
-            camera_progress = min(1.0, self.Andor.frameIdx / max(self.acquisition_target_frames, 1))
-            scope_controller = self._get_scope_controller()
-            scope_sample_count = len(scope_controller.driver.timestamps) if scope_controller is not None else 0
-            scope_progress = min(1.0, scope_sample_count / max(self.acquisition_scope_target_samples, 1))
-            progress_value = min(camera_progress, scope_progress)
-            overlay = f"{self.Andor.frameIdx}/{self.acquisition_target_frames} frames | {elapsed_seconds:0.1f}s"
+            elapsed_seconds     = max(0.0, time.perf_counter() - self.acquisition_started_at)
+            camera_progress     = min(1.0, self.Andor.frameIdx / max(self.acquisition_target_frames, 1))
+            progress_value      = camera_progress
+            overlay             = f"{self.Andor.frameIdx}/{self.acquisition_target_frames} frames | {elapsed_seconds:0.1f}s"
             self._set_acquisition_progress(progress_value, overlay)
 
         # Disable the button if we are capturing something unrelated to experiment
@@ -2381,6 +2408,7 @@ class CameraSystem:
                 "save_base_filename": str(dpg.get_value(self.save_base_filename_input_id) or ""),
                 "save_file_index": int(dpg.get_value(self.save_file_index_input_id)),
                 "save_prompt_every_time": bool(dpg.get_value(self.save_prompt_every_time_checkbox_id)),
+                "auto_save_enabled": bool(dpg.get_value(self.auto_save_checkbox_id)),
             },
         )
         if hasattr(self.z_axis_controls, "SaveState"):
@@ -2485,6 +2513,9 @@ class CameraSystem:
             if "save_prompt_every_time" in state:
                 dpg.set_value(self.save_prompt_every_time_checkbox_id, bool(state["save_prompt_every_time"]))
                 self.save_prompt_every_time = bool(state["save_prompt_every_time"])
+            if "auto_save_enabled" in state:
+                dpg.set_value(self.auto_save_checkbox_id, bool(state["auto_save_enabled"]))
+                self.auto_save_enabled = bool(state["auto_save_enabled"])
             self._refresh_storage_devices(state.get("hardware_storage_drive"))
 
             self.acquisition_duration_seconds = float(dpg.get_value(self.acquisition_duration_input_id))

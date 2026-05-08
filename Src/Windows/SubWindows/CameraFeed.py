@@ -5,6 +5,7 @@ import dearpygui.dearpygui as dpg
 import numpy as np
 from matplotlib import colormaps
 from matplotlib.colors import LinearSegmentedColormap, to_rgb
+from skimage.registration import phase_cross_correlation
 
 from Utils.StorageDTypes import get_raw_storage_max_value
 from Utils.state_persistence import apply_window_state, capture_window_state, delete_state_file, list_state_files, load_state_file, save_state_file
@@ -56,6 +57,7 @@ class CameraFeedWindow:
         self.autoscale_grace_percent = 5.0
         self.display_mode = "Normal"
         self.mirrored_difference_scale = False
+        self._scale_state_per_mode = {}
         self.colormap_name = "Viridis"
         self._colormap_per_mode = {
             "Normal": self.single_sided_colormap_names[0],
@@ -65,6 +67,8 @@ class CameraFeedWindow:
         self.lp_filter_enabled = bool(getattr(self.Andor, "lp_filter_enabled", False))
         self.lp_filter_cutoff_hz = float(getattr(self.Andor, "lp_filter_cutoff_hz", 10.0))
         self.drift_correction_enabled = False
+        self.bg_removal_enabled = False
+        self.bg_removal_sigma = 20.0
         self._drift_reference_frame = None
         self._drift_accumulated_shift = (0, 0)
         self._drift_smoothed_shift = np.array([0.0, 0.0])
@@ -202,6 +206,36 @@ class CameraFeedWindow:
         dpg.set_value(self.controls_window.scale_min_input_id, self.get_scale_min_percent())
         dpg.set_value(self.controls_window.scale_max_input_id, self.get_scale_max_percent())
 
+    def _save_scale_state_for_mode(self, mode):
+        self._scale_state_per_mode[str(mode)] = {
+            "scale_min": self.scale_min,
+            "scale_max": self.scale_max,
+            "autoscale_enabled": self.autoscale_enabled,
+            "autoscale_grace_percent": self.autoscale_grace_percent,
+            "mirrored_difference_scale": self.mirrored_difference_scale,
+        }
+
+    def _restore_or_default_scale_for_mode(self, mode):
+        saved = self._scale_state_per_mode.get(str(mode))
+        if saved is not None:
+            self.scale_min = saved["scale_min"]
+            self.scale_max = saved["scale_max"]
+            self.autoscale_enabled = saved["autoscale_enabled"]
+            self.autoscale_grace_percent = saved["autoscale_grace_percent"]
+            self.mirrored_difference_scale = saved["mirrored_difference_scale"]
+        else:
+            self.autoscale_enabled = True
+            self.autoscale_grace_percent = 5.0
+            if mode in ("Difference", "Contrast"):
+                self.mirrored_difference_scale = True
+                signed_display_limit = self._get_signed_display_limit()
+                self.scale_min = -signed_display_limit
+                self.scale_max = signed_display_limit
+            else:
+                self.mirrored_difference_scale = False
+                self.scale_min = 0.0
+                self.scale_max = float(self.display_max)
+
     def reset_texture(self):
         if self.controls_window is not None:
             preserved_scale_min_percent = self.get_scale_min_percent()
@@ -307,6 +341,9 @@ class CameraFeedWindow:
 
         dpg.configure_item(self.controls_window.lp_filter_cutoff_input_id, enabled=self.lp_filter_enabled)
         dpg.bind_item_theme(self.controls_window.lp_filter_cutoff_input_id, None if self.lp_filter_enabled else read_only_theme)
+
+        dpg.configure_item(self.controls_window.bg_removal_sigma_input_id, enabled=self.bg_removal_enabled)
+        dpg.bind_item_theme(self.controls_window.bg_removal_sigma_input_id, None if self.bg_removal_enabled else read_only_theme)
 
     def _on_autoscale_changed(self, sender, app_data):
         self.autoscale_enabled = bool(app_data)
@@ -626,6 +663,12 @@ class CameraFeedWindow:
         return True
 
     @staticmethod
+    def _apply_background_removal(frame_f32, sigma):
+        from scipy.ndimage import gaussian_filter
+        bg = gaussian_filter(np.asarray(frame_f32, dtype=np.float32), sigma=float(sigma))
+        return np.clip(frame_f32 - bg, 0.0, None)
+
+    @staticmethod
     def _compute_focus_score(frame):
         f = np.asarray(frame, dtype=np.float32)
         if f.size < 9:
@@ -634,7 +677,8 @@ class CameraFeedWindow:
         gy = f[2:, :] - f[:-2, :]
         h = min(gx.shape[0], gy.shape[0])
         w = min(gx.shape[1], gy.shape[1])
-        return float(np.mean(gx[:h, :w] ** 2 + gy[:h, :w] ** 2))
+        mean_sq = max(float(np.mean(f)) ** 2, 1.0)
+        return float(np.mean(gx[:h, :w] ** 2 + gy[:h, :w] ** 2)) / mean_sq
 
     def ensure_zero_reference_from_latest_frame(self):
         with self.Andor.frame_lock:
@@ -713,19 +757,21 @@ class CameraFeedWindow:
         self.ensure_zero_reference_from_latest_frame()
 
     def _on_display_mode_changed(self, sender, app_data):
-        self.display_mode = str(app_data)
-        self._reset_drift_state()
+        old_mode = self.display_mode
+        new_mode = str(app_data)
+
+        self._save_scale_state_for_mode(old_mode)
+        self.display_mode = new_mode
         self._reset_processing_state()
-        if self._is_signed_zero_reference_mode_active():
-            self.mirrored_difference_scale = True
-            dpg.set_value(self.controls_window.mirrored_difference_checkbox_id, True)
-        else:
-            self.mirrored_difference_scale = False
-            dpg.set_value(self.controls_window.mirrored_difference_checkbox_id, False)
+
+        self._restore_or_default_scale_for_mode(new_mode)
+        dpg.set_value(self.controls_window.autoscale_checkbox_id, self.autoscale_enabled)
+        dpg.set_value(self.controls_window.autoscale_grace_input_id, self.autoscale_grace_percent)
+        dpg.set_value(self.controls_window.mirrored_difference_checkbox_id, self.mirrored_difference_scale)
+        self._sync_scale_inputs_from_values()
 
         self.colormap_name = self._colormap_per_mode.get(self.display_mode, self._get_default_colormap_name())
         self._ensure_valid_colormap_selection()
-        self._sync_scale_state_to_active_frame()
         self._request_zero_window_refresh()
         self._refresh_display_image()
         self._update_zero_window_texture_binding()
@@ -758,12 +804,18 @@ class CameraFeedWindow:
         self._drift_valid_mask = None
 
     def _estimate_drift_shift(self, frame_f32, reference_frame):
-        from skimage.registration import phase_cross_correlation
+        ref_max = float(reference_frame.max())
+        if ref_max <= 0.0:
+            return 0.0, 0.0
+        ref_norm = reference_frame / ref_max
+        # phase_cross_correlation with normalization="phase" is undefined for flat images
+        if float(ref_norm.std()) < 1e-6:
+            return 0.0, 0.0
         shift, _, _ = phase_cross_correlation(
-            reference_frame,
-            frame_f32,
+            ref_norm,
+            frame_f32 / ref_max,
             upsample_factor=10,
-            normalization=None,
+            normalization="phase",
         )
         return float(shift[0]), float(shift[1])
 
@@ -823,25 +875,29 @@ class CameraFeedWindow:
         if right  > 0: mask[:, w - right:] = False
         return mask
 
-    def _apply_drift_correction_for_display(self, frame):
+    def _apply_drift_correction_for_display(self, frame, estimate_from=None):
         frame_f32 = np.asarray(frame, dtype=np.float32)
+        # Use a separate (typically raw) frame for shift estimation when provided so that
+        # a preceding LP filter's temporal lag does not corrupt the drift estimate.
+        shift_source = np.asarray(estimate_from, dtype=np.float32) if estimate_from is not None else frame_f32
         reference, _ = self._get_drift_reference()
 
         if reference is None:
             # No zero reference and no fallback captured yet — use this frame as fallback.
-            self._drift_reference_frame = np.array(frame_f32, copy=True)
+            self._drift_reference_frame = np.array(shift_source, copy=True)
             self._drift_accumulated_shift = (0.0, 0.0)
+            self._drift_smoothed_shift = np.array([0.0, 0.0])
             self._drift_valid_mask = None
             return frame_f32
 
-        dy_raw, dx_raw = self._estimate_drift_shift(frame_f32, reference)
+        dy_raw, dx_raw = self._estimate_drift_shift(shift_source, reference)
         max_shift = min(frame_f32.shape[0], frame_f32.shape[1]) // 4
-        dy_f = float(np.clip(dy_raw, -max_shift, max_shift))
-        dx_f = float(np.clip(dx_raw, -max_shift, max_shift))
-        self._drift_accumulated_shift = (dy_f, dx_f)
-        self._drift_smoothed_shift = np.array([dy_f, dx_f])
-        self._drift_valid_mask = self._compute_drift_valid_mask(frame_f32.shape, dy_f, dx_f)
-        return self._shift_frame_subpixel(frame_f32, dy_f, dx_f)
+        dy_s = float(np.clip(dy_raw, -max_shift, max_shift))
+        dx_s = float(np.clip(dx_raw, -max_shift, max_shift))
+        self._drift_smoothed_shift = np.array([dy_s, dx_s])
+        self._drift_accumulated_shift = (dy_s, dx_s)
+        self._drift_valid_mask = self._compute_drift_valid_mask(frame_f32.shape, dy_s, dx_s)
+        return self._shift_frame_subpixel(frame_f32, dy_s, dx_s)
 
     def make_display_rgba(self, frame, *, is_crop=False):
         return self._frame_to_rgba(frame)
@@ -852,6 +908,23 @@ class CameraFeedWindow:
             self._reset_drift_state()
         self._refresh_display_image()
         self._request_all_roi_rebuilds()
+
+    def _on_bg_removal_enabled_changed(self, sender, app_data):
+        self.bg_removal_enabled = bool(app_data)
+        self._update_settings_controls_state()
+        self._reset_processing_state()
+        self._sync_scale_state_to_active_frame()
+        self._refresh_display_image()
+        self._request_all_roi_rebuilds(clear_existing=True)
+
+    def _on_bg_removal_sigma_changed(self, sender, app_data):
+        self.bg_removal_sigma = max(1.0, float(dpg.get_value(self.controls_window.bg_removal_sigma_input_id)))
+        dpg.set_value(self.controls_window.bg_removal_sigma_input_id, self.bg_removal_sigma)
+        if self.bg_removal_enabled:
+            self._reset_processing_state()
+            self._sync_scale_state_to_active_frame()
+            self._refresh_display_image()
+            self._request_all_roi_rebuilds(clear_existing=True)
 
     def extract_roi_frame(self, frame, bounds):
         x1, y1, x2, y2 = self._normalize_bounds(bounds)
@@ -1564,17 +1637,34 @@ class CameraFeedWindow:
             self._lp_filter_previous_input = None
             self._lp_filter_previous_output = None
 
-        # Drift correction (on LP-filtered signal, before zero reference)
+        # Drift correction — shift is always estimated from the raw frame so that LP filter
+        # temporal lag does not corrupt the estimate; the correction is applied to source_frame.
         if self.drift_correction_enabled:
             source_frame = self._apply_drift_correction_for_display(
-                np.asarray(source_frame, dtype=np.float32)
+                np.asarray(source_frame, dtype=np.float32),
+                estimate_from=frame_f32,
             )
         else:
             self._drift_valid_mask = None
 
+        # Background removal (after drift, before zero reference).
+        # Skipped for Contrast mode — contrast already normalises background via (frame−zero)/zero.
+        bg_removal_active = self.bg_removal_enabled and not self._is_contrast_mode_active()
+        if bg_removal_active:
+            source_frame = self._apply_background_removal(
+                np.asarray(source_frame, dtype=np.float32), self.bg_removal_sigma
+            )
+
         # Zero reference (Difference / Contrast modes)
         with self.Andor.frame_lock:
-            zero_frame = np.array(self.Andor.zero, copy=True) if self._is_signed_zero_reference_mode_active() else None
+            zero_frame_raw = np.array(self.Andor.zero, copy=True) if self._is_signed_zero_reference_mode_active() else None
+
+        if zero_frame_raw is not None and bg_removal_active:
+            zero_frame = self._apply_background_removal(
+                np.asarray(zero_frame_raw, dtype=np.float32), self.bg_removal_sigma
+            )
+        else:
+            zero_frame = zero_frame_raw
 
         result = np.asarray(
             self._process_analysis_frame(source_frame, zero_frame=zero_frame),
@@ -1808,10 +1898,14 @@ class CameraFeedWindow:
                 "autoscale_grace_percent": float(self.autoscale_grace_percent),
                 "display_mode": self.display_mode,
                 "mirrored_difference_scale": bool(self.mirrored_difference_scale),
+                "scale_state_per_mode": self._scale_state_per_mode,
                 "colormap_name": self.colormap_name,
                 "colormap_per_mode": dict(self._colormap_per_mode),
                 "lp_filter_enabled": bool(self.lp_filter_enabled),
                 "lp_filter_cutoff_hz": float(self.lp_filter_cutoff_hz),
+                "drift_correction_enabled": bool(self.drift_correction_enabled),
+                "bg_removal_enabled": bool(self.bg_removal_enabled),
+                "bg_removal_sigma": float(self.bg_removal_sigma),
                 "zoom": float(self.zoom),
                 "view_center_x": float(self.view_center_x),
                 "view_center_y": float(self.view_center_y),
@@ -1858,8 +1952,31 @@ class CameraFeedWindow:
             self.scale_min = float(state.get("scale_min", self.scale_min))
             self.scale_max = float(state.get("scale_max", self.scale_max))
 
+        # Seed the current mode's entry so switching away and back restores these values.
+        self._scale_state_per_mode[self.display_mode] = {
+            "scale_min": self.scale_min,
+            "scale_max": self.scale_max,
+            "autoscale_enabled": self.autoscale_enabled,
+            "autoscale_grace_percent": self.autoscale_grace_percent,
+            "mirrored_difference_scale": self.mirrored_difference_scale,
+        }
+        saved_scale_per_mode = state.get("scale_state_per_mode", {})
+        if isinstance(saved_scale_per_mode, dict):
+            for _mode, _ms in saved_scale_per_mode.items():
+                if isinstance(_ms, dict) and str(_mode) != self.display_mode:
+                    self._scale_state_per_mode[str(_mode)] = {
+                        "scale_min": float(_ms.get("scale_min", 0.0)),
+                        "scale_max": float(_ms.get("scale_max", float(self.display_max))),
+                        "autoscale_enabled": bool(_ms.get("autoscale_enabled", True)),
+                        "autoscale_grace_percent": float(_ms.get("autoscale_grace_percent", 5.0)),
+                        "mirrored_difference_scale": bool(_ms.get("mirrored_difference_scale", False)),
+                    }
+
         self.lp_filter_enabled = bool(state.get("lp_filter_enabled", self.lp_filter_enabled))
         self.lp_filter_cutoff_hz = float(state.get("lp_filter_cutoff_hz", self.lp_filter_cutoff_hz))
+        self.drift_correction_enabled = bool(state.get("drift_correction_enabled", self.drift_correction_enabled))
+        self.bg_removal_enabled = bool(state.get("bg_removal_enabled", self.bg_removal_enabled))
+        self.bg_removal_sigma = float(state.get("bg_removal_sigma", self.bg_removal_sigma))
         self.zoom = float(state.get("zoom", self.zoom))
         self.view_center_x = float(state.get("view_center_x", self.view_center_x))
         self.view_center_y = float(state.get("view_center_y", self.view_center_y))
@@ -1877,6 +1994,10 @@ class CameraFeedWindow:
         dpg.set_value(self.controls_window.color_scale_combo_id, self.get_selected_colormap_label())
         dpg.set_value(self.controls_window.lp_filter_checkbox_id, self.lp_filter_enabled)
         dpg.set_value(self.controls_window.lp_filter_cutoff_input_id, self.lp_filter_cutoff_hz)
+        dpg.set_value(self.controls_window.drift_correction_checkbox_id, self.drift_correction_enabled)
+        dpg.set_value(self.controls_window.bg_removal_checkbox_id, self.bg_removal_enabled)
+        dpg.set_value(self.controls_window.bg_removal_sigma_input_id, self.bg_removal_sigma)
+        dpg.configure_item(self.controls_window.bg_removal_sigma_input_id, enabled=self.bg_removal_enabled)
 
         self._clamp_view_center()
         self._update_image_draw_transform()

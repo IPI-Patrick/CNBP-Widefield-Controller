@@ -122,6 +122,28 @@ class FeedControlsWindow:
                     callback=self.parent._on_drift_correction_changed,
                 )
 
+                self.bg_removal_checkbox_id = dpg.add_checkbox(
+                    label="BG Removal",
+                    default_value=self.parent.bg_removal_enabled,
+                    callback=self.parent._on_bg_removal_enabled_changed,
+                )
+
+                self.bg_removal_sigma_input_id = dpg.add_input_float(
+                    label="BG Sigma (px)",
+                    width=-120,
+                    default_value=self.parent.bg_removal_sigma,
+                    min_value=1.0,
+                    max_value=200.0,
+                    step=1.0,
+                    format="%.1f",
+                    on_enter=True,
+                    callback=self.parent._on_bg_removal_sigma_changed,
+                )
+
+                with dpg.item_handler_registry(tag=f"{self.parent.tag}_BgRemovalSigmaHandler"):
+                    dpg.add_item_deactivated_after_edit_handler(callback=self.parent._on_bg_removal_sigma_changed)
+                dpg.bind_item_handler_registry(self.bg_removal_sigma_input_id, f"{self.parent.tag}_BgRemovalSigmaHandler")
+
             dpg.add_separator()
 
             with dpg.tree_node(label="Focus Level", default_open=True, span_full_width=True) as focus_level_node_id:

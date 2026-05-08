@@ -111,7 +111,8 @@ def quantize_to_signed_storage_dtype(values, dtype_name):
     array = np.asarray(values, dtype=np.float32)
 
     if normalized_name == "16":
-        return array.astype(_SIGNED_STORAGE_DTYPE, copy=False)
+        f16_max = float(np.finfo(np.float16).max)
+        return np.clip(array, -f16_max, f16_max).astype(_SIGNED_STORAGE_DTYPE, copy=False)
 
     quantized = np.array(array, dtype=np.float32, copy=True)
     finite_mask = np.isfinite(quantized)
