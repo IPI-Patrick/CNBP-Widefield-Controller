@@ -3,6 +3,7 @@ import threading
 import time
 import numpy as np
 
+from skimage.draw import polygon as skimage_polygon # pylint: disable=no-name-in-module
 
 class Acquisition:
 
@@ -274,7 +275,6 @@ class MockCamera:
     @staticmethod
     def _generate_particle_mask(rng, radius):
         """Return a float32 mask of an irregular polygon approximating the given radius."""
-        from skimage.draw import polygon as skimage_polygon
         size = int(math.ceil(radius * 2.5))
         canvas_size = max(5, size * 2 + 3)
         cx = cy = canvas_size // 2
