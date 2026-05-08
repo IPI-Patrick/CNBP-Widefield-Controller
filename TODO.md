@@ -5,12 +5,13 @@
 - ~~ In the Preview window, the thumbnails for the ROIs are not taking into account the drift correction which is causing the thumbnail image to be offset from where the ROI is positioned.~~
 - ~~ Remove the ROI Scaling section in the "Preview" settings. Combine it with the "ROIs" section.~~
 - ~~ In the Preview window, the thumbnail for the ROIs is not being updated on every frame. The y-axis on the graph for the ROI also seems to only be showing a single zero value for all x-axis values. The autoscaling is also setting to +8e37 to -8e37. Figure out why the mean calculation is failing.~~
-
 - ~~ In the preview window remove the "`<n>` ROIs" text.~~
-- [ ] Make the ROI graphs have "Auto Fit" enabled by default.
-- [ ] Make the ROI graphs have the `cross` button be on the top-left instead of the top-right
-- [ ] Add an "Auto-Fit" button to each ROI (next to the cross button) which instantly re-fits the scaling
+
+- ~~ Make the ROI graphs have "Auto Fit" enabled by default.~~
+- ~~ Make the ROI graphs have the `cross` button be on the top-left instead of the top-right~~
+- ~~ Add an "Auto-Fit" button to each ROI (next to the cross button) which instantly re-fits the scaling~~
 - [ ] Make all of the ROIs get brighter and dimmer at the same time
+- [ ] Make the "Stop Acquiring" button enabled whilst acquiring
 
 - ~~ Remove the ROI Scaling section in the "Preview" settings. Combine it with the "ROIs" section.~~
 
