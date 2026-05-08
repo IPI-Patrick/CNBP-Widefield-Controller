@@ -1,7 +1,8 @@
 **TODO:**
 
 - ~~ The viewport right-click is overwriting the right-click for the ROI graphs. Make the viewport right-click only occur when the viewport background is pressed.~~
-- [ ] The "Acquire" button needs to become enabled when the preview is stopped and saving is completed.
+
+- ~~ The "Acquire" button needs to become enabled when the preview is stopped and saving is completed.~~
 - [ ] In the Preview window, the thumbnails for the ROIs are not taking into account the drift correction which is causing the thumbnail image to be offset from where the ROI is positioned.
 - [ ] Make the ROI graphs have "Auto Fit" enabled by default.
 - [ ] Make the ROI graphs have the `cross` button be on the top-left instead of the top-right
