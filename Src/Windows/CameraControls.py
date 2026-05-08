@@ -18,7 +18,7 @@ from Windows.SubWindows.CameraFeed import CameraFeedWindow
 from Windows.SubWindows.Oscilloscope import OscilloscopeWindow
 from Windows.SubWindows.ZAxisControlsWindow import ZAxisControlsWindow
 from Utils.state_persistence import apply_item_open_states, apply_window_state, capture_item_open_states, capture_window_state, load_state_file, save_state_file
-from Utils.themes import read_only_theme, red_green_button_disabled, red_green_button_enabled
+from Utils.themes import read_only_theme, red_button, footer_child_theme
 import Utils.shared_state as shared_state
 from Utils.shared_state import class_objects
 
@@ -158,12 +158,6 @@ class CameraSystem:
                 state_name="FrameScopeWindow",
                 tag="#FrameScope",
             )
-
-            with dpg.theme() as self.stop_button_theme:
-                with dpg.theme_component(dpg.mvButton):
-                    dpg.add_theme_color(dpg.mvThemeCol_Button, [70, 70, 70])
-                    dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, [140, 30, 30])
-                    dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, [110, 20, 20])
 
             with dpg.theme() as self.hardware_readout_theme:
                 with dpg.theme_component(dpg.mvInputText):
@@ -323,11 +317,6 @@ class CameraSystem:
                         default_value=self.acquisition_zero_on_start,
                     )
 
-                    self.calculate_frame_mean_checkbox_id = dpg.add_checkbox(
-                        label="Calculate Frame Mean",
-                        default_value=self.calculate_frame_mean,
-                    )
-
                     self.auto_scope_freq_checkbox_id = dpg.add_checkbox(
                         label="Auto Scope Freq",
                         default_value=self.auto_scope_freq,
@@ -480,7 +469,8 @@ class CameraSystem:
 
                 dpg.add_separator()
 
-            with dpg.group() as self.bottom_controls_group_id:
+            with dpg.child_window(border=False, width=-1, height=200, no_scrollbar=True) as self.bottom_controls_group_id:
+                dpg.bind_item_theme(self.bottom_controls_group_id, footer_child_theme)
                 dpg.add_separator()
                 self.acquisition_progress_bar_id = dpg.add_progress_bar(
                     width=-1,
@@ -495,7 +485,6 @@ class CameraSystem:
                     height=36,
                     callback=self._on_acquire_button_pressed,
                 )
-                dpg.bind_item_theme(self.acquire_button_id, red_green_button_enabled)
 
                 self.start_button_id = dpg.add_button(
                     label="Start Preview",
@@ -512,28 +501,22 @@ class CameraSystem:
                     callback=self._on_snapshot_pressed,
                 )
 
-                self.save_button_id = dpg.add_button(
-                    label="Save",
-                    width=-1,
-                    height=36,
-                    enabled=False,
-                    callback=self._show_save_dialog,
-                )
+                with dpg.group(horizontal=True):
+                    self.save_button_id = dpg.add_button(
+                        label="Save",
+                        width=0,
+                        height=36,
+                        enabled=False,
+                        callback=self._show_save_dialog,
+                    )
 
-                self.save_progress_bar_id = dpg.add_progress_bar(
-                    width=-1,
-                    height=36,
-                    default_value=0.0,
-                    overlay="Saving... 0%",
-                    show=False,
-                )
-
-                self.open_button_id = dpg.add_button(
-                    label="Open",
-                    width=-1,
-                    height=36,
-                    callback=self._show_open_dialog,
-                )
+                    self.save_progress_bar_id = dpg.add_progress_bar(
+                        width=0,
+                        height=36,
+                        default_value=0.0,
+                        overlay="Saving... 0%",
+                        show=False,
+                    )
 
             with dpg.file_dialog(
                 directory_selector=False,
@@ -543,16 +526,6 @@ class CameraSystem:
                 height=400,
                 modal=True,
             ) as self.save_dialog_id:
-                dpg.add_file_extension(".npz", color=(0, 255, 0, 255))
-
-            with dpg.file_dialog(
-                directory_selector=False,
-                show=False,
-                callback=self._on_open_dialog_selected,
-                width=700,
-                height=400,
-                modal=True,
-            ) as self.open_dialog_id:
                 dpg.add_file_extension(".npz", color=(0, 255, 0, 255))
 
             with dpg.file_dialog(
@@ -726,18 +699,18 @@ class CameraSystem:
     def _update_preview_button_state(self):
         if self.started:
             dpg.configure_item(self.start_button_id, label="Stop Preview")
-            dpg.bind_item_theme(self.start_button_id, red_green_button_enabled)
+            dpg.bind_item_theme(self.start_button_id, red_button)
         else:
             dpg.configure_item(self.start_button_id, label="Start Preview")
-            dpg.bind_item_theme(self.start_button_id, red_green_button_disabled)
+            dpg.bind_item_theme(self.start_button_id, None)
 
     def _update_acquisition_button_state(self):
         if self.acquisition_in_progress:
-            dpg.configure_item(self.acquire_button_id, label="Stop")
-            dpg.bind_item_theme(self.acquire_button_id, self.stop_button_theme)
+            dpg.configure_item(self.acquire_button_id, label="Stop Acquiring")
+            dpg.bind_item_theme(self.acquire_button_id, red_button)
         else:
             dpg.configure_item(self.acquire_button_id, label="Acquire")
-            dpg.bind_item_theme(self.acquire_button_id, red_green_button_enabled)
+            dpg.bind_item_theme(self.acquire_button_id, None)
 
     def _update_acquisition_awg_visibility(self):
         show_awg_controls = bool(dpg.get_value(self.acquisition_set_awg_on_start_checkbox_id))
@@ -1115,7 +1088,7 @@ class CameraSystem:
             self._queue_scope_frame_timestamps(new_camera_timestamps)
 
     def _stop_preview_scope_means(self):
-        self.Andor.set_scope_frame_mean_source(None, calculate_mean=bool(dpg.get_value(self.calculate_frame_mean_checkbox_id)))
+        self.Andor.set_scope_frame_mean_source(None, calculate_mean=self.calculate_frame_mean)
         self._preview_scope_registered_frame_count = 0
 
         if self._preview_scope_started_collection:
@@ -1139,7 +1112,7 @@ class CameraSystem:
         auto_settings = self._apply_auto_scope_frequency_settings(preview_frame_rate_hz)
 
         self.Andor.configure_scope_frame_mean_buffers(scope_settings["enabled_channels"], self.preview_max_frames)
-        self.Andor.set_scope_frame_mean_source(scope_driver, calculate_mean=bool(dpg.get_value(self.calculate_frame_mean_checkbox_id)))
+        self.Andor.set_scope_frame_mean_source(scope_driver, calculate_mean=self.calculate_frame_mean)
 
         if scope_driver is None:
             return
@@ -1543,7 +1516,7 @@ class CameraSystem:
             "acquisition_frame_rate_hz":        float(dpg.get_value(self.acquisition_frame_rate_input_id)),
             "acquisition_scope_sample_rate_hz": float(dpg.get_value(self.acquisition_scope_rate_input_id)),
             "acquisition_zero_on_start":        bool(dpg.get_value(self.acquisition_zero_on_start_checkbox_id)),
-            "calculate_frame_mean":             bool(dpg.get_value(self.calculate_frame_mean_checkbox_id)),
+            "calculate_frame_mean":             self.calculate_frame_mean,
             "auto_scope_freq":                  bool(dpg.get_value(self.auto_scope_freq_checkbox_id)),
             "set_awg_on_start":                 bool(dpg.get_value(self.acquisition_set_awg_on_start_checkbox_id)),
             "awg_waveform":                     str(dpg.get_value(self.acquisition_awg_waveform_combo_id)).strip().lower(),
@@ -1709,7 +1682,7 @@ class CameraSystem:
         acquisition_fps = max(0.1, float(dpg.get_value(self.acquisition_frame_rate_input_id)))
         auto_scope_settings = self._apply_auto_scope_frequency_settings(acquisition_fps)
         scope_sample_rate = float(auto_scope_settings["sample_rate_hz"]) if auto_scope_settings is not None else max(0.1, float(dpg.get_value(self.acquisition_scope_rate_input_id)))
-        calculate_frame_mean = bool(dpg.get_value(self.calculate_frame_mean_checkbox_id))
+        calculate_frame_mean = self.calculate_frame_mean
         awg_set_on_start = bool(dpg.get_value(self.acquisition_set_awg_on_start_checkbox_id))
         awg_start_after_seconds = max(0.0, float(dpg.get_value(self.acquisition_awg_start_after_input_id)))
         target_frames = max(1, int(round(acquisition_seconds * acquisition_fps)))
@@ -1980,23 +1953,12 @@ class CameraSystem:
             dpg.configure_item(self.save_dialog_id, default_path=save_directory)
             dpg.show_item(self.save_dialog_id)
 
-    def _show_open_dialog(self, sender=None, app_data=None, user_data=None):
-        dpg.show_item(self.open_dialog_id)
-
     def _open_acquisition_preview(self, file_path):
         if self._acquisition_preview_window is not None:
             self._acquisition_preview_window.close()
             self._acquisition_preview_window = None
 
         self._acquisition_preview_window = AcquisitionPreviewWindow(file_path)
-
-    def _on_open_dialog_selected(self, sender, app_data, user_data=None):
-        file_path = str(app_data.get("file_path_name") or "").strip()
-        if not file_path:
-            return
-        if not file_path.lower().endswith(".npz"):
-            file_path = f"{file_path}.npz"
-        self._open_acquisition_preview(file_path)
 
     def _on_save_dialog_selected(self, sender, app_data, user_data=None):
         file_path = str(app_data.get("file_path_name") or "").strip()
@@ -2261,25 +2223,34 @@ class CameraSystem:
         if window_width <= 0 or window_height <= 0:
             return
 
-        padding = int(self._footer_padding)
-        footer_width = max(1, int(window_width) - (padding * 2))
+        # Each row: progress bar (18px) + 3 buttons (36px each) + save row (36px) + separator + spacing
+        # Estimate footer height from its content items, then size content_area to fill remaining space
+        row_count = 5  # separator + progress bar + acquire + start + snapshot + save row
+        estimated_footer_height = 18 + (36 * 4) + 12 + 8  # progress + 4 button rows + spacing
+        footer_height = max(estimated_footer_height, int(dpg.get_item_rect_size(self.bottom_controls_group_id)[1]))
+
+        # Width calculations (child window takes full width, items inside use -1 or explicit)
+        # The footer child window is width=-1 so it fills horizontally automatically.
+        # We set item widths relative to the footer's inner width.
+        footer_inner_width = max(1, int(dpg.get_item_rect_size(self.bottom_controls_group_id)[0]))
+        half_width = max(1, footer_inner_width // 2)
+
         for item_id in (
             self.acquisition_progress_bar_id,
             self.acquire_button_id,
             self.start_button_id,
             self.snapshot_button_id,
-            self.save_button_id,
-            self.save_progress_bar_id,
-            self.open_button_id,
         ):
-            dpg.configure_item(item_id, width=footer_width)
+            dpg.configure_item(item_id, width=-1)
 
-        footer_height = max(1, int(dpg.get_item_rect_size(self.bottom_controls_group_id)[1]))
-        footer_y = max(padding, int(window_height) - footer_height - padding)
-        dpg.set_item_pos(self.bottom_controls_group_id, (padding, footer_y))
+        # Save button and progress bar share the row at half width each
+        dpg.configure_item(self.save_button_id, width=half_width)
+        dpg.configure_item(self.save_progress_bar_id, width=half_width)
 
-        content_height = max(1, footer_y - padding)
+        # Size the content area to fill remaining window space above the footer
+        content_height = max(1, int(window_height) - footer_height - 4)
         dpg.configure_item(self.content_area_id, height=content_height)
+        dpg.configure_item(self.bottom_controls_group_id, height=footer_height)
 
 
     def render(self):
@@ -2342,7 +2313,6 @@ class CameraSystem:
             self.acquisition_frame_rate_input_id,
             self.acquisition_scope_rate_input_id,
             self.acquisition_zero_on_start_checkbox_id,
-            self.calculate_frame_mean_checkbox_id,
             self.auto_scope_freq_checkbox_id,
             self.acquisition_set_awg_on_start_checkbox_id,
             self.acquisition_awg_waveform_combo_id,
@@ -2361,6 +2331,10 @@ class CameraSystem:
         displayed_save_progress = self._get_animated_save_progress_value()
         save_progress_overlay = self._get_save_progress_overlay(displayed_save_progress)
         dpg.configure_item(self.snapshot_button_id, enabled=not self._snapshot_in_progress)
+        # Disable Acquire and Preview while a save is in progress
+        if self._save_in_progress:
+            dpg.configure_item(self.acquire_button_id, enabled=False)
+            dpg.configure_item(self.start_button_id, enabled=False)
         dpg.configure_item(self.save_button_id, enabled=self._completed_acquisition_payload is not None and not self._save_in_progress)
         dpg.configure_item(self.save_button_id, show=not self._save_in_progress)
         dpg.configure_item(self.save_progress_bar_id, show=self._save_in_progress)
@@ -2393,7 +2367,7 @@ class CameraSystem:
                 "acquisition_frame_rate_hz": float(dpg.get_value(self.acquisition_frame_rate_input_id)),
                 "acquisition_scope_sample_rate_hz": float(dpg.get_value(self.acquisition_scope_rate_input_id)),
                 "acquisition_zero_on_start": bool(dpg.get_value(self.acquisition_zero_on_start_checkbox_id)),
-                "calculate_frame_mean": bool(dpg.get_value(self.calculate_frame_mean_checkbox_id)),
+                "calculate_frame_mean": self.calculate_frame_mean,
                 "auto_scope_freq": bool(dpg.get_value(self.auto_scope_freq_checkbox_id)),
                 "acquisition_set_awg_on_start": bool(dpg.get_value(self.acquisition_set_awg_on_start_checkbox_id)),
                 "acquisition_awg_waveform": str(dpg.get_value(self.acquisition_awg_waveform_combo_id)).strip().lower(),
@@ -2483,7 +2457,7 @@ class CameraSystem:
             if "acquisition_zero_on_start" in state:
                 dpg.set_value(self.acquisition_zero_on_start_checkbox_id, bool(state["acquisition_zero_on_start"]))
             if "calculate_frame_mean" in state:
-                dpg.set_value(self.calculate_frame_mean_checkbox_id, bool(state["calculate_frame_mean"]))
+                self.calculate_frame_mean = bool(state["calculate_frame_mean"])
             if "auto_scope_freq" in state:
                 dpg.set_value(self.auto_scope_freq_checkbox_id, bool(state["auto_scope_freq"]))
             if "acquisition_set_awg_on_start" in state:
@@ -2525,7 +2499,7 @@ class CameraSystem:
             self.acquisition_storage_dtype_name = self.Andor.storage_dtype_name
             self.max_exposure = bool(dpg.get_value(self.settings_max_exposure_checkbox_id))
             self.acquisition_zero_on_start = bool(dpg.get_value(self.acquisition_zero_on_start_checkbox_id))
-            self.calculate_frame_mean = bool(dpg.get_value(self.calculate_frame_mean_checkbox_id))
+            # self.calculate_frame_mean remains as set (default True); no checkbox widget
             self.auto_scope_freq = bool(dpg.get_value(self.auto_scope_freq_checkbox_id))
             self.acquisition_set_awg_on_start = bool(dpg.get_value(self.acquisition_set_awg_on_start_checkbox_id))
             self.acquisition_awg_waveform = str(dpg.get_value(self.acquisition_awg_waveform_combo_id)).strip().lower()

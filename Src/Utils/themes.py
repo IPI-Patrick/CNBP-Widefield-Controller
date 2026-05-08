@@ -42,6 +42,16 @@ with dpg.theme() as yellow_button:
         dpg.add_theme_color(dpg.mvThemeCol_Button,          [255, 204, 0])
         dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered,   [204, 153, 0])
 
+with dpg.theme() as red_button:
+    with dpg.theme_component(dpg.mvButton):
+        dpg.add_theme_color(dpg.mvThemeCol_Button,          [160, 30, 30])
+        dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered,   [190, 50, 50])
+        dpg.add_theme_color(dpg.mvThemeCol_ButtonActive,    [130, 20, 20])
+
+with dpg.theme() as footer_child_theme:
+    with dpg.theme_component(dpg.mvChildWindow):
+        dpg.add_theme_color(dpg.mvThemeCol_ChildBg, [50, 50, 55])
+
 
 
 with dpg.theme() as read_only_theme:
