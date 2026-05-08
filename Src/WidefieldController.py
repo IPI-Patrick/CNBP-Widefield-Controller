@@ -382,7 +382,7 @@ def setup():
         dpg.add_key_press_handler(key=dpg.mvKey_R, callback=on_reset_viewport_shortcut)
         dpg.add_key_press_handler(key=dpg.mvKey_B, callback=on_reset_window_layout_shortcut)
         dpg.add_key_press_handler(key=dpg.mvKey_N, callback=on_save_window_layout_default_shortcut)
-        dpg.add_mouse_click_handler(button=dpg.mvMouseButton_Right, callback=on_right_click)
+        # dpg.add_mouse_click_handler(button=dpg.mvMouseButton_Right, callback=on_right_click)
 
 
     dpg.show_viewport()

@@ -635,14 +635,7 @@ class CameraFeedWindow:
             frame_float = np.asarray(frame, dtype=np.float32)
             zero_float = np.asarray(reference_frame, dtype=np.float32)
             difference_frame = frame_float - zero_float
-            contrast_frame = np.zeros_like(frame_float, dtype=np.float32)
-            np.divide(
-                difference_frame,
-                zero_float,
-                out=contrast_frame,
-                where=np.abs(zero_float) > 0.0,
-            )
-            contrast_frame *= 100.0
+            contrast_frame = (difference_frame / (zero_float + 1.0)) * 100.0
             return np.array(self.Andor.coerce_signed_frame_to_storage(contrast_frame), copy=True)
 
         return np.array(frame, copy=True)
@@ -1678,8 +1671,10 @@ class CameraFeedWindow:
             self._drift_valid_mask = None
 
         # Background removal (after drift, before zero reference).
-        # Skipped for Contrast mode — contrast already normalises background via (frame−zero)/zero.
-        bg_removal_active = self.bg_removal_enabled and not self._is_contrast_mode_active()
+        # Applied in all modes including Difference and Contrast so that the static
+        # illumination profile is removed from both the current frame and the zero
+        # reference before computing the difference or contrast ratio.
+        bg_removal_active = self.bg_removal_enabled
         if bg_removal_active:
             source_frame = self._apply_background_removal(
                 np.asarray(source_frame, dtype=np.float32), self.bg_removal_sigma

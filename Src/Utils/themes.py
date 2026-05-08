@@ -50,7 +50,7 @@ with dpg.theme() as red_button:
 
 with dpg.theme() as footer_child_theme:
     with dpg.theme_component(dpg.mvChildWindow):
-        dpg.add_theme_color(dpg.mvThemeCol_ChildBg, [50, 50, 55])
+        dpg.add_theme_color(dpg.mvThemeCol_ChildBg, [37, 37, 38])
 
 
 

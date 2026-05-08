@@ -353,14 +353,7 @@ class Andor:
         frame_float = np.asarray(frame, dtype=np.float32)
         zero_float = np.asarray(self.zero, dtype=np.float32)
         difference_frame = frame_float - zero_float
-        contrast_frame = np.zeros_like(frame_float, dtype=np.float32)
-        np.divide(
-            difference_frame,
-            zero_float,
-            out=contrast_frame,
-            where=np.abs(zero_float) > 0.0,
-        )
-        contrast_frame *= 100.0
+        contrast_frame = (difference_frame / (zero_float + 1.0)) * 100.0
         return self._coerce_signed_frame_to_storage(contrast_frame)
 
     def set_zero_frame(self, frame):

@@ -958,19 +958,20 @@ class AcquisitionPreviewWindow:
     def _compute_contrast_frame(self, frame):
         frame_float = np.asarray(frame, dtype=np.float32)
         zero_orig = np.asarray(self._current_zero_frame, dtype=np.float32)
+        if self.bg_removal_enabled:
+            frame_float = self._apply_background_removal(frame_float, self.bg_removal_sigma)
+            zero_orig = self._apply_background_removal(zero_orig, self.bg_removal_sigma)
         difference_frame = frame_float - zero_orig
-        contrast_frame = np.zeros_like(frame_float, dtype=np.float32)
-        np.divide(difference_frame, zero_orig, out=contrast_frame, where=np.abs(zero_orig) > 0.0)
-        contrast_frame *= 100.0
-        return contrast_frame
+        return (difference_frame / (zero_orig + 1.0)) * 100.0
 
     def _get_display_frame(self):
         frame = self._get_normal_frame()
         if frame is None:
             return None
         frame, drift_mask = self._get_drift_corrected_frame(frame, self.current_frame_index)
-        # BG removal is skipped for Contrast — contrast already normalises background.
-        if self.bg_removal_enabled and not self._is_contrast_mode_active():
+        # BG removal is applied before Difference/Contrast so the static illumination
+        # profile is removed from both the current frame and the zero reference.
+        if self.bg_removal_enabled:
             frame = self._apply_background_removal(np.asarray(frame, dtype=np.float32), self.bg_removal_sigma)
         if self._is_difference_mode_active():
             result = self._compute_difference_frame(frame)
@@ -993,20 +994,16 @@ class AcquisitionPreviewWindow:
         if frame is None:
             return None
         frame_float = np.asarray(frame, dtype=np.float32)
-        is_contrast = self._is_contrast_mode_active()
-        if self.bg_removal_enabled and not is_contrast:
+        if self.bg_removal_enabled:
             frame_float = self._apply_background_removal(frame_float, self.bg_removal_sigma)
         if self._is_difference_mode_active():
             ref_raw = np.asarray(self._current_zero_frame if zero_frame is None else zero_frame, dtype=np.float32)
             ref = self._apply_background_removal(ref_raw, self.bg_removal_sigma) if self.bg_removal_enabled else ref_raw
             return frame_float - ref
-        if is_contrast:
+        if self._is_contrast_mode_active():
             ref_raw = np.asarray(self._current_zero_frame if zero_frame is None else zero_frame, dtype=np.float32)
-            difference_frame = np.asarray(frame, dtype=np.float32) - ref_raw
-            contrast_frame = np.zeros_like(frame_float, dtype=np.float32)
-            np.divide(difference_frame, ref_raw, out=contrast_frame, where=np.abs(ref_raw) > 0.0)
-            contrast_frame *= 100.0
-            return contrast_frame
+            ref = self._apply_background_removal(ref_raw, self.bg_removal_sigma) if self.bg_removal_enabled else ref_raw
+            return (frame_float - ref) / (ref + 1.0) * 100.0
         return frame_float
 
     def extract_roi_frame(self, frame, bounds):
