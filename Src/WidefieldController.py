@@ -97,6 +97,42 @@ def reset_all_window_layouts():
     print("Default window layout restored.")
 
 
+def collate_all_windows():
+    """Tile all visible windows in a 2-column grid starting at the top-left of the viewport."""
+    viewport_width = dpg.get_viewport_client_width()
+    viewport_height = dpg.get_viewport_client_height()
+
+    window_ids = []
+    for owner in _iter_window_owners(class_objects):
+        window_id = getattr(owner, "window_id", None)
+        if window_id is None:
+            continue
+        if not dpg.does_item_exist(window_id):
+            continue
+        if not dpg.is_item_shown(window_id):
+            continue
+        window_ids.append(window_id)
+
+    if not window_ids:
+        return
+
+    num_cols = 2
+    num_rows = (len(window_ids) + num_cols - 1) // num_cols
+    cell_width = viewport_width // num_cols
+    cell_height = viewport_height // max(num_rows, 1)
+
+    for index, window_id in enumerate(window_ids):
+        col = index % num_cols
+        row = index // num_cols
+        x = col * cell_width
+        y = row * cell_height
+        dpg.configure_item(window_id, width=cell_width, height=cell_height)
+        dpg.set_item_pos(window_id, (x, y))
+
+    dpg.save_init_file(str(get_init_file_path()))
+    print(f"Collated {len(window_ids)} windows into a {num_cols}-column grid.")
+
+
 def save_current_layout_as_default():
     saved_layouts = {}
     for owner in _iter_window_owners(class_objects):
@@ -250,6 +286,45 @@ def flush_pending_viewport_state_save():
     save_viewport_state()
     VIEWPORT_STATE_DIRTY = False
 
+def create_context_menu():
+    """Create the right-click context menu popup (hidden by default)."""
+    with dpg.window(
+        tag="CtxMenu_WindowManagement",
+        popup=True,
+        show=False,
+        no_title_bar=True,
+        no_move=True,
+        no_resize=True,
+        no_scrollbar=True,
+        no_collapse=True,
+        no_close=True,
+        no_saved_settings=True,
+        min_size=[1, 1],
+    ):
+        dpg.add_menu_item(label="Reset All Windows",  callback=_ctx_reset_all_windows)
+        dpg.add_menu_item(label="Save Windows State", callback=_ctx_save_windows_state)
+        dpg.add_menu_item(label="Collate All Windows", callback=_ctx_collate_all_windows)
+
+
+def _ctx_reset_all_windows(sender=None, app_data=None):
+    reset_all_window_layouts()
+
+
+def _ctx_save_windows_state(sender=None, app_data=None):
+    save_current_layout_as_default()
+
+
+def _ctx_collate_all_windows(sender=None, app_data=None):
+    collate_all_windows()
+
+
+def on_right_click(sender=None, app_data=None):
+    """Show the window-management context menu at the current mouse position."""
+    mouse_pos = dpg.get_mouse_pos(local=False)
+    dpg.set_item_pos("CtxMenu_WindowManagement", [int(mouse_pos[0]), int(mouse_pos[1])])
+    dpg.configure_item("CtxMenu_WindowManagement", show=True)
+
+
 def _register_viewport_drop_callback(window_objects):
     def _on_viewport_drop(data, keys):
         paths = data if isinstance(data, list) else [data]
@@ -342,11 +417,13 @@ def setup():
     atexit.register(save_all_states)
 
     create_performance_overlay()
+    create_context_menu()
 
     with dpg.handler_registry(tag="WidefieldControllerKeyHandlers"):
         dpg.add_key_press_handler(key=dpg.mvKey_R, callback=on_reset_viewport_shortcut)
         dpg.add_key_press_handler(key=dpg.mvKey_B, callback=on_reset_window_layout_shortcut)
         dpg.add_key_press_handler(key=dpg.mvKey_N, callback=on_save_window_layout_default_shortcut)
+        dpg.add_mouse_click_handler(button=dpg.mvMouseButton_Right, callback=on_right_click)
 
     dpg.show_viewport()
     apply_viewport_state(viewport_state)
