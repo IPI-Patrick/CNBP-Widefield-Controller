@@ -1,23 +1,8 @@
 **TODO:**
 
-- ~~ The viewport right-click is overwriting the right-click for the ROI graphs. Make the viewport right-click only occur when the viewport background is pressed.~~
-- ~~ The "Acquire" button needs to become enabled when the preview is stopped and saving is completed.~~
-- ~~ In the Preview window, the thumbnails for the ROIs are not taking into account the drift correction which is causing the thumbnail image to be offset from where the ROI is positioned.~~
-- ~~ Remove the ROI Scaling section in the "Preview" settings. Combine it with the "ROIs" section.~~
-- ~~ In the Preview window, the thumbnail for the ROIs is not being updated on every frame. The y-axis on the graph for the ROI also seems to only be showing a single zero value for all x-axis values. The autoscaling is also setting to +8e37 to -8e37. Figure out why the mean calculation is failing.~~
-- ~~ In the preview window remove the "`<n>` ROIs" text.~~
-
-- ~~ Make the ROI graphs have "Auto Fit" enabled by default.~~
-- ~~ Make the ROI graphs have the `cross` button be on the top-left instead of the top-right~~
-- ~~ Add an "Auto-Fit" button to each ROI (next to the cross button) which instantly re-fits the scaling~~
-- [ ] The Contrast mode doesn't seem to be working well. The background is really noisy (both with and without background removal enabled) and the background (who should be mostly static except for a little noise) has contrast as high as or higher than the particles which are changing by large percents of their mean value.
-- ~~ Make all of the particles in the mock camera get brighter and dimmer at the same time (i.e. all particles should pulse in brightness together)~~
 - [ ] Make the "Stop Acquiring" button enabled whilst acquiring
 
-- ~~ Remove the ROI Scaling section in the "Preview" settings. Combine it with the "ROIs" section.~~
-
-**Done:**
-
+- **Done:**
 - ~~ Currently, the camera has this weird issue where every now and then a frame will timeout. In the software, when running a preview or acquisition this results in the error "Error waiting for frame - 13 (AT_ERR_TIMEDOUT)" and then the preview or acquisition stops. Could you make it so that the program ignores up to 5 sequential AT_ERR_TIMEDOUT errors. If they happen it should just continue on to the next frame. If 5 happen in a row then it should print a "Timed out more than 5 times" error in the console and safely stop the preview.~~
 - ~~ Make it so that the preview window correctly implements all of the signal processing using the same signal processing pipeline.~~
 - ~~ Make it so that the ROI graphs in the preview window are fully calculated whenever settings are changed or the ROI window is changed. It should calculate it once and then remain static.~~
@@ -39,3 +24,17 @@
 - ~~ When loading a file in the "Preview" window, add a loading bar where it currently says "Loading XXX.npz" which displays how much of the file has been loaded.~~
 - ~~ Make it so that you can right click anywhere on the background of the program, or on the title-bar of a window and press "Reset All Windows" or "Save Windows State" to save or restore the windows state. Also add a "Collate All Windows" to make all the windows stack themselves side-by-side~~
 - ~~ Figure out how to speed up saving. Currently it takes AGES to save a file (understandably its over 2GB file but it should take like 20 seconds at my max write speed of 300MB/s).~~
+- 
+
+- ~~ The viewport right-click is overwriting the right-click for the ROI graphs. Make the viewport right-click only occur when the viewport background is pressed.~~
+- ~~ The "Acquire" button needs to become enabled when the preview is stopped and saving is completed.~~
+- ~~ In the Preview window, the thumbnails for the ROIs are not taking into account the drift correction which is causing the thumbnail image to be offset from where the ROI is positioned.~~
+- ~~ Remove the ROI Scaling section in the "Preview" settings. Combine it with the "ROIs" section.~~
+- ~~ In the Preview window, the thumbnail for the ROIs is not being updated on every frame. The y-axis on the graph for the ROI also seems to only be showing a single zero value for all x-axis values. The autoscaling is also setting to +8e37 to -8e37. Figure out why the mean calculation is failing.~~
+- ~~ In the preview window remove the "`<n>` ROIs" text.~~
+- ~~ Make the ROI graphs have "Auto Fit" enabled by default.~~
+- ~~ Make the ROI graphs have the `cross` button be on the top-left instead of the top-right~~
+- ~~ Add an "Auto-Fit" button to each ROI (next to the cross button) which instantly re-fits the scaling~~
+- ~~ The Contrast mode doesn't seem to be working well. The background is really noisy (both with and without background removal enabled) and the background (who should be mostly static except for a little noise) has contrast as high as or higher than the particles which are changing by large percents of their mean value. ~~
+- ~~ Make all of the particles in the mock camera get brighter and dimmer at the same time (i.e. all particles should pulse in brightness together)~~
+- ~~ Remove the ROI Scaling section in the "Preview" settings. Combine it with the "ROIs" section.~~
