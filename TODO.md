@@ -10,7 +10,8 @@
 - ~~ Make the ROI graphs have "Auto Fit" enabled by default.~~
 - ~~ Make the ROI graphs have the `cross` button be on the top-left instead of the top-right~~
 - ~~ Add an "Auto-Fit" button to each ROI (next to the cross button) which instantly re-fits the scaling~~
-- [ ] Make all of the ROIs get brighter and dimmer at the same time
+- [ ] The Contrast mode doesn't seem to be working well. The background is really noisy (both with and without background removal enabled) and the background (who should be mostly static except for a little noise) has contrast as high as or higher than the particles which are changing by large percents of their mean value.
+- ~~ Make all of the particles in the mock camera get brighter and dimmer at the same time (i.e. all particles should pulse in brightness together)~~
 - [ ] Make the "Stop Acquiring" button enabled whilst acquiring
 
 - ~~ Remove the ROI Scaling section in the "Preview" settings. Combine it with the "ROIs" section.~~
