@@ -81,20 +81,20 @@ Tasks (from TODO.md, in priority order):
 
 ## Group F — File Browser: Delete + NPZ Drag-and-Drop + Loading Bar
 
-**Status: [~] In progress**
+**Status: [x] Done**
 **Primary files:** `src/Windows/FileBrowser.py`, `src/Windows/SubWindows/AcquisitionPreviewWindow.py`, `src/WidefieldController.py`
 
 Tasks (from TODO.md, in priority order):
 
-- [ ] Task 17 — Add the ability to delete videos in the File Browser with a "Are you sure you want to delete…" confirmation modal.
-- [ ] Task 18 — When dragging and dropping an NPZ file anywhere into the program, open it in the preview window.
-- [ ] Task 19 — When loading a file in the "Preview" window, add a loading bar where it currently says "Loading XXX.npz" showing how much of the file has been loaded.
+- [x] Task 17 — Add the ability to delete videos in the File Browser with a "Are you sure you want to delete…" confirmation modal.
+- [x] Task 18 — When dragging and dropping an NPZ file anywhere into the program, open it in the preview window.
+- [x] Task 19 — When loading a file in the "Preview" window, add a loading bar where it currently says "Loading XXX.npz" showing how much of the file has been loaded.
 
 ---
 
 ## Group G — Window Management: Context Menu
 
-**Status: [ ] Not started**
+**Status: [~] In progress**
 **Primary files:** `src/WidefieldController.py`, `src/Utils/state_persistence.py`
 
 Tasks (from TODO.md, in priority order):
@@ -121,3 +121,4 @@ Tasks (from TODO.md, in priority order):
 - **Group C** — commit `888dc03` (2026-05-08). Task 1: added `_consecutive_timeout_count` counter in `_capture_loop`; inner try/except on `cam.wait_buffer` catches `CameraException` (err_code == AT_ERR_TIMEDOUT / 13) and `TimeoutError` (MockCamera); silently skips timeouts 1-5 via `continue`; on the 6th consecutive timeout prints "Timed out more than 5 times" and breaks cleanly; successful frames reset the counter to 0. Also added `from pyAndorSDK3.andor_sdk3_exceptions import CameraException, ErrorCodes` import.
 - **Group D** — commit `0670445` (2026-05-08). Task 2: preview window pipeline verified to already include LP filter, drift correction, BG removal, and mode (Difference/Contrast) processing; added crop mask as the final step to `_get_display_frame()` and updated `_get_autoscale_range()` and `_compute_display_bounds()` to exclude blacked-out border pixels from percentile autoscale. Task 6: added `crop_percent = 100.0` and `_compute_crop_mask()` to `CameraFeedWindow`; added `_on_crop_changed` callback; applied crop mask as the last step in `process_frame()` (after drift mask); updated `_frame_to_rgba()` to exclude border pixels from autoscale; added `Crop (%)` slider to `FeedControlsWindow` Signal Processing section; mirrored all changes in `AcquisitionPreviewWindow`; crop_percent persisted in SaveState/LoadState for both windows.
 - **Group E** — commit `1828ba4` (2026-05-08). Task 3: added `_worker_loop_full_history` in RegionOfInterest for preview mode — waits on rebuild_event, fetches all frame crops via `get_roi_processing_update(include_history=True)`, applies `process_analysis_frame` per crop, builds the full trace in one pass, then sleeps until next settings change or ROI edit. Task 4: added `nan_pad` parameter to `request_trace_rebuild`; incremental worker fills existing y_axis with `float('nan')` instead of clearing on `nan_pad=True`, preserving x-axis alignment; `CameraFeed._on_mouse_release` now calls `request_trace_rebuild(nan_pad=True)` after move/resize. Task 5: removed `no_menus` and `no_box_select` from plot creation; replaced manual y-axis limit management with `dpg.set_axis_limits_auto()`; removed Min/Max/Auto/Grace/Mirrored controls from _build_controls, keeping only Metric combo; marker series uses y=[-1e38, 1e38] to always span the visible range; `invalidate_autoscale_cache` reduced to a no-op.
+- **Group F** — commit `33d28a8` (2026-05-08). Task 17: added `Del` button per file row in FileBrowser table; clicking shows a no-title-bar modal (`#FileBrowserDeleteModal`) with truncated filename, Yes/Delete and No/Cancel buttons; on confirm calls `os.remove` and bumps `_watch_generation` to trigger a listing refresh. Task 18: added `_register_viewport_drop_callback` in WidefieldController; `dpg.set_viewport_drop_callback` receives dropped paths, finds the `FileBrowser` instance in `class_objects`, and calls `_open_preview_window` for the first `.npz` path. Task 19: replaced the bare loading text in AcquisitionPreviewWindow with a `dpg.add_progress_bar`; `_set_load_progress` writes thread-safe progress at five stages (5%/15%/50%/80%/95%); `_apply_pending_loaded_payload` reads `_pending_load_progress` each render tick and updates the bar, then hides it on load complete or error.
