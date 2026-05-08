@@ -144,6 +144,16 @@ class FeedControlsWindow:
                     dpg.add_item_deactivated_after_edit_handler(callback=self.parent._on_bg_removal_sigma_changed)
                 dpg.bind_item_handler_registry(self.bg_removal_sigma_input_id, f"{self.parent.tag}_BgRemovalSigmaHandler")
 
+                self.crop_slider_id = dpg.add_slider_float(
+                    label="Crop (%)",
+                    width=-120,
+                    default_value=self.parent.crop_percent,
+                    min_value=0.0,
+                    max_value=100.0,
+                    format="%.1f",
+                    callback=self.parent._on_crop_changed,
+                )
+
             dpg.add_separator()
 
             with dpg.tree_node(label="Focus Level", default_open=True, span_full_width=True) as focus_level_node_id:

@@ -69,6 +69,7 @@ class CameraFeedWindow:
         self.drift_correction_enabled = False
         self.bg_removal_enabled = False
         self.bg_removal_sigma = 20.0
+        self.crop_percent = 100.0
         self._drift_reference_frame = None
         self._drift_accumulated_shift = (0, 0)
         self._drift_smoothed_shift = np.array([0.0, 0.0])
@@ -926,6 +927,24 @@ class CameraFeedWindow:
             self._refresh_display_image()
             self._request_all_roi_rebuilds(clear_existing=True)
 
+    def _on_crop_changed(self, sender, app_data):
+        self.crop_percent = float(np.clip(float(app_data), 0.0, 100.0))
+        self._refresh_display_image()
+
+    @staticmethod
+    def _compute_crop_mask(height, width, crop_percent):
+        """Return a boolean mask with True inside the centred crop region."""
+        if crop_percent >= 100.0:
+            return None
+        frac = float(np.clip(crop_percent, 0.0, 100.0)) / 100.0
+        ch = int(round(height * frac))
+        cw = int(round(width * frac))
+        top = (height - ch) // 2
+        left = (width - cw) // 2
+        mask = np.zeros((height, width), dtype=bool)
+        mask[top:top + ch, left:left + cw] = True
+        return mask
+
     def extract_roi_frame(self, frame, bounds):
         x1, y1, x2, y2 = self._normalize_bounds(bounds)
         if frame is None or x2 <= x1 or y2 <= y1:
@@ -974,13 +993,20 @@ class CameraFeedWindow:
         if frame is None:
             return np.zeros((self.image_height * self.image_width * 4,), dtype=np.float32)
 
+        # Determine the valid-pixel mask (crop excludes the blacked-out border from scaling).
+        crop_mask = self._compute_crop_mask(frame.shape[0], frame.shape[1], self.crop_percent)
+
         if self._is_signed_zero_reference_mode_active():
             signed_frame = frame.astype(np.float32, copy=False)
             signed_display_limit = self._get_signed_display_limit()
 
             if self.autoscale_enabled:
-                data_min = float(np.min(signed_frame))
-                data_max = float(np.max(signed_frame))
+                valid_pixels = signed_frame[crop_mask] if crop_mask is not None else signed_frame.ravel()
+                if valid_pixels.size > 0:
+                    data_min = float(np.min(valid_pixels))
+                    data_max = float(np.max(valid_pixels))
+                else:
+                    data_min, data_max = 0.0, 1.0
                 if data_max <= data_min:
                     data_max = data_min + 1.0
                 grace_fraction = self.autoscale_grace_percent / 100.0
@@ -1012,8 +1038,12 @@ class CameraFeedWindow:
             return self._apply_colormap(normalized, double_sided=True)
 
         if self.autoscale_enabled:
-            data_min = float(np.min(frame))
-            data_max = float(np.max(frame))
+            valid_pixels = frame[crop_mask] if crop_mask is not None else frame.ravel()
+            if valid_pixels.size > 0:
+                data_min = float(np.min(valid_pixels))
+                data_max = float(np.max(valid_pixels))
+            else:
+                data_min, data_max = 0.0, float(self.display_max)
             if data_max <= data_min:
                 data_max = data_min + 1.0
             grace_fraction = self.autoscale_grace_percent / 100.0
@@ -1676,6 +1706,12 @@ class CameraFeedWindow:
             result = np.array(result, copy=True)
             result[~self._drift_valid_mask] = 0.0
 
+        # Crop: set pixels outside the centred crop region to 0 as the final display step.
+        crop_mask = self._compute_crop_mask(result.shape[0], result.shape[1], self.crop_percent)
+        if crop_mask is not None:
+            result = np.array(result, copy=True)
+            result[~crop_mask] = 0.0
+
         return result
 
     def _reset_processing_state(self):
@@ -1906,6 +1942,7 @@ class CameraFeedWindow:
                 "drift_correction_enabled": bool(self.drift_correction_enabled),
                 "bg_removal_enabled": bool(self.bg_removal_enabled),
                 "bg_removal_sigma": float(self.bg_removal_sigma),
+                "crop_percent": float(self.crop_percent),
                 "zoom": float(self.zoom),
                 "view_center_x": float(self.view_center_x),
                 "view_center_y": float(self.view_center_y),
@@ -1977,6 +2014,7 @@ class CameraFeedWindow:
         self.drift_correction_enabled = bool(state.get("drift_correction_enabled", self.drift_correction_enabled))
         self.bg_removal_enabled = bool(state.get("bg_removal_enabled", self.bg_removal_enabled))
         self.bg_removal_sigma = float(state.get("bg_removal_sigma", self.bg_removal_sigma))
+        self.crop_percent = float(state.get("crop_percent", self.crop_percent))
         self.zoom = float(state.get("zoom", self.zoom))
         self.view_center_x = float(state.get("view_center_x", self.view_center_x))
         self.view_center_y = float(state.get("view_center_y", self.view_center_y))
@@ -1998,6 +2036,7 @@ class CameraFeedWindow:
         dpg.set_value(self.controls_window.bg_removal_checkbox_id, self.bg_removal_enabled)
         dpg.set_value(self.controls_window.bg_removal_sigma_input_id, self.bg_removal_sigma)
         dpg.configure_item(self.controls_window.bg_removal_sigma_input_id, enabled=self.bg_removal_enabled)
+        dpg.set_value(self.controls_window.crop_slider_id, self.crop_percent)
 
         self._clamp_view_center()
         self._update_image_draw_transform()

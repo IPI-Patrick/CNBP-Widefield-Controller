@@ -188,6 +188,8 @@ class AcquisitionPreviewWindow:
         self.bg_removal_sigma = 20.0
         self.bg_removal_checkbox_id = None
         self.bg_removal_sigma_input_id = None
+        self.crop_percent = 100.0
+        self.crop_slider_id = None
         self.colormap_name = "Viridis"
         self._colormap_per_mode = {
             "Normal": self.single_sided_colormap_names[0],
@@ -388,6 +390,15 @@ class AcquisitionPreviewWindow:
                             with dpg.item_handler_registry(tag=f"{self.tag}_BgRemovalSigmaHandler"):
                                 dpg.add_item_deactivated_after_edit_handler(callback=self._on_bg_removal_sigma_changed)
                             dpg.bind_item_handler_registry(self.bg_removal_sigma_input_id, f"{self.tag}_BgRemovalSigmaHandler")
+                            self.crop_slider_id = dpg.add_slider_float(
+                                label="Crop (%)",
+                                width=-120,
+                                default_value=self.crop_percent,
+                                min_value=0.0,
+                                max_value=100.0,
+                                format="%.1f",
+                                callback=self._on_crop_changed,
+                            )
 
                         dpg.add_separator()
 
@@ -875,6 +886,24 @@ class AcquisitionPreviewWindow:
             self._mark_image_dirty()
             self._request_all_roi_rebuilds()
 
+    def _on_crop_changed(self, sender, app_data):
+        self.crop_percent = float(np.clip(float(app_data), 0.0, 100.0))
+        self._mark_image_dirty()
+
+    @staticmethod
+    def _compute_crop_mask(height, width, crop_percent):
+        """Return a boolean mask with True inside the centred crop region."""
+        if crop_percent >= 100.0:
+            return None
+        frac = float(np.clip(crop_percent, 0.0, 100.0)) / 100.0
+        ch = int(round(height * frac))
+        cw = int(round(width * frac))
+        top = (height - ch) // 2
+        left = (width - cw) // 2
+        mask = np.zeros((height, width), dtype=bool)
+        mask[top:top + ch, left:left + cw] = True
+        return mask
+
     def _get_frame_count(self):
         if self._loaded_payload is None:
             return 0
@@ -923,6 +952,12 @@ class AcquisitionPreviewWindow:
         if drift_mask is not None:
             result = np.array(result, copy=True)
             result[~drift_mask] = 0.0
+        # Crop: set pixels outside the centred crop region to 0 as the final display step.
+        result_arr = np.asarray(result)
+        crop_mask = self._compute_crop_mask(result_arr.shape[0], result_arr.shape[1], self.crop_percent)
+        if crop_mask is not None:
+            result = np.array(result_arr, copy=True)
+            result[~crop_mask] = 0.0
         return result
 
     def process_analysis_frame(self, frame, zero_frame=None):
@@ -1185,14 +1220,20 @@ class AcquisitionPreviewWindow:
 
         return np.clip(normalized, 0.0, 1.0)
 
-    def _get_autoscale_range(self, frame, *, signed_mode=False):
+    def _get_autoscale_range(self, frame, *, signed_mode=False, crop_mask=None):
         frame_array = np.asarray(frame, dtype=np.float32)
         if frame_array.size <= 0:
             if signed_mode:
                 return -1.0, 1.0
             return 0.0, 1.0
 
-        finite_values = frame_array[np.isfinite(frame_array)]
+        # Only consider pixels inside the crop region when a mask is provided.
+        if crop_mask is not None and crop_mask.shape == frame_array.shape:
+            candidate_values = frame_array[crop_mask]
+        else:
+            candidate_values = frame_array.ravel()
+
+        finite_values = candidate_values[np.isfinite(candidate_values)]
         if finite_values.size <= 0:
             if signed_mode:
                 return -1.0, 1.0
@@ -1232,13 +1273,19 @@ class AcquisitionPreviewWindow:
         if frame is None:
             frame = self._get_display_frame()
 
+        # Build crop mask once so it can be forwarded to autoscale.
+        crop_mask = None
+        if frame is not None:
+            frame_arr = np.asarray(frame)
+            crop_mask = self._compute_crop_mask(frame_arr.shape[0], frame_arr.shape[1], self.crop_percent)
+
         if self._is_signed_zero_reference_mode_active():
             signed_display_limit = self._get_signed_display_limit()
             if frame is None:
                 min_value = -1.0
                 max_value = 1.0
             elif self.autoscale_enabled:
-                min_value, max_value = self._get_autoscale_range(frame, signed_mode=True)
+                min_value, max_value = self._get_autoscale_range(frame, signed_mode=True, crop_mask=crop_mask)
             else:
                 min_value = float(np.clip(self.scale_min, -signed_display_limit, signed_display_limit))
                 max_value = float(np.clip(self.scale_max, -signed_display_limit, signed_display_limit))
@@ -1259,7 +1306,7 @@ class AcquisitionPreviewWindow:
             min_value = 0.0
             max_value = float(self.display_max)
         elif self.autoscale_enabled:
-            min_value, max_value = self._get_autoscale_range(frame, signed_mode=False)
+            min_value, max_value = self._get_autoscale_range(frame, signed_mode=False, crop_mask=crop_mask)
         else:
             min_value = max(0.0, float(self.scale_min))
             max_value = min(float(self.display_max), max(float(self.scale_max), 1.0))
@@ -2159,6 +2206,7 @@ class AcquisitionPreviewWindow:
                 "view_center_x": self.view_center_x,
                 "view_center_y": self.view_center_y,
                 "colormap_per_mode": dict(self._colormap_per_mode),
+                "crop_percent": float(self.crop_percent),
             },
         )
         if self.rois_window is not None and hasattr(self.rois_window, "SaveState"):
@@ -2197,6 +2245,7 @@ class AcquisitionPreviewWindow:
         self.view_center_x = float(state.get("view_center_x", self.view_center_x))
         self.view_center_y = float(state.get("view_center_y", self.view_center_y))
         self.colormap_name = self._colormap_per_mode.get(self.display_mode, self.colormap_name)
+        self.crop_percent = float(np.clip(state.get("crop_percent", self.crop_percent), 0.0, 100.0))
         self.is_playing = False
 
         if self.display_mode_combo_id is not None and dpg.does_item_exist(self.display_mode_combo_id):
@@ -2207,6 +2256,8 @@ class AcquisitionPreviewWindow:
             dpg.set_value(self.autoscale_grace_input_id, self.autoscale_grace_percent)
         if self.mirrored_difference_checkbox_id is not None and dpg.does_item_exist(self.mirrored_difference_checkbox_id):
             dpg.set_value(self.mirrored_difference_checkbox_id, self.mirrored_difference_scale)
+        if self.crop_slider_id is not None and dpg.does_item_exist(self.crop_slider_id):
+            dpg.set_value(self.crop_slider_id, self.crop_percent)
 
         self._update_play_button()
         self._update_repeat_button()
