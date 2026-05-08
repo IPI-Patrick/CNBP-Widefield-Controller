@@ -78,9 +78,21 @@ class MockCamera:
         self.translation_x = 0          # px
         self.translation_y = 0          # px
 
+        # Global brightness pulse — all particles share this slow sinusoidal multiplier
+        self.global_pulse_period = 3.0  # seconds (real-time, independent of frame rate)
+        self.global_pulse_amplitude = 0.5  # multiplier swings between 1-amp and 1+amp
+
         self._mock_particle_state = None  # invalidated when structural params change
         self._illum_cache = None          # cached 2-D Gaussian array
         self._illum_cache_key = None
+
+        # Fiducial rectangles — move with the sample (drift + manual translation)
+        # but are NOT affected by the global brightness pulse or per-frame oscillation.
+        # Four small squares placed symmetrically around the image centre at ±offset_frac.
+        self.fiducial_enabled = True
+        self.fiducial_size = 6            # side length in pixels (at native 1×1 binning)
+        self.fiducial_offset_frac = 0.20  # fraction of image width/height from centre
+        self.fiducial_intensity = 0.60    # fixed intensity as fraction of max sensor value
 
     # ── Particle regeneration ───────────────────────────────────────────────────
 
@@ -354,6 +366,13 @@ class MockCamera:
         else:
             _illum_cx = _illum_cy = _illum_two_sigma_sq = None
 
+        # Global brightness pulse: all particles share one slow sinusoidal multiplier
+        # driven by wall-clock time so it is independent of frame rate.
+        _pulse_t = time.time()
+        _pulse_period = max(0.1, float(self.global_pulse_period))
+        _pulse_amp = float(np.clip(self.global_pulse_amplitude, 0.0, 1.0))
+        global_brightness = 1.0 + _pulse_amp * math.sin(2.0 * math.pi * _pulse_t / _pulse_period)
+
         particle_layer = np.zeros((height, width), dtype=np.float32)
 
         for p in state["particles"]:
@@ -390,7 +409,10 @@ class MockCamera:
 
             base_counts = max_value * base * illum_weight
             amplitude_counts = base_counts * amplitude  # amplitude as fraction of base
-            intensity = float(np.clip(base_counts + amplitude_counts * modulation, 0.0, max_value * 0.97))
+            intensity = float(np.clip(
+                (base_counts + amplitude_counts * modulation) * global_brightness,
+                0.0, max_value * 0.97
+            ))
 
             particle_layer[y_img_min:y_img_max, x_img_min:x_img_max] += (
                 mask[my_min:my_max, mx_min:mx_max] * intensity
@@ -401,11 +423,42 @@ class MockCamera:
         if focus_sigma > 0.1:
             particle_layer = gaussian_filter(particle_layer, sigma=focus_sigma)
 
-        # Frame = background floor + fixed illumination profile + particle signal
+        # Fiducial rectangles — rendered on a separate layer so they are
+        # unaffected by the global brightness pulse, but they DO move with the
+        # sample (drift + manual translation) just like the particles.
+        # The same focus_sigma is applied so they blur/sharpen with focus changes.
+        fiducial_layer = np.zeros((height, width), dtype=np.float32)
+        if self.fiducial_enabled:
+            fid_intensity = float(np.clip(self.fiducial_intensity, 0.0, 1.0)) * max_value
+            fid_half = max(1, int(self.fiducial_size) // 2)
+            cx = width / 2.0
+            cy = height / 2.0
+            off_x = int(round(float(self.fiducial_offset_frac) * width))
+            off_y = int(round(float(self.fiducial_offset_frac) * height))
+            # Four centres: (±off_x, ±off_y) relative to image centre, shifted by
+            # the same drift + translation offset applied to the particles.
+            fid_centres = [
+                (int(round(cx + off_x)) + total_offset_x, int(round(cy + off_y)) + total_offset_y),
+                (int(round(cx - off_x)) + total_offset_x, int(round(cy + off_y)) + total_offset_y),
+                (int(round(cx + off_x)) + total_offset_x, int(round(cy - off_y)) + total_offset_y),
+                (int(round(cx - off_x)) + total_offset_x, int(round(cy - off_y)) + total_offset_y),
+            ]
+            for fx, fy in fid_centres:
+                y0 = max(0, fy - fid_half)
+                y1 = min(height, fy + fid_half + 1)
+                x0 = max(0, fx - fid_half)
+                x1 = min(width, fx + fid_half + 1)
+                if y0 < y1 and x0 < x1:
+                    fiducial_layer[y0:y1, x0:x1] = fid_intensity
+            if focus_sigma > 0.1:
+                fiducial_layer = gaussian_filter(fiducial_layer, sigma=focus_sigma)
+
+        # Frame = background floor + fixed illumination profile + particle signal + fiducials
         frame = np.full((height, width), background_floor, dtype=np.float32)
         if illum is not None:
             frame += illum
         frame += particle_layer
+        frame += fiducial_layer
 
         # Shot noise
         shot_noise_photons = 300.0

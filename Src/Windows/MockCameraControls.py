@@ -198,6 +198,50 @@ class MockCameraControls:
                     callback=self._on_drift_amplitude_changed,
                 )
 
+            dpg.add_separator()
+
+            with dpg.tree_node(label="Global Pulse", default_open=True, span_full_width=True):
+                self._pulse_period_id = dpg.add_input_float(
+                    label="Period (s)",
+                    width=-130,
+                    default_value=3.0,
+                    min_value=0.1,
+                    step=0.5,
+                    format="%.2f",
+                    callback=self._on_pulse_period_changed,
+                )
+                self._pulse_amplitude_id = dpg.add_slider_float(
+                    label="Amplitude",
+                    width=-130,
+                    default_value=0.5,
+                    min_value=0.0,
+                    max_value=1.0,
+                    format="%.2f",
+                    callback=self._on_pulse_amplitude_changed,
+                )
+
+            dpg.add_separator()
+
+            with dpg.tree_node(label="Fiducials", default_open=True, span_full_width=True):
+                self._fiducial_size_id = dpg.add_input_int(
+                    label="Size (px)",
+                    width=-130,
+                    default_value=6,
+                    min_value=1,
+                    max_value=50,
+                    step=1,
+                    callback=self._on_fiducial_size_changed,
+                )
+                self._fiducial_offset_id = dpg.add_slider_float(
+                    label="Separation",
+                    width=-130,
+                    default_value=0.20,
+                    min_value=0.05,
+                    max_value=0.49,
+                    format="%.2f",
+                    callback=self._on_fiducial_offset_changed,
+                )
+
     # ── Camera access ───────────────────────────────────────────────────────────
 
     def _get_mock_camera(self):
@@ -226,6 +270,10 @@ class MockCameraControls:
         dpg.set_value(self._drift_enabled_id, bool(camera.drift_enabled))
         dpg.set_value(self._drift_speed_slider_id, float(camera.drift_speed))
         dpg.set_value(self._drift_amplitude_slider_id, float(camera.drift_amplitude))
+        dpg.set_value(self._pulse_period_id, float(camera.global_pulse_period))
+        dpg.set_value(self._pulse_amplitude_id, float(camera.global_pulse_amplitude))
+        dpg.set_value(self._fiducial_size_id, int(camera.fiducial_size))
+        dpg.set_value(self._fiducial_offset_id, float(camera.fiducial_offset_frac))
 
     # ── Callbacks ───────────────────────────────────────────────────────────────
 
@@ -341,6 +389,26 @@ class MockCameraControls:
         if camera is not None:
             camera.drift_amplitude = float(app_data)
 
+    def _on_pulse_period_changed(self, _, app_data):
+        camera = self._get_mock_camera()
+        if camera is not None:
+            camera.global_pulse_period = max(0.1, float(app_data))
+
+    def _on_pulse_amplitude_changed(self, _, app_data):
+        camera = self._get_mock_camera()
+        if camera is not None:
+            camera.global_pulse_amplitude = float(app_data)
+
+    def _on_fiducial_size_changed(self, _, app_data):
+        camera = self._get_mock_camera()
+        if camera is not None:
+            camera.fiducial_size = max(1, int(app_data))
+
+    def _on_fiducial_offset_changed(self, _, app_data):
+        camera = self._get_mock_camera()
+        if camera is not None:
+            camera.fiducial_offset_frac = float(app_data)
+
     # ── Render / state ──────────────────────────────────────────────────────────
 
     def render(self):
@@ -403,6 +471,14 @@ class MockCameraControls:
             camera.drift_speed = float(state["drift_speed"])
         if "drift_amplitude" in state:
             camera.drift_amplitude = float(state["drift_amplitude"])
+        if "global_pulse_period" in state:
+            camera.global_pulse_period = max(0.1, float(state["global_pulse_period"]))
+        if "global_pulse_amplitude" in state:
+            camera.global_pulse_amplitude = float(state["global_pulse_amplitude"])
+        if "fiducial_size" in state:
+            camera.fiducial_size = max(1, int(state["fiducial_size"]))
+        if "fiducial_offset_frac" in state:
+            camera.fiducial_offset_frac = float(state["fiducial_offset_frac"])
 
     def SaveState(self):
         save_state_file(
@@ -426,6 +502,10 @@ class MockCameraControls:
                 "drift_enabled": bool(dpg.get_value(self._drift_enabled_id)),
                 "drift_speed": float(dpg.get_value(self._drift_speed_slider_id)),
                 "drift_amplitude": float(dpg.get_value(self._drift_amplitude_slider_id)),
+                "global_pulse_period": float(dpg.get_value(self._pulse_period_id)),
+                "global_pulse_amplitude": float(dpg.get_value(self._pulse_amplitude_id)),
+                "fiducial_size": int(dpg.get_value(self._fiducial_size_id)),
+                "fiducial_offset_frac": float(dpg.get_value(self._fiducial_offset_id)),
             },
         )
 
@@ -440,6 +520,8 @@ class MockCameraControls:
             "particle_mean", "particle_std", "particle_amplitude",
             "illum_enabled", "illum_center_x_frac", "illum_center_y_frac", "illum_sigma", "illum_peak",
             "translation_x", "translation_y", "drift_enabled", "drift_speed", "drift_amplitude",
+            "global_pulse_period", "global_pulse_amplitude",
+            "fiducial_size", "fiducial_offset_frac",
         )
         pending = {k: state[k] for k in keys if k in state}
         if pending:
@@ -463,6 +545,10 @@ class MockCameraControls:
             "drift_enabled": (self._drift_enabled_id, bool),
             "drift_speed": (self._drift_speed_slider_id, float),
             "drift_amplitude": (self._drift_amplitude_slider_id, float),
+            "global_pulse_period": (self._pulse_period_id, float),
+            "global_pulse_amplitude": (self._pulse_amplitude_id, float),
+            "fiducial_size": (self._fiducial_size_id, int),
+            "fiducial_offset_frac": (self._fiducial_offset_id, float),
         }
         for key, (item_id, cast) in slider_map.items():
             if key in state:
