@@ -28,18 +28,18 @@ Tasks (from TODO.md, in priority order):
 ---
 
 ## Group B — Camera Controls: Functional Settings + Hardware Requirements
-**Status: [~] In progress**
+**Status: [x] Done**
 **Primary file:** `src/Windows/CameraControls.py`
 
 Tasks (from TODO.md, in priority order):
-- [ ] Task 7 — Restore the "Zero on Start" functionality in the Acquisition Settings section of "Camera Controls".
-- [ ] Task 8 — Add a "Zero on Start" setting to the "Preview Settings" which works the same as the one in the "Acquisition Settings" but only when the preview is started.
-- [ ] Task 16 — Double check the hardware Reqs calculation. Currently a 60-second, 500x500 pixel, 60FPS video is coming out at 1.68GB — verify the maths (16-bits per pixel × 500×500 px × 60FPS × 60s = 1.8 GB) and fix the calculation if wrong.
+- [x] Task 7 — Restore the "Zero on Start" functionality in the Acquisition Settings section of "Camera Controls".
+- [x] Task 8 — Add a "Zero on Start" setting to the "Preview Settings" which works the same as the one in the "Acquisition Settings" but only when the preview is started.
+- [x] Task 16 — Double check the hardware Reqs calculation. Currently a 60-second, 500x500 pixel, 60FPS video is coming out at 1.68GB — verify the maths (16-bits per pixel × 500×500 px × 60FPS × 60s = 1.8 GB) and fix the calculation if wrong.
 
 ---
 
 ## Group C — Camera Driver: Timeout Tolerance
-**Status: [ ] Not started**
+**Status: [~] In progress**
 **Primary files:** `src/Drivers/Andor.py`, `src/Mocks/MockAndor.py`
 
 Tasks (from TODO.md, in priority order):
@@ -99,3 +99,4 @@ Tasks (from TODO.md, in priority order):
 
 ## Completion Notes
 - **Group A** — commit `9f63a12` (2026-05-08). Button UI & layout cleanup: removed green Acquire theme, added red Stop buttons, save-in-progress disables Acquire/Preview, Save button halved, Open button removed, Calculate Frame Mean checkbox removed, buttons pinned in grey footer child window.
+- **Group B** — commit `ddb3fac` (2026-05-08). Task 7: added `_on_acquisition_zero_on_start_changed` callback to sync instance variable (zero action at acquisition start was already implemented). Task 8: added `preview_zero_on_start` variable, "Zero on Start" checkbox in Preview Settings, `_on_preview_zero_on_start_changed` callback, and wired into `toggle_preview()` via `preview_zero_reference_pending`. Task 16: fixed `_format_gigabytes` to return "GiB"/"MiB" (was incorrectly labelling binary-prefixed values as "GB"/"MB"); updated initial widget labels and all string comparisons in `_refresh_hardware_requirements` accordingly.
