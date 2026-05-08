@@ -105,12 +105,12 @@ Tasks (from TODO.md, in priority order):
 
 ## Group H — Save Speed Optimisation
 
-**Status: [~] In progress**
+**Status: [x] Done**
 **Primary files:** `src/Windows/CameraControls.py` (save logic), `src/Utils/StorageDTypes.py`
 
 Tasks (from TODO.md, in priority order):
 
-- [ ] Task 21 — Investigate and implement faster NPZ saving. Target: ~20 s for a 2 GB file at 300 MB/s disk write speed. Options to explore: raw numpy `tofile` + metadata sidecar, memory-mapped writes, chunked async writes, or switching format entirely (HDF5/zarr).
+- [x] Task 21 — Investigate and implement faster NPZ saving. Target: ~20 s for a 2 GB file at 300 MB/s disk write speed. Options to explore: raw numpy `tofile` + metadata sidecar, memory-mapped writes, chunked async writes, or switching format entirely (HDF5/zarr).
 
 ---
 
@@ -123,3 +123,4 @@ Tasks (from TODO.md, in priority order):
 - **Group E** — commit `1828ba4` (2026-05-08). Task 3: added `_worker_loop_full_history` in RegionOfInterest for preview mode — waits on rebuild_event, fetches all frame crops via `get_roi_processing_update(include_history=True)`, applies `process_analysis_frame` per crop, builds the full trace in one pass, then sleeps until next settings change or ROI edit. Task 4: added `nan_pad` parameter to `request_trace_rebuild`; incremental worker fills existing y_axis with `float('nan')` instead of clearing on `nan_pad=True`, preserving x-axis alignment; `CameraFeed._on_mouse_release` now calls `request_trace_rebuild(nan_pad=True)` after move/resize. Task 5: removed `no_menus` and `no_box_select` from plot creation; replaced manual y-axis limit management with `dpg.set_axis_limits_auto()`; removed Min/Max/Auto/Grace/Mirrored controls from _build_controls, keeping only Metric combo; marker series uses y=[-1e38, 1e38] to always span the visible range; `invalidate_autoscale_cache` reduced to a no-op.
 - **Group F** — commit `33d28a8` (2026-05-08). Task 17: added `Del` button per file row in FileBrowser table; clicking shows a no-title-bar modal (`#FileBrowserDeleteModal`) with truncated filename, Yes/Delete and No/Cancel buttons; on confirm calls `os.remove` and bumps `_watch_generation` to trigger a listing refresh. Task 18: added `_register_viewport_drop_callback` in WidefieldController; `dpg.set_viewport_drop_callback` receives dropped paths, finds the `FileBrowser` instance in `class_objects`, and calls `_open_preview_window` for the first `.npz` path. Task 19: replaced the bare loading text in AcquisitionPreviewWindow with a `dpg.add_progress_bar`; `_set_load_progress` writes thread-safe progress at five stages (5%/15%/50%/80%/95%); `_apply_pending_loaded_payload` reads `_pending_load_progress` each render tick and updates the bar, then hides it on load complete or error.
 - **Group G** — commit `3941efe` (2026-05-08). Task 20: added `collate_all_windows()` to tile visible windows in a 2-column grid; added `create_context_menu()` which builds a `popup=True` dpg.window with "Reset All Windows", "Save Windows State", and "Collate All Windows" menu items wired to the existing reset/save helpers and the new collate function; added `on_right_click()` handler that positions the popup at the cursor; registered `dpg.add_mouse_click_handler(button=mvMouseButton_Right)` inside the existing handler registry in `setup()`.
+- **Group H** — commit `ec8ba22` (2026-05-08). Task 21: identified two compression bottlenecks: `_write_npz_with_progress` was using `zipfile.ZIP_DEFLATED` when building the acquisition NPZ archive, and `_capture_snapshot_data` was using `np.savez_compressed`. Both applied zlib compression to large uint16/float16 frame arrays — CPU-bound, negligible size savings, 10–50x slower than disk I/O. Fixed by changing to `zipfile.ZIP_STORED` (no compression) for acquisitions and `np.savez` for snapshots. Files remain valid NPZ format, fully backwards compatible. A 1.8 GB acquisition should now save in ~20 s at 300 MB/s.
