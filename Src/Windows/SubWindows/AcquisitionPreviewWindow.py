@@ -156,7 +156,6 @@ class AcquisitionPreviewWindow:
         self.color_scale_combo_id = None
         self.scope_container_id = None
         self.roi_controls_group_id = None
-        self.rois_status_text_id = None
         self.rois_panel_id = None
         self.settings_container_id = None
         self.scope_empty_text_id = None
@@ -420,7 +419,6 @@ class AcquisitionPreviewWindow:
 
                         with dpg.tree_node(label="ROIs", default_open=True, span_full_width=True):
                             self.section_node_ids["rois"] = dpg.last_item()
-                            self.rois_status_text_id = dpg.add_text("0 ROIs")
                             with dpg.group():
                                 self.roi_controls_group_id = dpg.last_item()
                             with dpg.child_window(height=1, border=False, autosize_x=True, no_scrollbar=True, no_scroll_with_mouse=True):
@@ -2281,9 +2279,6 @@ class AcquisitionPreviewWindow:
 
         if dpg.does_item_exist(self.frame_slider_id):
             dpg.set_value(self.frame_slider_id, self.current_frame_index)
-        if self.rois_status_text_id is not None and dpg.does_item_exist(self.rois_status_text_id):
-            roi_count = len(self.rois)
-            dpg.set_value(self.rois_status_text_id, f"{roi_count} ROI{'s' if roi_count != 1 else ''}")
 
     def _update_image_texture(self):
         if not self.image_dirty or self._loaded_payload is None:
