@@ -1025,6 +1025,53 @@ class AcquisitionPreviewWindow:
             return None
         return crop
 
+    def _get_cached_drift_shift(self, frame_index):
+        """Return the cached drift shift (dy, dx) for *frame_index*.
+
+        Only returns a non-zero shift when drift correction is enabled **and**
+        the shift for that frame has already been computed and stored in
+        ``_drift_shift_cache``.  If the shift has not been computed yet (e.g.
+        the display pipeline hasn't visited that frame) we return ``(0, 0)``
+        rather than triggering an expensive ``phase_cross_correlation`` call
+        from the ROI worker thread.
+        """
+        if not self.drift_correction_enabled:
+            return 0, 0
+        return self._drift_shift_cache.get(frame_index, (0, 0))
+
+    def _apply_drift_to_roi_bounds(self, x1, y1, x2, y2, dy, dx):
+        """Shift ROI bounds by ``(-dy, -dx)`` to compensate for drift.
+
+        When a frame has been shifted by ``(dy, dx)`` during display, the same
+        physical region of the sample now lives at ``(y - dy, x - dx)`` in the
+        raw frame.  We therefore subtract the drift offset from the crop
+        coordinates so the thumbnail looks at the correct physical location.
+        The shifted bounds are clamped to the valid image dimensions and the
+        crop size is preserved where possible.
+        """
+        if dy == 0 and dx == 0:
+            return x1, y1, x2, y2
+
+        dy_int = int(round(dy))
+        dx_int = int(round(dx))
+
+        # Shift the crop window in the opposite direction of the drift.
+        sy1 = y1 - dy_int
+        sy2 = y2 - dy_int
+        sx1 = x1 - dx_int
+        sx2 = x2 - dx_int
+
+        # Clamp to image dimensions, preserving crop size where possible.
+        crop_h = y2 - y1
+        crop_w = x2 - x1
+
+        sy1 = int(np.clip(sy1, 0, self.image_height - crop_h))
+        sy2 = sy1 + crop_h
+        sx1 = int(np.clip(sx1, 0, self.image_width - crop_w))
+        sx2 = sx1 + crop_w
+
+        return sx1, sy1, sx2, sy2
+
     def get_roi_processing_update(self, bounds, include_history=False, include_timestamps=False, history_start_frame_idx=None):
         _ = history_start_frame_idx
         if self._loaded_payload is None:
@@ -1043,11 +1090,25 @@ class AcquisitionPreviewWindow:
         else:
             start_frame_idx = current_frame_idx
 
-        latest_crop = None
         acquisitions = np.asarray(self._loaded_payload["acquisitions"])
         timestamps = np.asarray(self._loaded_payload["relative_timestamps"], dtype=np.float64)
+
+        # Crop the thumbnail from the already-processed display frame so that
+        # the thumbnail always matches what is drawn on screen, including drift
+        # correction, background removal and any display-mode transform.
+        # The display frame is updated by _push_processed_frame() before this
+        # method is called, so processed_frame corresponds to current_frame_idx.
+        # Using the display frame means we do NOT need to inverse-shift the
+        # ROI coordinates — the frame is already shifted, so the ROI bounds
+        # map directly onto it (same as the live-camera ROI implementation).
+        latest_crop = None
         if 0 <= current_frame_idx < frame_count:
-            latest_crop = np.array(acquisitions[current_frame_idx, y1:y2, x1:x2], copy=True)
+            with self.Andor.processed_frame_condition:
+                display_frame = self.Andor.processed_frame
+            if display_frame is not None and display_frame.ndim >= 2:
+                crop = display_frame[y1:y2, x1:x2]
+                if crop.size > 0:
+                    latest_crop = np.array(crop, copy=True)
 
         zero_crop = None
         if self._current_zero_frame is not None:
@@ -1068,11 +1129,25 @@ class AcquisitionPreviewWindow:
         if not include_history:
             return latest_crop, current_frame_idx, False, None, None, zero_crop, state_key, first_available_frame_idx
 
-        raw_frames = np.array(acquisitions[start_frame_idx:available_frame_count], copy=True)
-        if raw_frames.size <= 0:
-            return None, current_frame_idx, False, None, None, None, None, first_available_frame_idx
+        # Build per-frame drift-corrected crops for the full history.
+        # When drift correction is disabled, or no shifts are cached yet, we
+        # use a fast batch slice.  When drift shifts are available we apply
+        # them per-frame so the trace values are derived from the correct
+        # physical region of the sample.
+        n_history = available_frame_count - start_frame_idx
+        if self.drift_correction_enabled and self._drift_shift_cache:
+            crop_h = y2 - y1
+            crop_w = x2 - x1
+            raw_crops = np.empty((n_history, crop_h, crop_w), dtype=acquisitions.dtype)
+            for rel_i in range(n_history):
+                abs_i = start_frame_idx + rel_i
+                fdy, fdx = self._get_cached_drift_shift(abs_i)
+                fx1, fy1, fx2, fy2 = self._apply_drift_to_roi_bounds(x1, y1, x2, y2, fdy, fdx)
+                raw_crops[rel_i] = acquisitions[abs_i, fy1:fy2, fx1:fx2]
+        else:
+            raw_frames = acquisitions[start_frame_idx:available_frame_count]
+            raw_crops = np.array(raw_frames[:, y1:y2, x1:x2], copy=True)
 
-        raw_crops = np.array(raw_frames[:, y1:y2, x1:x2], copy=True)
         if raw_crops.size <= 0:
             return None, current_frame_idx, False, None, None, None, None, first_available_frame_idx
 
