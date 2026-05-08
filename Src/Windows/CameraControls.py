@@ -2337,10 +2337,13 @@ class CameraSystem:
         displayed_save_progress = self._get_animated_save_progress_value()
         save_progress_overlay = self._get_save_progress_overlay(displayed_save_progress)
         dpg.configure_item(self.snapshot_button_id, enabled=not self._snapshot_in_progress)
-        # Disable Acquire and Preview while a save is in progress
+        # Disable Acquire and Preview while a save is in progress; re-enable when done
         if self._save_in_progress:
             dpg.configure_item(self.acquire_button_id, enabled=False)
             dpg.configure_item(self.start_button_id, enabled=False)
+        else:
+            can_acquire = not self.acquisition_in_progress and not self.started
+            dpg.configure_item(self.acquire_button_id, enabled=can_acquire)
         dpg.configure_item(self.save_button_id, enabled=self._completed_acquisition_payload is not None and not self._save_in_progress)
         dpg.configure_item(self.save_button_id, show=not self._save_in_progress)
         dpg.configure_item(self.save_progress_bar_id, show=self._save_in_progress)
