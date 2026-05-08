@@ -97,41 +97,6 @@ def reset_all_window_layouts():
     print("Default window layout restored.")
 
 
-def collate_all_windows():
-    """Tile all visible windows in a 2-column grid starting at the top-left of the viewport."""
-    viewport_width = dpg.get_viewport_client_width()
-    viewport_height = dpg.get_viewport_client_height()
-
-    window_ids = []
-    for owner in _iter_window_owners(class_objects):
-        window_id = getattr(owner, "window_id", None)
-        if window_id is None:
-            continue
-        if not dpg.does_item_exist(window_id):
-            continue
-        if not dpg.is_item_shown(window_id):
-            continue
-        window_ids.append(window_id)
-
-    if not window_ids:
-        return
-
-    num_cols = 2
-    num_rows = (len(window_ids) + num_cols - 1) // num_cols
-    cell_width = viewport_width // num_cols
-    cell_height = viewport_height // max(num_rows, 1)
-
-    for index, window_id in enumerate(window_ids):
-        col = index % num_cols
-        row = index // num_cols
-        x = col * cell_width
-        y = row * cell_height
-        dpg.configure_item(window_id, width=cell_width, height=cell_height)
-        dpg.set_item_pos(window_id, (x, y))
-
-    dpg.save_init_file(str(get_init_file_path()))
-    print(f"Collated {len(window_ids)} windows into a {num_cols}-column grid.")
-
 
 def save_current_layout_as_default():
     saved_layouts = {}
@@ -303,7 +268,6 @@ def create_context_menu():
     ):
         dpg.add_menu_item(label="Reset All Windows",  callback=_ctx_reset_all_windows)
         dpg.add_menu_item(label="Save Windows State", callback=_ctx_save_windows_state)
-        dpg.add_menu_item(label="Collate All Windows", callback=_ctx_collate_all_windows)
 
 
 def _ctx_reset_all_windows(sender=None, app_data=None):
@@ -314,12 +278,8 @@ def _ctx_save_windows_state(sender=None, app_data=None):
     save_current_layout_as_default()
 
 
-def _ctx_collate_all_windows(sender=None, app_data=None):
-    collate_all_windows()
-
-
 def on_right_click(sender=None, app_data=None):
-    """Show the window-management context menu at the current mouse position."""
+    """Show the window-management context menu at the current mouse position."""    
     mouse_pos = dpg.get_mouse_pos(local=False)
     dpg.set_item_pos("CtxMenu_WindowManagement", [int(mouse_pos[0]), int(mouse_pos[1])])
     dpg.configure_item("CtxMenu_WindowManagement", show=True)
@@ -339,7 +299,6 @@ def _register_viewport_drop_callback(window_objects):
                 file_browser._open_preview_window(None, None, user_data=path)
                 break
 
-    dpg.set_viewport_drop_callback(_on_viewport_drop)
 
 
 def setup():
@@ -424,6 +383,7 @@ def setup():
         dpg.add_key_press_handler(key=dpg.mvKey_B, callback=on_reset_window_layout_shortcut)
         dpg.add_key_press_handler(key=dpg.mvKey_N, callback=on_save_window_layout_default_shortcut)
         dpg.add_mouse_click_handler(button=dpg.mvMouseButton_Right, callback=on_right_click)
+
 
     dpg.show_viewport()
     apply_viewport_state(viewport_state)
