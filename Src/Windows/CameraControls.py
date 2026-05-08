@@ -36,6 +36,7 @@ class CameraSystem:
         self.max_exposure = False
         self.acquisition_storage_dtype_name = "16"
         self.acquisition_zero_on_start = False
+        self.preview_zero_on_start = False
         self.acquisition_set_awg_on_start = False
         self.acquisition_awg_waveform = "dc"
         self.acquisition_awg_dc_offset_volts = 0.0
@@ -298,6 +299,12 @@ class CameraSystem:
                         callback=self._on_preview_max_frames_changed,
                     )
 
+                    self.preview_zero_on_start_checkbox_id = dpg.add_checkbox(
+                        label="Zero on Start",
+                        default_value=self.preview_zero_on_start,
+                        callback=self._on_preview_zero_on_start_changed,
+                    )
+
                     self._refresh_aoi_controls_from_camera()
 
                 dpg.add_separator()
@@ -315,6 +322,7 @@ class CameraSystem:
                     self.acquisition_zero_on_start_checkbox_id = dpg.add_checkbox(
                         label="Zero on Start",
                         default_value=self.acquisition_zero_on_start,
+                        callback=self._on_acquisition_zero_on_start_changed,
                     )
 
                     self.auto_scope_freq_checkbox_id = dpg.add_checkbox(
@@ -401,7 +409,7 @@ class CameraSystem:
                     )
 
                     self.hardware_ram_value_id = dpg.add_input_text(
-                        label="RAM (GB)",
+                        label="RAM (GiB)",
                         width=-110,
                         default_value="Calculating...",
                         readonly=True,
@@ -409,7 +417,7 @@ class CameraSystem:
                     dpg.bind_item_theme(self.hardware_ram_value_id, self.hardware_readout_theme)
 
                     self.hardware_disk_value_id = dpg.add_input_text(
-                        label="Disk Space (GB)",
+                        label="Disk Space (GiB)",
                         width=-110,
                         default_value="Calculating...",
                         readonly=True,
@@ -650,6 +658,12 @@ class CameraSystem:
     def _on_preview_max_frames_changed(self, sender=None, app_data=None, user_data=None):
         self._apply_preview_max_frames(dpg.get_value(self.settings_preview_max_frames))
         self._refresh_hardware_requirements(force=True)
+
+    def _on_preview_zero_on_start_changed(self, sender=None, app_data=None, user_data=None):
+        self.preview_zero_on_start = bool(app_data)
+
+    def _on_acquisition_zero_on_start_changed(self, sender=None, app_data=None, user_data=None):
+        self.acquisition_zero_on_start = bool(app_data)
 
     def _on_acquisition_frame_rate_changed(self, sender=None, app_data=None, user_data=None):
         self.acquisition_frame_rate_hz = max(0.1, float(app_data or dpg.get_value(self.acquisition_frame_rate_input_id)))
@@ -894,8 +908,8 @@ class CameraSystem:
     def _format_gigabytes(self, byte_count):
         value = float(max(byte_count, 0.0))
         if value >= 1024.0 ** 3:
-            return value / (1024.0 ** 3), "GB"
-        return value / (1024.0 ** 2), "MB"
+            return value / (1024.0 ** 3), "GiB"
+        return value / (1024.0 ** 2), "MiB"
 
     def _get_scope_capture_settings(self):
         scope_controller = self._get_scope_controller()
@@ -1256,9 +1270,9 @@ class CameraSystem:
         ram_required_value, ram_required_unit = self._format_gigabytes(requirements["ram_bytes"])
         if memory_budget is not None and memory_budget > 0:
             ram_available_value, ram_available_unit = self._format_gigabytes(memory_budget)
-            ram_unit = "GB" if "GB" in (ram_required_unit, ram_available_unit) else "MB"
-            ram_scale = float(1024.0) if ram_unit == "GB" and ram_required_unit == "MB" else 1.0
-            ram_available_scale = float(1024.0) if ram_unit == "GB" and ram_available_unit == "MB" else 1.0
+            ram_unit = "GiB" if "GiB" in (ram_required_unit, ram_available_unit) else "MiB"
+            ram_scale = float(1024.0) if ram_unit == "GiB" and ram_required_unit == "MiB" else 1.0
+            ram_available_scale = float(1024.0) if ram_unit == "GiB" and ram_available_unit == "MiB" else 1.0
             dpg.configure_item(self.hardware_ram_value_id, label=f"RAM ({ram_unit})")
             dpg.set_value(
                 self.hardware_ram_value_id,
@@ -1273,9 +1287,9 @@ class CameraSystem:
         disk_required_value, disk_required_unit = self._format_gigabytes(requirements["disk_bytes"])
         if drive_free_bytes is not None and drive_free_bytes > 0:
             disk_available_value, disk_available_unit = self._format_gigabytes(drive_free_bytes)
-            disk_unit = "GB" if "GB" in (disk_required_unit, disk_available_unit) else "MB"
-            disk_scale = float(1024.0) if disk_unit == "GB" and disk_required_unit == "MB" else 1.0
-            disk_available_scale = float(1024.0) if disk_unit == "GB" and disk_available_unit == "MB" else 1.0
+            disk_unit = "GiB" if "GiB" in (disk_required_unit, disk_available_unit) else "MiB"
+            disk_scale = float(1024.0) if disk_unit == "GiB" and disk_required_unit == "MiB" else 1.0
+            disk_available_scale = float(1024.0) if disk_unit == "GiB" and disk_available_unit == "MiB" else 1.0
             dpg.configure_item(self.hardware_disk_value_id, label=f"Disk Space ({disk_unit})")
             dpg.set_value(
                 self.hardware_disk_value_id,
@@ -2003,7 +2017,9 @@ class CameraSystem:
             self.Andor.clear_buffers(reset_frame_index=True)
             self.camera_feed.reset_texture()
             self.camera_feed.rebuild_roi_traces()
-            self.preview_zero_reference_pending = int(getattr(self.Andor, "zero_version", 0)) <= 0
+            zero_on_start = bool(dpg.get_value(self.preview_zero_on_start_checkbox_id))
+            self.preview_zero_on_start = zero_on_start
+            self.preview_zero_reference_pending = zero_on_start or int(getattr(self.Andor, "zero_version", 0)) <= 0
             self.Andor.start_capture_continuous()
 
     def _get_camera_aoi_limits(self):
