@@ -141,6 +141,13 @@ class ROIsWindow:
         tag, parent = user_data
         parent.close_roi(tag)
 
+    def _on_fit_clicked(self, sender, app_data, user_data):
+        x_axis_id, y_axis_id = user_data
+        if dpg.does_item_exist(x_axis_id):
+            dpg.set_axis_limits_auto(x_axis_id)
+        if dpg.does_item_exist(y_axis_id):
+            dpg.set_axis_limits_auto(y_axis_id)
+
     def _on_overlay_mouse_wheel(self, sender, app_data):
         if not dpg.does_item_exist(self.overlay_id) or not dpg.is_item_hovered(self.overlay_id):
             return
@@ -266,6 +273,7 @@ class ROIsWindow:
             plot_id = ui.get("plot_id")
             name_id = ui.get("name_text_id")
             close_button_id = ui.get("close_button_id")
+            fit_button_id = ui.get("fit_button_id")
             if not plot_id or not name_id or not close_button_id:
                 continue
 
@@ -273,21 +281,26 @@ class ROIsWindow:
             button_rects = self._get_item_rects(close_button_id)
             if plot_rects is None or button_rects is None:
                 continue
-            
+
             plot_rect_min, plot_rect_max, _ = plot_rects
             _, _, button_rect_size = button_rects
             button_width, _ = button_rect_size
 
-            name_x = int(plot_rect_min[0] + 13)
+            button_x = int(plot_rect_min[0] + 6)
+            button_y = int(plot_rect_min[1] + 10)
+            dpg.set_item_pos(close_button_id, (button_x, button_y))
+
+            fit_x = button_x + button_width + 2
+            if fit_button_id and dpg.does_item_exist(fit_button_id):
+                dpg.set_item_pos(fit_button_id, (fit_x, button_y))
+                fit_button_rects = self._get_item_rects(fit_button_id)
+                fit_button_width = fit_button_rects[2][0] if fit_button_rects is not None else button_width
+                name_x = fit_x + fit_button_width + 4
+            else:
+                name_x = fit_x + 4
+
             name_y = int(plot_rect_min[1] + 12)
             dpg.set_item_pos(name_id, (name_x, name_y))
-            dpg.set_item_pos(
-                close_button_id,
-                (
-                    int(plot_rect_max[0] - button_width - 14),
-                    int(plot_rect_min[1] + 10),
-                ),
-            )
 
     def _get_roi_image_uv_bounds(self, image_shape):
         crop_height, crop_width = image_shape
@@ -389,8 +402,8 @@ class ROIsWindow:
                                 dpg.mvYAxis,
                                 label="",
                                 opposite=True,
+                                auto_fit=True,
                             )
-                            dpg.set_axis_limits_auto(y_axis_id)
                             series_id = dpg.add_line_series([], [], label=roi.name, parent=y_axis_id)
                             # Marker y-axis: a hidden second axis with fixed
                             # limits [-1, 1] so ±1e38 marker values don't
@@ -448,9 +461,9 @@ class ROIsWindow:
                 }
 
         
-        # Add in roi labels and close buttons on top of the images
+        # Add in roi labels and close/fit buttons on top of the plots
         for roi in rois:
-            name_id = dpg.add_text(roi.name, parent=self.overlay_id, pos=(0, 0))
+            ui = self._roi_ui[roi.tag]
             close_button_id = dpg.add_button(
                 label="X",
                 width=self.ROI_CLOSE_BUTTON_SIZE,
@@ -461,9 +474,21 @@ class ROIsWindow:
                 pos=(0, 0),
             )
             dpg.bind_item_theme(close_button_id, self._close_button_theme)
+            fit_button_id = dpg.add_button(
+                label="[]",
+                width=self.ROI_CLOSE_BUTTON_SIZE,
+                height=self.ROI_CLOSE_BUTTON_SIZE,
+                callback=self._on_fit_clicked,
+                user_data=(ui["x_axis_id"], ui["y_axis_id"]),
+                parent=self.overlay_id,
+                pos=(0, 0),
+            )
+            dpg.bind_item_theme(fit_button_id, self._close_button_theme)
+            name_id = dpg.add_text(roi.name, parent=self.overlay_id, pos=(0, 0))
             self._roi_ui[roi.tag].update({
                 "name_text_id": name_id,
                 "close_button_id": close_button_id,
+                "fit_button_id": fit_button_id,
             })
 
         self._update_overlay_positions()
