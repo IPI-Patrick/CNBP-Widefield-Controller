@@ -4,7 +4,8 @@ import numpy as np
 import threading
 from collections import deque
 from pyAndorSDK3 import AndorSDK3
-from Mocks.MockCamera import MockCamera 
+from pyAndorSDK3.andor_sdk3_exceptions import CameraException, ErrorCodes
+from Mocks.MockCamera import MockCamera
 from Utils.StorageDTypes import (
     get_raw_storage_dtype,
     get_signed_storage_dtype,
@@ -597,16 +598,34 @@ class Andor:
             buf = np.empty((imgsize,), dtype='B')
             cam.queue(buf, imgsize)
 
+        _consecutive_timeout_count = 0
+
         try:
             cam.AcquisitionStart()
-            while True:            
+            while True:
 
                 # If using software trigger, trigger it
                 if soft_trigger:
                     cam.SoftwareTrigger()
 
-                # Wait until the next frame is ready in the buffer
-                acq = cam.wait_buffer(timeout)
+                # Wait until the next frame is ready in the buffer.
+                # Tolerate up to 5 consecutive AT_ERR_TIMEDOUT errors silently;
+                # on the 6th consecutive timeout, print a message and stop.
+                try:
+                    acq = cam.wait_buffer(timeout)
+                except (CameraException, TimeoutError) as _te:
+                    is_andor_timeout = (
+                        isinstance(_te, CameraException)
+                        and getattr(_te, "err_code", None) == ErrorCodes.AT_ERR_TIMEDOUT
+                    )
+                    is_mock_timeout = isinstance(_te, TimeoutError)
+                    if is_andor_timeout or is_mock_timeout:
+                        _consecutive_timeout_count += 1
+                        if _consecutive_timeout_count >= 6:
+                            print("Timed out more than 5 times")
+                            break
+                        continue
+                    raise
 
                 # current_delivery_time = time.time()
                 # current_ready_time = getattr(acq, "frame_ready_timestamp", None)
@@ -622,6 +641,9 @@ class Andor:
                 # last_frame_delivery_time = current_delivery_time
                 # if current_ready_time is not None:
                     # last_frame_ready_time = float(current_ready_time)
+
+                # Successful frame — reset the consecutive timeout counter
+                _consecutive_timeout_count = 0
 
                 # Update the latest frame in a thread-safe manner
                 with self.frame_lock:
