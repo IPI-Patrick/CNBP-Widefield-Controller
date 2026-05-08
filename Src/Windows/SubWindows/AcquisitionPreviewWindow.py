@@ -120,6 +120,7 @@ class AcquisitionPreviewWindow:
         self._playback_thread = None
         self._pending_loaded_payload = None
         self._pending_load_error = None
+        self._pending_load_progress = -1.0   # <0 = not yet started, 0..1 = progress, >1 = done
         self._loaded_payload = None
         self._ui_initialized = False
         self._is_closed = False
@@ -141,6 +142,7 @@ class AcquisitionPreviewWindow:
         self.mouse_handler_id = None
         self.texture_id = None
         self.loading_text_id = None
+        self.loading_progress_bar_id = None
         self.playback_status_text_id = None
         self.play_button_id = None
         self.repeat_button_id = None
@@ -284,7 +286,13 @@ class AcquisitionPreviewWindow:
                     self.right_panel_id = dpg.last_item()
                     with dpg.child_window(border=False, autosize_x=True, tag=f"{self.tag}_RightContent"):
                         self.right_content_id = dpg.last_item()
-                        self.loading_text_id = dpg.add_text(f"Loading {os.path.basename(self.file_path)}...")
+                        with dpg.group():
+                            self.loading_text_id = dpg.add_text(f"Loading {os.path.basename(self.file_path)}...")
+                            self.loading_progress_bar_id = dpg.add_progress_bar(
+                                default_value=0.0,
+                                width=-1,
+                                overlay="",
+                            )
                         dpg.add_separator()
 
                         with dpg.tree_node(label="Scaling", default_open=True, span_full_width=True):
@@ -481,20 +489,31 @@ class AcquisitionPreviewWindow:
     def get_loaded_payload(self):
         return self._loaded_payload
 
+    def _set_load_progress(self, progress):
+        """Thread-safe write of load progress (0.0–1.0). Called from the load worker thread."""
+        with self._state_lock:
+            self._pending_load_progress = float(progress)
+
     def _load_data_worker(self):
+        self._set_load_progress(0.05)
         try:
             with np.load(self.file_path, allow_pickle=False) as archive:
+                self._set_load_progress(0.15)
                 payload = self._build_loaded_payload(archive)
         except Exception as exc:
             with self._state_lock:
                 self._pending_load_error = str(exc)
+                self._pending_load_progress = 1.1   # signal done (with error)
             return
 
         with self._state_lock:
             self._pending_loaded_payload = payload
+            self._pending_load_progress = 1.1   # signal done
 
     def _build_loaded_payload(self, archive):
+        # Stage: load frames array (~50%)
         acquisitions = np.asarray(archive["camera_acquisitions"])
+        self._set_load_progress(0.50)
         timestamps = np.asarray(archive["camera_timestamps"], dtype=np.float64) if "camera_timestamps" in archive else np.arange(len(acquisitions), dtype=np.float64)
         zero_frame = None
 
@@ -522,6 +541,8 @@ class AcquisitionPreviewWindow:
         else:
             playback_fps = 10.0
 
+        # Stage: load scope / metadata (~80%)
+        self._set_load_progress(0.80)
         scope_channels = {}
         for key in archive.files:
             if key.startswith("scope_channel_"):
@@ -538,6 +559,9 @@ class AcquisitionPreviewWindow:
 
         if zero_frame is None or tuple(np.shape(zero_frame)) != tuple(normal_frames[0].shape):
             zero_frame = np.array(normal_frames[0], copy=True)
+
+        # Stage: build display structures (~95%)
+        self._set_load_progress(0.95)
 
         return {
             "file_path": self.file_path,
@@ -602,10 +626,18 @@ class AcquisitionPreviewWindow:
             self._pending_loaded_payload = None
             load_error = self._pending_load_error
             self._pending_load_error = None
+            load_progress = self._pending_load_progress
+
+        # Update the progress bar from the main thread
+        if load_progress >= 0.0 and dpg.does_item_exist(self.loading_progress_bar_id):
+            clamped = float(min(1.0, max(0.0, load_progress)))
+            dpg.set_value(self.loading_progress_bar_id, clamped)
 
         if load_error is not None:
             if dpg.does_item_exist(self.loading_text_id):
                 dpg.set_value(self.loading_text_id, f"Failed to load file: {load_error}")
+            if dpg.does_item_exist(self.loading_progress_bar_id):
+                dpg.configure_item(self.loading_progress_bar_id, show=False)
             return
 
         if payload is None:
@@ -631,6 +663,10 @@ class AcquisitionPreviewWindow:
 
         if dpg.does_item_exist(self.loading_text_id):
             dpg.set_value(self.loading_text_id, os.path.basename(self.file_path))
+
+        # Hide the progress bar once loading is complete
+        if dpg.does_item_exist(self.loading_progress_bar_id):
+            dpg.configure_item(self.loading_progress_bar_id, show=False)
 
         self._request_all_roi_rebuilds(clear_existing=True)
 

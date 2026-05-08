@@ -26,6 +26,9 @@ class FileBrowser:
         self._rows_dirty = True
         self._preview_windows = {}
         self._last_logged_error = None
+        self._pending_delete_path = None
+        self._delete_modal_id = None
+        self._delete_modal_text_id = None
 
         with dpg.window(
             label="File Browser",
@@ -66,6 +69,29 @@ class FileBrowser:
                 modal=True,
             ) as self.directory_dialog_id:
                 pass
+
+        with dpg.window(
+            modal=True,
+            show=False,
+            tag="#FileBrowserDeleteModal",
+            no_title_bar=True,
+            width=360,
+            height=100,
+            pos=(560, 340),
+        ):
+            self._delete_modal_id = dpg.last_item()
+            self._delete_modal_text_id = dpg.add_text("Are you sure?")
+            with dpg.group(horizontal=True):
+                dpg.add_button(
+                    label="Yes, Delete",
+                    width=120,
+                    callback=self._confirm_delete,
+                )
+                dpg.add_button(
+                    label="No, Cancel",
+                    width=120,
+                    callback=self._cancel_delete,
+                )
 
         self._start_watch_thread()
         self._rebuild_file_rows()
@@ -262,12 +288,13 @@ class FileBrowser:
             resizable=True,
             policy=dpg.mvTable_SizingStretchProp,
         ):
-            dpg.add_table_column(label="Title",  init_width_or_weight=0.36)
-            dpg.add_table_column(label="Type",   init_width_or_weight=0.12)
+            dpg.add_table_column(label="Title",  init_width_or_weight=0.34)
+            dpg.add_table_column(label="Type",   init_width_or_weight=0.11)
             dpg.add_table_column(label="Frames", init_width_or_weight=0.09)
-            dpg.add_table_column(label="Date",   init_width_or_weight=0.23)
-            dpg.add_table_column(label="Size",   init_width_or_weight=0.10)
-            dpg.add_table_column(label="",       init_width_or_weight=0.10)
+            dpg.add_table_column(label="Date",   init_width_or_weight=0.21)
+            dpg.add_table_column(label="Size",   init_width_or_weight=0.09)
+            dpg.add_table_column(label="",       init_width_or_weight=0.09)
+            dpg.add_table_column(label="",       init_width_or_weight=0.07)
 
             for entry in self.file_entries:
                 meta_type        = entry.get("meta_type")
@@ -293,6 +320,12 @@ class FileBrowser:
                         callback=self._open_preview_window,
                         user_data=str(entry["path"]),
                     )
+                    dpg.add_button(
+                        label="Del",
+                        width=-1,
+                        callback=self._request_delete,
+                        user_data=str(entry["path"]),
+                    )
 
         self._rows_dirty = False
 
@@ -313,6 +346,38 @@ class FileBrowser:
             return
 
         self._preview_windows[file_path] = AcquisitionPreviewWindow(file_path)
+
+    def _request_delete(self, sender, app_data, user_data=None):
+        file_path = str(user_data or "").strip()
+        if not file_path:
+            return
+        self._pending_delete_path = file_path
+        filename = os.path.basename(file_path)
+        short_name = filename if len(filename) <= 40 else f"...{filename[-37:]}"
+        if dpg.does_item_exist(self._delete_modal_text_id):
+            dpg.set_value(self._delete_modal_text_id, f"Delete '{short_name}'?")
+        if dpg.does_item_exist(self._delete_modal_id):
+            dpg.configure_item(self._delete_modal_id, show=True)
+
+    def _confirm_delete(self, sender=None, app_data=None, user_data=None):
+        if dpg.does_item_exist(self._delete_modal_id):
+            dpg.configure_item(self._delete_modal_id, show=False)
+        file_path = self._pending_delete_path
+        self._pending_delete_path = None
+        if not file_path:
+            return
+        try:
+            os.remove(file_path)
+        except OSError as exc:
+            print(f"File Browser: Failed to delete '{file_path}': {exc}")
+            return
+        with self._state_lock:
+            self._watch_generation += 1
+
+    def _cancel_delete(self, sender=None, app_data=None, user_data=None):
+        self._pending_delete_path = None
+        if dpg.does_item_exist(self._delete_modal_id):
+            dpg.configure_item(self._delete_modal_id, show=False)
 
     def _render_preview_windows(self):
         closed_paths = []

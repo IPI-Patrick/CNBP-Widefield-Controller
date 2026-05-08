@@ -250,6 +250,23 @@ def flush_pending_viewport_state_save():
     save_viewport_state()
     VIEWPORT_STATE_DIRTY = False
 
+def _register_viewport_drop_callback(window_objects):
+    def _on_viewport_drop(data, keys):
+        paths = data if isinstance(data, list) else [data]
+        file_browser = next(
+            (obj for obj in window_objects if type(obj).__name__ == "FileBrowser"),
+            None,
+        )
+        if file_browser is None:
+            return
+        for path in paths:
+            if isinstance(path, str) and path.lower().endswith(".npz"):
+                file_browser._open_preview_window(None, None, user_data=path)
+                break
+
+    dpg.set_viewport_drop_callback(_on_viewport_drop)
+
+
 def setup():
     # Create the window
     global LAST_STATE_SAVE_TIME
@@ -334,6 +351,7 @@ def setup():
     dpg.show_viewport()
     apply_viewport_state(viewport_state)
     dpg.set_viewport_resize_callback(on_viewport_resized)
+    _register_viewport_drop_callback(class_objects)
 
     try:
         # Start the Dear PyGui render loop
