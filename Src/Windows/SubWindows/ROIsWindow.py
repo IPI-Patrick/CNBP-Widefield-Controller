@@ -383,6 +383,8 @@ class ROIsWindow:
                                 no_tick_labels=True, no_tick_marks=True,
                                 auto_fit=True,
                             )
+                            # Data y-axis: autoscale is driven only by the
+                            # data series so the marker never distorts the range.
                             y_axis_id = dpg.add_plot_axis(
                                 dpg.mvYAxis,
                                 label="",
@@ -390,7 +392,19 @@ class ROIsWindow:
                             )
                             dpg.set_axis_limits_auto(y_axis_id)
                             series_id = dpg.add_line_series([], [], label=roi.name, parent=y_axis_id)
-                            marker_series_id = dpg.add_line_series([], [], label="", parent=y_axis_id)
+                            # Marker y-axis: a hidden second axis with fixed
+                            # limits [-1, 1] so ±1e38 marker values don't
+                            # blow out the data autoscale.
+                            marker_y_axis_id = dpg.add_plot_axis(
+                                dpg.mvYAxis2,
+                                label="",
+                                no_label=True,
+                                no_gridlines=True,
+                                no_tick_marks=True,
+                                no_tick_labels=True,
+                            )
+                            dpg.set_axis_limits(marker_y_axis_id, -1.0, 1.0)
+                            marker_series_id = dpg.add_line_series([], [], label="", parent=marker_y_axis_id)
                             dpg.bind_item_theme(marker_series_id, self._marker_series_theme)
 
                     dpg.bind_item_theme(plot_id, transparent_plot_theme)
@@ -402,6 +416,7 @@ class ROIsWindow:
                         "x_axis_id": x_axis_id,
                         "y_axis_id": y_axis_id,
                         "series_id": series_id,
+                        "marker_y_axis_id": marker_y_axis_id,
                         "marker_series_id": marker_series_id,
                         "x_range": None,
                     })
@@ -478,9 +493,10 @@ class ROIsWindow:
             return
 
         marker_x_values = [float(marker_x), float(marker_x)]
-        # Use a very large y-range so the marker always spans the full visible area.
-        # DearPyGui clips the line to the plot bounds, so this is safe.
-        marker_y_values = [-1e38, 1e38]
+        # The marker is drawn on a hidden second y-axis fixed at [-1, 1], so
+        # values of -1 and 1 span the full plot height without affecting the
+        # data axis autoscale.
+        marker_y_values = [-1.0, 1.0]
         for ui in self._roi_ui.values():
             marker_series_id = ui.get("marker_series_id")
             if marker_series_id and dpg.does_item_exist(marker_series_id):

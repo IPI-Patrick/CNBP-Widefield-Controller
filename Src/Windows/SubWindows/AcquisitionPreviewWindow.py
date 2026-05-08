@@ -155,7 +155,7 @@ class AcquisitionPreviewWindow:
         self.display_mode_combo_id = None
         self.color_scale_combo_id = None
         self.scope_container_id = None
-        self.roi_scaling_panel_id = None
+        self.roi_controls_group_id = None
         self.rois_status_text_id = None
         self.rois_panel_id = None
         self.settings_container_id = None
@@ -418,16 +418,11 @@ class AcquisitionPreviewWindow:
 
                         dpg.add_separator()
 
-                        with dpg.tree_node(label="ROI Scaling", default_open=True, span_full_width=True):
-                            self.section_node_ids["roi_scaling"] = dpg.last_item()
-                            with dpg.child_window(height=180, border=False, autosize_x=True, no_scrollbar=True, no_scroll_with_mouse=True):
-                                self.roi_scaling_panel_id = dpg.last_item()
-
-                        dpg.add_separator()
-
                         with dpg.tree_node(label="ROIs", default_open=True, span_full_width=True):
                             self.section_node_ids["rois"] = dpg.last_item()
                             self.rois_status_text_id = dpg.add_text("0 ROIs")
+                            with dpg.group():
+                                self.roi_controls_group_id = dpg.last_item()
                             with dpg.child_window(height=1, border=False, autosize_x=True, no_scrollbar=True, no_scroll_with_mouse=True):
                                 self.rois_panel_id = dpg.last_item()
 
@@ -466,7 +461,7 @@ class AcquisitionPreviewWindow:
             width=640,
             height=420,
             state_name=self.rois_state_name,
-            controls_parent=self.roi_scaling_panel_id,
+            controls_parent=self.roi_controls_group_id,
             content_parent=self.rois_panel_id,
         )
         self._reset_zoom(redraw=False)

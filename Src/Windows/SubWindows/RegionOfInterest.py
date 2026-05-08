@@ -228,6 +228,11 @@ class RegionOfInterest:
         whenever ``rebuild_event`` is set (settings change, new file loaded,
         ROI moved, metric changed, etc.).
 
+        Between rebuilds the worker watches ``processed_frame_idx`` and updates
+        only the thumbnail image whenever the displayed frame changes — without
+        recomputing the full trace.  This ensures the thumbnail stays in sync
+        with the playback slider.
+
         Crops are obtained through ``parent.get_roi_processing_update`` which
         returns raw frame crops.  Each crop is then passed through
         ``parent.process_analysis_frame`` to apply zero-reference adjustment
@@ -237,11 +242,31 @@ class RegionOfInterest:
         This is acceptable — the graph is a coarse summary, not a pixel-exact
         replica of the display pipeline.
         """
+        _last_thumbnail_frame_idx = -1
+
         while not self.stop_event.is_set():
-            # Block until a rebuild is requested or we time out.
-            triggered = self.rebuild_event.wait(timeout=0.1)
+            # Check for a rebuild request first (higher priority).
+            triggered = self.rebuild_event.wait(timeout=0.05)
+
+            # Between rebuilds: update thumbnail when the displayed frame changes.
             if not triggered:
+                with self.Andor.processed_frame_condition:
+                    current_display_idx = self.Andor.processed_frame_idx
+                    display_frame = self.Andor.processed_frame
+
+                if current_display_idx != _last_thumbnail_frame_idx and display_frame is not None:
+                    bounds = self.get_bounds()
+                    x1, y1, x2, y2 = self.parent._normalize_bounds(bounds)
+                    if x2 > x1 and y2 > y1:
+                        crop = np.array(display_frame[y1:y2, x1:x2], copy=True)
+                        if crop.size > 0:
+                            _last_thumbnail_frame_idx = current_display_idx
+                            with self.data_lock:
+                                self.pending_image_rgba = self._frame_to_rgba(crop)
+                                self.pending_image_shape = (crop.shape[0], crop.shape[1])
+                                self.pending_version += 1
                 continue
+
             if self.stop_event.is_set():
                 break
 
@@ -264,6 +289,7 @@ class RegionOfInterest:
                 # No data available yet (file not loaded or empty).
                 if latest_crop is not None:
                     # Show the current frame thumbnail at least.
+                    _last_thumbnail_frame_idx = current_frame_idx
                     with self.data_lock:
                         self.pending_image_rgba = self._frame_to_rgba(latest_crop)
                         self.pending_image_shape = (latest_crop.shape[0], latest_crop.shape[1])
@@ -305,6 +331,7 @@ class RegionOfInterest:
 
             # Use the current frame's crop for the thumbnail image.
             thumb_crop = latest_crop if latest_crop is not None else raw_crops[-1]
+            _last_thumbnail_frame_idx = current_frame_idx
 
             with self.data_lock:
                 self.last_frame_idx = current_frame_idx
