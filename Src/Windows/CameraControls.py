@@ -509,22 +509,21 @@ class CameraSystem:
                     callback=self._on_snapshot_pressed,
                 )
 
-                with dpg.group(horizontal=True):
-                    self.save_button_id = dpg.add_button(
-                        label="Save",
-                        width=0,
-                        height=36,
-                        enabled=False,
-                        callback=self._show_save_dialog,
-                    )
+                self.save_button_id = dpg.add_button(
+                    label="Save",
+                    width=-1,
+                    height=18,
+                    enabled=False,
+                    callback=self._show_save_dialog,
+                )
 
-                    self.save_progress_bar_id = dpg.add_progress_bar(
-                        width=0,
-                        height=36,
-                        default_value=0.0,
-                        overlay="Saving... 0%",
-                        show=False,
-                    )
+                self.save_progress_bar_id = dpg.add_progress_bar(
+                    width=-1,
+                    height=18,
+                    default_value=0.0,
+                    overlay="Saving... 0%",
+                    show=False,
+                )
 
             with dpg.file_dialog(
                 directory_selector=False,
@@ -1406,7 +1405,7 @@ class CameraSystem:
         self._set_save_progress(0.0, f"Saving 0/{total_frames} frames")
 
         try:
-            with zipfile.ZipFile(temp_path, mode="w", compression=zipfile.ZIP_DEFLATED, allowZip64=True) as archive:
+            with zipfile.ZipFile(temp_path, mode="w", compression=zipfile.ZIP_STORED, allowZip64=True) as archive:
                 for key, value in save_arrays.items():
                     if key == frame_key:
                         continue
@@ -1896,7 +1895,7 @@ class CameraSystem:
                     save_arrays[f"settings_{key}"] = np.asarray(value, dtype=np.float64)
                 else:
                     save_arrays[f"settings_{key}"] = np.asarray(str(value))
-            np.savez_compressed(file_path, **save_arrays)
+            np.savez(file_path, **save_arrays)
         except Exception as exc:
             with self._acquisition_lock:
                 self._pending_snapshot_result = {"success": False, "file_path": file_path, "overlay": f"Snapshot failed: {exc}"}
@@ -2241,27 +2240,18 @@ class CameraSystem:
 
         # Each row: progress bar (18px) + 3 buttons (36px each) + save row (36px) + separator + spacing
         # Estimate footer height from its content items, then size content_area to fill remaining space
-        row_count = 5  # separator + progress bar + acquire + start + snapshot + save row
         estimated_footer_height = 18 + (36 * 4) + 12 + 8  # progress + 4 button rows + spacing
         footer_height = max(estimated_footer_height, int(dpg.get_item_rect_size(self.bottom_controls_group_id)[1]))
-
-        # Width calculations (child window takes full width, items inside use -1 or explicit)
-        # The footer child window is width=-1 so it fills horizontally automatically.
-        # We set item widths relative to the footer's inner width.
-        footer_inner_width = max(1, int(dpg.get_item_rect_size(self.bottom_controls_group_id)[0]))
-        half_width = max(1, footer_inner_width // 2)
 
         for item_id in (
             self.acquisition_progress_bar_id,
             self.acquire_button_id,
             self.start_button_id,
             self.snapshot_button_id,
+            self.save_button_id,
+            self.save_progress_bar_id
         ):
             dpg.configure_item(item_id, width=-1)
-
-        # Save button and progress bar share the row at half width each
-        dpg.configure_item(self.save_button_id, width=half_width)
-        dpg.configure_item(self.save_progress_bar_id, width=half_width)
 
         # Size the content area to fill remaining window space above the footer
         content_height = max(1, int(window_height) - footer_height - 4)
