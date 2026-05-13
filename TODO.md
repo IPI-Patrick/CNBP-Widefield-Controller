@@ -1,6 +1,12 @@
 **TODO:**
 
 - [ ] Make the "Stop Acquiring" button enabled whilst acquiring
+- [ ] Add shortcuts - space = start/stop preview. Ctrl+space = start acquisition,
+- [ ] Add KST101 controls (stepper motors) make arrow keys control direction and pg-up/pg-down control z
+- [ ] Add auto-focus using KST101
+- [ ] Fix the picoscope driver implementation: "AttributeError: 'PicoScope' object has no attribute 'set_sample_capture_rate'". There are a bunch of method calls to the picoscope that are not longer releveant in CameraControls. It is not enabling the AWG.
+- [ ] Make saving faster. Currently it's way too slow.
+- [ ] Add ability to save video as an MP4
 
 - **Done:**
 - ~~ Currently, the camera has this weird issue where every now and then a frame will timeout. In the software, when running a preview or acquisition this results in the error "Error waiting for frame - 13 (AT_ERR_TIMEDOUT)" and then the preview or acquisition stops. Could you make it so that the program ignores up to 5 sequential AT_ERR_TIMEDOUT errors. If they happen it should just continue on to the next frame. If 5 happen in a row then it should print a "Timed out more than 5 times" error in the console and safely stop the preview.~~
@@ -25,7 +31,6 @@
 - ~~ Make it so that you can right click anywhere on the background of the program, or on the title-bar of a window and press "Reset All Windows" or "Save Windows State" to save or restore the windows state. Also add a "Collate All Windows" to make all the windows stack themselves side-by-side~~
 - ~~ Figure out how to speed up saving. Currently it takes AGES to save a file (understandably its over 2GB file but it should take like 20 seconds at my max write speed of 300MB/s).~~
 - 
-
 - ~~ The viewport right-click is overwriting the right-click for the ROI graphs. Make the viewport right-click only occur when the viewport background is pressed.~~
 - ~~ The "Acquire" button needs to become enabled when the preview is stopped and saving is completed.~~
 - ~~ In the Preview window, the thumbnails for the ROIs are not taking into account the drift correction which is causing the thumbnail image to be offset from where the ROI is positioned.~~
