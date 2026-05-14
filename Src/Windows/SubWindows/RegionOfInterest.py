@@ -156,6 +156,17 @@ class RegionOfInterest:
                     continue
                 frame_ref = self.Andor.processed_frame
 
+            # processed_frame_idx <= 0 means no real frame has been delivered yet.
+            # -1 is the value set by clear_buffers(); 0 can occur when _processing_loop
+            # fires between set_frame_rate() and clear_buffers() (a race in the
+            # acquisition start path) and reads frameIdx=0 before any real capture.
+            # The first genuine processed frame always has idx >= 1 because _capture_loop
+            # increments frameIdx after storing the frame, both inside frame_lock.
+            if current_idx <= 0:
+                self._last_processed_frame_idx = current_idx
+                time.sleep(0.02)
+                continue
+
             if frame_ref is None:
                 self._last_processed_frame_idx = current_idx
                 time.sleep(0.01)

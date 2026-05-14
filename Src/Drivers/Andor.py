@@ -592,6 +592,8 @@ class Andor:
             cam.queue(buf, imgsize)
 
         _consecutive_timeout_count = 0
+        _startup_black_frames_skipped = 0
+        _MAX_STARTUP_BLACK_FRAMES = 5
 
         try:
             cam.AcquisitionStart()
@@ -641,24 +643,34 @@ class Andor:
                 # Update the latest frame in a thread-safe manner
                 with self.frame_lock:
                     raw_frame = np.asarray(acq.image, dtype=self.sensor_dtype)
-                    storage_frame = np.array(raw_frame, dtype=self.raw_storage_dtype, copy=True)
 
-                    # Store the acquisition and timestamp in the buffers
-                    frame_timestamp = float(getattr(acq, "frame_ready_timestamp", time.time()))
-                    self.acquisitions.append(storage_frame)
-                    self.timestamps.append(frame_timestamp)
-                    self._capture_fps_times.append(time.time())
-                    self.latest_frame = np.array(storage_frame, copy=True)
+                    # Discard all-zero frames that arrive before the sensor is ready
+                    # (camera startup artifact), up to a small limit.
+                    if (
+                        _startup_black_frames_skipped < _MAX_STARTUP_BLACK_FRAMES
+                        and raw_frame.size > 0
+                        and int(raw_frame.max()) == 0
+                    ):
+                        _startup_black_frames_skipped += 1
+                    else:
+                        storage_frame = np.array(raw_frame, dtype=self.raw_storage_dtype, copy=True)
 
-                    self._append_scope_frame_values_from_source_locked()
+                        # Store the acquisition and timestamp in the buffers
+                        frame_timestamp = float(getattr(acq, "frame_ready_timestamp", time.time()))
+                        self.acquisitions.append(storage_frame)
+                        self.timestamps.append(frame_timestamp)
+                        self._capture_fps_times.append(time.time())
+                        self.latest_frame = np.array(storage_frame, copy=True)
 
-                    # Signal that a new frame is ready
-                    self.frame_ready_event.set()
-                    self.frameIdx += 1
+                        self._append_scope_frame_values_from_source_locked()
 
-                    # If not in continuous mode and we've reached the max acquisitions, stop
-                    if not continuous and self.frameIdx >= self.max_acquisitions:
-                        break
+                        # Signal that a new frame is ready
+                        self.frame_ready_event.set()
+                        self.frameIdx += 1
+
+                        # If not in continuous mode and we've reached the max acquisitions, stop
+                        if not continuous and self.frameIdx >= self.max_acquisitions:
+                            break
 
                 # Re-add this buffer to the queue
                 queue_buffer = getattr(acq, "buffer_data", getattr(acq, "_np_data"))

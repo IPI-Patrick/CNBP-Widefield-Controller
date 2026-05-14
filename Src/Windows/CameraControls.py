@@ -1143,11 +1143,11 @@ class CameraSystem:
             self._preview_scope_started_collection = True
 
         if auto_settings is not None:
-            scope_driver.set_sample_capture_rate(float(auto_settings["sample_rate_hz"]))
-            scope_driver.set_history_seconds(float(auto_settings["history_seconds"]))
+            scope_driver.set_settings(sample_rate_hz=float(auto_settings["sample_rate_hz"]))
+            scope_driver.set_settings(history_seconds=float(auto_settings["history_seconds"]))
 
         if not scope_driver.is_collecting:
-            scope_driver.clear_buffers()
+            scope_driver._reset_buffers()
             scope_driver.start_collection()
             self._preview_scope_started_collection = True
 
@@ -1511,7 +1511,7 @@ class CameraSystem:
                 scope_controller.driver.pause_collection()
             if stop_event.is_set() or not self.acquisition_in_progress:
                 return
-            scope_controller.driver.set_awg_enabled(True)
+            scope_controller.driver.configure_awg(enabled=True)
             if stop_event.is_set() or not self.acquisition_in_progress:
                 return
             scope_controller.driver.resume_collection()
@@ -1669,7 +1669,7 @@ class CameraSystem:
                 stopped_early = True
             if awg_enabled_for_run and scope_driver is not None:
                 try:
-                    scope_driver.set_awg_enabled(False)
+                    scope_driver.configure_awg(enabled=False)
                 except Exception:
                     pass
             if scope_driver is not None and scope_driver.is_collecting:
@@ -1689,11 +1689,6 @@ class CameraSystem:
     def _on_acquire_button_pressed(self, sender=None, app_data=None, user_data=None):
         if self.acquisition_in_progress:
             self.acquisition_stop_requested = True
-            if self.Andor.is_capturing:
-                self.Andor.stop_capture()
-            scope_controller = self._get_scope_controller()
-            if scope_controller is not None and scope_controller.driver.is_open and scope_controller.driver.is_collecting:
-                scope_controller.driver.stop_collection()
             return
 
         scope_controller = self._get_scope_controller()
@@ -1740,13 +1735,13 @@ class CameraSystem:
             )
             if scope_driver is not None:
                 scope_driver.stop_collection()
-                scope_driver.set_sample_capture_rate(scope_sample_rate)
-                scope_driver.set_history_seconds(scope_buffer_seconds)
+                scope_driver.set_settings(sample_rate_hz=scope_sample_rate)
+                scope_driver.set_settings(history_seconds=scope_buffer_seconds)
                 scope_driver.configure_frame_pairing(enabled=False)
-                scope_driver.clear_buffers()
+                scope_driver._reset_buffers()
                 if awg_set_on_start:
                     scope_driver.configure_awg(**self._collect_acquisition_awg_config())
-                    scope_driver.set_awg_enabled(False)
+                    scope_driver.configure_awg(enabled=False)
 
             self.acquisition_duration_seconds = acquisition_seconds
             self.acquisition_frame_rate_hz = acquisition_fps
@@ -2010,8 +2005,9 @@ class CameraSystem:
         return os.getcwd()
 
     def toggle_preview(self):
-        if self.Andor.is_capturing:
-            self.Andor.stop_capture()
+        if self.started:
+            if self.Andor.is_capturing:
+                self.Andor.stop_capture()
             self._stop_preview_scope_means()
             self.started = False
             self.preview_zero_reference_pending = False
@@ -2286,11 +2282,14 @@ class CameraSystem:
 
         # Set the acquisition progress bar to the number of frames
         if self.acquisition_in_progress and self.acquisition_started_at is not None:
-            elapsed_seconds     = max(0.0, time.perf_counter() - self.acquisition_started_at)
-            camera_progress     = min(1.0, self.Andor.frameIdx / max(self.acquisition_target_frames, 1))
-            progress_value      = camera_progress
-            overlay             = f"{self.Andor.frameIdx}/{self.acquisition_target_frames} frames | {elapsed_seconds:0.1f}s"
-            self._set_acquisition_progress(progress_value, overlay)
+            if self.acquisition_stop_requested:
+                overlay = f"Stopping... {self.Andor.frameIdx}/{self.acquisition_target_frames} frames"
+                self._set_acquisition_progress(self._acquisition_progress_value, overlay)
+            else:
+                elapsed_seconds = max(0.0, time.perf_counter() - self.acquisition_started_at)
+                camera_progress = min(1.0, self.Andor.frameIdx / max(self.acquisition_target_frames, 1))
+                overlay         = f"{self.Andor.frameIdx}/{self.acquisition_target_frames} frames | {elapsed_seconds:0.1f}s"
+                self._set_acquisition_progress(camera_progress, overlay)
 
         # Disable the button if we are capturing something unrelated to experiment
         if self.Andor.is_capturing and not self.started:            

@@ -9,7 +9,21 @@
       "Bash(git -C \"c:\\\\CodingProjects\\\\Widefield-Controller\" diff --stat HEAD)",
       "Bash(git -C \"c:\\\\CodingProjects\\\\Widefield-Controller\" diff HEAD \"Src/Windows/CameraControls.py\")",
       "WebFetch(domain:scikit-image.org)",
-      "WebFetch(domain:www.nature.com)"
+      "WebFetch(domain:www.nature.com)",
+      "Bash(ls -la \"C:\\\\CodingProjects\\\\Widefield-Controller\\\\\" | head -50)",
+      "Read(//c/CodingProjects/**)",
+      "Bash(python -c \"import sys; sys.path.insert\\(0, 'Src'\\); import dearpygui.dearpygui as dpg; print\\('mvPlotMarker_Square:', dpg.mvPlotMarker_Square\\); print\\('mvPlotStyleVar_Marker:', dpg.mvPlotStyleVar_Marker\\); print\\('mvPlotStyleVar_MarkerSize:', dpg.mvPlotStyleVar_MarkerSize\\)\")",
+      "Bash(python -c \"import dearpygui.dearpygui as dpg; import inspect; sig = inspect.signature\\(dpg.add_plot\\); print\\('equal_aspects' in sig.parameters\\)\")",
+      "PowerShell(python -c \"import dearpygui.dearpygui as dpg; locs = [x for x in dir\\(dpg\\) if 'Location' in x or 'location' in x.lower\\(\\)]; print\\(locs\\)\")",
+      "WebFetch(domain:www.thorlabs.com)",
+      "WebFetch(domain:pylablib.readthedocs.io)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(Remove-Item \"c:\\\\CodingProjects\\\\Widefield-Controller\\\\Src\\\\Mocks\\\\MockKST101.py\")",
+      "Bash(Get-Item \"c:\\\\CodingProjects\\\\Widefield-Controller\\\\src\\\\APIs\\\\KST101\\\\Thorlabs.MotionControl.KCube.StepperMotor.h\")",
+      "Bash(Select-Object -ExpandProperty Length)",
+      "Bash(venv\\\\Scripts\\\\python.exe test_kst101.py)",
+      "Bash(python test_kst101.py)"
     ]
   }
 }

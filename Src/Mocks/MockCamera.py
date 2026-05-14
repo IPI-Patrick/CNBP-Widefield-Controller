@@ -5,6 +5,15 @@ import numpy as np
 
 from skimage.draw import polygon as skimage_polygon # pylint: disable=no-name-in-module
 
+import Utils.shared_state as shared_state
+
+# Stage-to-image scale factors (dev-mode only — positions in SI metres)
+# 34 304 000 steps/m ÷ 200 steps/pixel = 171 520 pixels per metre.
+_STAGE_PX_PER_M = 100.0
+# Each metre of Z defocus adds this much Gaussian blur sigma.
+# At ±0.3 mm → ~+1 σ; at ±3 mm → ~+10 σ (heavy defocus).
+_Z_SIGMA_PER_M = 10.0
+
 class Acquisition:
 
     def __init__(self, image, BitDepth, frame_ready_timestamp=None, frame_delivery_timestamp=None):
@@ -346,11 +355,24 @@ class MockCamera:
             drift_offset_x = 0
             drift_offset_y = 0
 
-        # Combined sample offset: drift + manual translation
-        total_offset_x = drift_offset_x + int(self.translation_x)
-        total_offset_y = drift_offset_y + int(self.translation_y)
+        # Stage XY position → pixel shift (particles and fiducials move with stage)
+        _stage = getattr(shared_state, "shared_stage", None)
+        if _stage is not None:
+            stage_x = float(_stage["x"].snapshot().get("position") or 0.0) * _STAGE_PX_PER_M
+            stage_y = float(_stage["y"].snapshot().get("position") or 0.0) * _STAGE_PX_PER_M
+            stage_z = float(_stage["z"].snapshot().get("position") or 0.0)
+        else:
+            stage_x = stage_y = stage_z = 0.0
 
-        # Illumination Gaussian (fixed in image space — does NOT move with sample)
+        # Combined sample offset: drift + manual translation + stage XY
+        total_offset_x = drift_offset_x + int(self.translation_x) + int(round(stage_x))
+        total_offset_y = drift_offset_y + int(self.translation_y) + int(round(stage_y))
+
+        # Effective focus sigma: base setting + Z-axis defocus contribution
+        effective_focus_sigma = float(self.focus_sigma) + abs(stage_z) * _Z_SIGMA_PER_M
+
+        # Illumination Gaussian (fixed in image space — does NOT move with sample).
+        # Blurred by effective_focus_sigma to simulate defocus spreading the beam.
         illum = self._get_illumination_gaussian(height, width)
 
         # Current intensity params (may change live without regenerating masks)
@@ -419,9 +441,8 @@ class MockCamera:
             )
 
         # Apply Gaussian blur to particle layer to simulate focus/defocus
-        focus_sigma = float(self.focus_sigma)
-        if focus_sigma > 0.1:
-            particle_layer = gaussian_filter(particle_layer, sigma=focus_sigma)
+        if effective_focus_sigma > 0.1:
+            particle_layer = gaussian_filter(particle_layer, sigma=effective_focus_sigma)
 
         # Fiducial rectangles — rendered on a separate layer so they are
         # unaffected by the global brightness pulse, but they DO move with the
@@ -450,13 +471,17 @@ class MockCamera:
                 x1 = min(width, fx + fid_half + 1)
                 if y0 < y1 and x0 < x1:
                     fiducial_layer[y0:y1, x0:x1] = fid_intensity
-            if focus_sigma > 0.1:
-                fiducial_layer = gaussian_filter(fiducial_layer, sigma=focus_sigma)
+            if effective_focus_sigma > 0.1:
+                fiducial_layer = gaussian_filter(fiducial_layer, sigma=effective_focus_sigma)
 
         # Frame = background floor + fixed illumination profile + particle signal + fiducials
+        # Illumination is blurred by defocus so the beam spreads when Z moves off focus.
         frame = np.full((height, width), background_floor, dtype=np.float32)
         if illum is not None:
-            frame += illum
+            if effective_focus_sigma > 0.1:
+                frame += gaussian_filter(illum, sigma=effective_focus_sigma)
+            else:
+                frame += illum
         frame += particle_layer
         frame += fiducial_layer
 

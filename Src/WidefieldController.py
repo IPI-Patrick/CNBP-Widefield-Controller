@@ -1,5 +1,6 @@
 import atexit
 import os
+import sys
 import time
 from collections import deque
 
@@ -415,4 +416,19 @@ def render_loop(window_objects):
 
 # This script sets up the Widefield Controller GUI using Dear PyGui.
 if __name__ == "__main__":
+    dev_mode = "-dev" in sys.argv
+    
+    # Check for dev=True in .env file
+    env_path = os.path.join(os.path.dirname(__file__), "..", ".env")
+    if os.path.exists(env_path):
+        with open(env_path, "r") as f:
+            for line in f:
+                if line.strip().startswith("dev=True"):
+                    dev_mode = True
+                    break
+    
+    if dev_mode:
+        import Utils.shared_state as _shared_state
+        _shared_state.dev_mode = True
+        print("Running in development mode — hardware drivers will use mocks where available.")
     setup()
