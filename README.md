@@ -10,6 +10,7 @@ The application is designed for lab use where an Andor camera is the primary ima
 - Python 3.10
 - [Andor SDK](https://drive.google.com/file/d/1o8cqAKx5AXTWnpsL8CmMANWgeE_r0-RY/view?usp=drive_link)
 - [PicoSDK](https://www.picotech.com/library/our-oscilloscope-software-development-kit-sdk#sdk_dl)
+- [Kinesis Software Drivers](https://www.thorlabs.com/software-pages/motion_control/)
 
 Optional hardware:
 

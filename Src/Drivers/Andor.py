@@ -584,12 +584,22 @@ class Andor:
         # last_frame_delivery_time    = None
         # last_frame_ready_time       = None
 
+        def _queue_capture_buffers():
+            for _ in range(buffer_count):
+                buf = np.empty((imgsize,), dtype='B')
+                cam.queue(buf, imgsize)
+
+        def _restart_acquisition_after_timeout():
+            print("Preview timed out twice; restarting acquisition")
+            cam.AcquisitionStop()
+            cam.flush()
+            _queue_capture_buffers()
+            cam.AcquisitionStart()
+
         self.clear_buffers(reset_frame_index=True)
 
         # Pre-allocate the buffers
-        for _ in range(0, buffer_count):
-            buf = np.empty((imgsize,), dtype='B')
-            cam.queue(buf, imgsize)
+        _queue_capture_buffers()
 
         _consecutive_timeout_count = 0
         _startup_black_frames_skipped = 0
@@ -616,6 +626,10 @@ class Andor:
                     is_mock_timeout = isinstance(_te, TimeoutError)
                     if is_andor_timeout or is_mock_timeout:
                         _consecutive_timeout_count += 1
+                        if continuous and _consecutive_timeout_count >= 2:
+                            _restart_acquisition_after_timeout()
+                            _consecutive_timeout_count = 0
+                            continue
                         if _consecutive_timeout_count >= 6:
                             print("Timed out more than 5 times")
                             break

@@ -27,6 +27,7 @@ RESET_VIEWPORT_STATE = {
     "maximized": False,
 }
 DEFAULT_WINDOW_LAYOUTS = {}
+_CLEANUP_RAN = False
 
 
 def _get_window_layout_storage_key(item_id):
@@ -115,6 +116,17 @@ def save_current_layout_as_default():
     save_state_file(WINDOW_LAYOUT_DEFAULTS_STATE_NAME, {"layouts": saved_layouts})
     dpg.save_init_file(str(get_init_file_path()))
     print("Current window layout saved as default.")
+
+
+def show_all_windows():
+    shown_count = 0
+    for owner in _iter_window_owners(class_objects):
+        window_id = getattr(owner, "window_id", None)
+        if window_id is None or not dpg.does_item_exist(window_id):
+            continue
+        dpg.show_item(window_id)
+        shown_count += 1
+    print(f"Reopened {shown_count} windows.")
 
 
 def create_performance_overlay():
@@ -207,6 +219,21 @@ def save_all_states():
     LAST_STATE_SAVE_TIME = time.perf_counter()
 
 
+def cleanup_all_windows():
+    global _CLEANUP_RAN
+
+    if _CLEANUP_RAN:
+        return
+
+    _CLEANUP_RAN = True
+    for cls in reversed(class_objects):
+        if hasattr(cls, "cleanup"):
+            try:
+                cls.cleanup()
+            except Exception as exc:
+                print(f"Failed to cleanup {type(cls).__name__}: {exc}")
+
+
 def autosave_state_if_needed(force=False):
     current_time = time.perf_counter()
     if not force and (current_time - LAST_STATE_SAVE_TIME) < STATE_AUTOSAVE_INTERVAL_SECONDS:
@@ -238,6 +265,13 @@ def on_save_window_layout_default_shortcut(sender=None, app_data=None):
         return
 
     save_current_layout_as_default()
+
+
+def on_show_all_windows_shortcut(sender=None, app_data=None):
+    if not (dpg.is_key_down(dpg.mvKey_LControl) or dpg.is_key_down(dpg.mvKey_RControl)):
+        return
+
+    show_all_windows()
 
 
 def flush_pending_viewport_state_save():
@@ -375,6 +409,7 @@ def setup():
 
     LAST_STATE_SAVE_TIME = time.perf_counter()
     atexit.register(save_all_states)
+    atexit.register(cleanup_all_windows)
 
     create_performance_overlay()
     create_context_menu()
@@ -383,6 +418,7 @@ def setup():
         dpg.add_key_press_handler(key=dpg.mvKey_R, callback=on_reset_viewport_shortcut)
         dpg.add_key_press_handler(key=dpg.mvKey_B, callback=on_reset_window_layout_shortcut)
         dpg.add_key_press_handler(key=dpg.mvKey_N, callback=on_save_window_layout_default_shortcut)
+        dpg.add_key_press_handler(key=dpg.mvKey_M, callback=on_show_all_windows_shortcut)
         # dpg.add_mouse_click_handler(button=dpg.mvMouseButton_Right, callback=on_right_click)
 
 
@@ -398,6 +434,7 @@ def setup():
             render_loop(class_objects)
     finally:
         autosave_state_if_needed(force=True)
+        cleanup_all_windows()
 
         # Cleanup after the loop ends
         dpg.destroy_context()
