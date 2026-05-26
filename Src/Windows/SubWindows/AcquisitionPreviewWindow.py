@@ -111,7 +111,7 @@ class AcquisitionPreviewWindow:
     pause_icon = "\uE769"
     repeat_icon = "\uE8EE"
 
-    def __init__(self, file_path):
+    def __init__(self, file_path, display_parent=None, settings_parent=None):
         self.file_path = os.path.abspath(file_path)
         self.tag = f"Preview_{int(time.time() * 1000)}"
         self._state_lock = threading.Lock()
@@ -229,229 +229,50 @@ class AcquisitionPreviewWindow:
         self.rois_window = None
         self.section_node_ids = {}
 
-        with dpg.window(
-            label="Preview",
-            tag=f"{self.tag}_Window",
-            width=self.width,
-            height=self.height,
-            pos=(40, 40),
-            no_scrollbar=True,
-            no_scroll_with_mouse=True,
-        ):
-            self.window_id = dpg.last_item()
-            dpg.bind_item_theme(self.window_id, acquisition_preview_window_theme)
+        self._embedded = display_parent is not None
+        if self._embedded:
+            self.window_id = display_parent
+            self.left_panel_id = display_parent
+            self.right_panel_id = settings_parent
+            dpg.push_container_stack(display_parent)
+            self._build_canvas_section()
+            self._build_playback_dock()
+            dpg.pop_container_stack()
+            if settings_parent is not None:
+                self.right_content_id = settings_parent
+                dpg.delete_item(settings_parent, children_only=True)
+                dpg.push_container_stack(settings_parent)
+                self._build_settings_section()
+                dpg.pop_container_stack()
+        else:
+            with dpg.window(
+                label="Preview",
+                tag=f"{self.tag}_Window",
+                width=self.width,
+                height=self.height,
+                pos=(40, 40),
+                no_scrollbar=True,
+                no_scroll_with_mouse=True,
+            ):
+                self.window_id = dpg.last_item()
+                dpg.bind_item_theme(self.window_id, acquisition_preview_window_theme)
 
-            with dpg.item_handler_registry(tag=f"{self.tag}_ResizeHandler"):
-                self.resize_handler_id = dpg.last_item()
-                dpg.add_item_resize_handler(callback=self._on_window_resize)
-                dpg.bind_item_handler_registry(self.window_id, f"{self.tag}_ResizeHandler")
+                with dpg.item_handler_registry(tag=f"{self.tag}_ResizeHandler"):
+                    self.resize_handler_id = dpg.last_item()
+                    dpg.add_item_resize_handler(callback=self._on_window_resize)
+                    dpg.bind_item_handler_registry(self.window_id, f"{self.tag}_ResizeHandler")
 
-            with dpg.group(horizontal=True):
-                with dpg.child_window(width=860, height=-1, border=False, no_scrollbar=True, tag=f"{self.tag}_LeftPanel"):
-                    self.left_panel_id = dpg.last_item()
-                    with dpg.texture_registry(show=False):
-                        self.texture_id = dpg.add_dynamic_texture(
-                            width=1,
-                            height=1,
-                            default_value=np.zeros((4,), dtype=np.float32),
-                        )
-                    with dpg.drawlist(width=1, height=1, tag=f"{self.tag}_Canvas"):
-                        self.canvas_id = dpg.last_item()
-                        with dpg.draw_layer(tag=f"{self.tag}_ImageLayer"):
-                            self.image_layer = dpg.last_item()
-                        with dpg.draw_layer(tag=f"{self.tag}_OverlayLayer"):
-                            self.overlay_layer = dpg.last_item()
-                        self.image_draw_id = dpg.draw_image(
-                            texture_tag=self.texture_id,
-                            pmin=(0, 0),
-                            pmax=(1, 1),
-                            parent=self.image_layer,
-                        )
+                with dpg.group(horizontal=True):
+                    with dpg.child_window(width=860, height=-1, border=False, no_scrollbar=True, tag=f"{self.tag}_LeftPanel"):
+                        self.left_panel_id = dpg.last_item()
+                        self._build_canvas_section()
 
-                    with dpg.handler_registry(tag=f"{self.tag}_MouseHandler"):
-                        self.mouse_handler_id = dpg.last_item()
-                        dpg.add_mouse_down_handler(button=dpg.mvMouseButton_Left, callback=self._on_left_mouse_down)
-                        dpg.add_mouse_down_handler(button=dpg.mvMouseButton_Middle, callback=self._on_middle_mouse_down)
-                        dpg.add_mouse_move_handler(callback=self._on_mouse_move)
-                        dpg.add_mouse_release_handler(button=dpg.mvMouseButton_Left, callback=self._on_mouse_release)
-                        dpg.add_mouse_release_handler(button=dpg.mvMouseButton_Middle, callback=self._on_mouse_release)
-                        dpg.add_mouse_wheel_handler(callback=self._on_mouse_wheel)
-                        dpg.add_key_press_handler(key=dpg.mvKey_Delete, callback=self._on_delete_key_pressed)
-
-                    with dpg.popup(self.canvas_id, mousebutton=dpg.mvMouseButton_Right):
-                        dpg.add_button(label="Reset Zoom", width=140, callback=self._reset_zoom)
-
-                with dpg.child_window(width=self.right_panel_width, height=-1, border=True, no_scrollbar=True, no_scroll_with_mouse=True, tag=f"{self.tag}_RightPanel"):
-                    self.right_panel_id = dpg.last_item()
-                    with dpg.child_window(border=False, autosize_x=True, tag=f"{self.tag}_RightContent"):
-                        self.right_content_id = dpg.last_item()
-                        with dpg.group():
-                            self.loading_text_id = dpg.add_text(f"Loading {os.path.basename(self.file_path)}...")
-                            self.loading_progress_bar_id = dpg.add_progress_bar(
-                                default_value=0.0,
-                                width=-1,
-                                overlay="",
-                            )
-                        dpg.add_separator()
-
-                        with dpg.tree_node(label="Scaling", default_open=True, span_full_width=True):
-                            self.section_node_ids["scaling"] = dpg.last_item()
-                            self.autoscale_checkbox_id = dpg.add_checkbox(
-                                label="Autoscale",
-                                default_value=self.autoscale_enabled,
-                                callback=self._on_autoscale_changed,
-                            )
-                            self.scale_min_input_id = dpg.add_input_float(
-                                label="Min Z (%)",
-                                width=-120,
-                                default_value=0.0,
-                                min_value=0.0,
-                                max_value=100.0,
-                                step=0.001,
-                                format="%.3f",
-                                callback=self._on_scale_limits_changed,
-                            )
-                            self.scale_max_input_id = dpg.add_input_float(
-                                label="Max Z (%)",
-                                width=-120,
-                                default_value=100.0,
-                                min_value=0.0,
-                                max_value=100.0,
-                                step=0.001,
-                                format="%.3f",
-                                callback=self._on_scale_limits_changed,
-                            )
-                            self.autoscale_grace_input_id = dpg.add_input_float(
-                                label="Grace (%)",
-                                width=-120,
-                                default_value=self.autoscale_grace_percent,
-                                min_value=0.0,
-                                max_value=100.0,
-                                step=0.5,
-                                callback=self._on_autoscale_grace_changed,
-                            )
-                            self.mirrored_difference_checkbox_id = dpg.add_checkbox(
-                                label="Mirrored",
-                                default_value=self.mirrored_difference_scale,
-                                callback=self._on_mirrored_difference_changed,
-                            )
-                            self.display_mode_combo_id = dpg.add_combo(
-                                label="Display Mode",
-                                items=["Normal", "Difference", "Contrast"],
-                                default_value=self.display_mode,
-                                width=-120,
-                                callback=self._on_display_mode_changed,
-                            )
-                            self.color_scale_combo_id = dpg.add_combo(
-                                label="Color Scale",
-                                items=self.get_available_colormap_labels(),
-                                default_value=self.get_selected_colormap_label(),
-                                width=-120,
-                                callback=self._on_colormap_changed,
-                            )
-                            dpg.add_button(label="Set Zero", width=-1, callback=self._on_set_zero)
-
-                        dpg.add_separator()
-
-                        with dpg.tree_node(label="Signal Processing", default_open=True, span_full_width=True):
-                            self.section_node_ids["signal_processing"] = dpg.last_item()
-                            self.lp_filter_checkbox_id = dpg.add_checkbox(
-                                label="LP Filter",
-                                default_value=self.lp_filter_enabled,
-                                callback=self._on_lp_filter_enabled_changed,
-                            )
-                            self.lp_filter_cutoff_input_id = dpg.add_input_float(
-                                label="Cutoff (Hz)",
-                                width=-120,
-                                default_value=self.lp_filter_cutoff_hz,
-                                min_value=0.001,
-                                min_clamped=True,
-                                step=0.5,
-                                on_enter=True,
-                                callback=self._on_lp_filter_cutoff_changed,
-                            )
-                            with dpg.item_handler_registry(tag=f"{self.tag}_LpCutoffHandler"):
-                                dpg.add_item_deactivated_after_edit_handler(callback=self._on_lp_filter_cutoff_changed)
-                            dpg.bind_item_handler_registry(self.lp_filter_cutoff_input_id, f"{self.tag}_LpCutoffHandler")
-                            self.drift_correction_checkbox_id = dpg.add_checkbox(
-                                label="Drift Correction",
-                                default_value=self.drift_correction_enabled,
-                                callback=self._on_drift_correction_changed,
-                            )
-                            self.bg_removal_checkbox_id = dpg.add_checkbox(
-                                label="BG Removal",
-                                default_value=self.bg_removal_enabled,
-                                callback=self._on_bg_removal_enabled_changed,
-                            )
-                            self.bg_removal_sigma_input_id = dpg.add_input_float(
-                                label="BG Sigma (px)",
-                                width=-120,
-                                default_value=self.bg_removal_sigma,
-                                min_value=1.0,
-                                max_value=200.0,
-                                step=1.0,
-                                format="%.1f",
-                                on_enter=True,
-                                callback=self._on_bg_removal_sigma_changed,
-                            )
-                            with dpg.item_handler_registry(tag=f"{self.tag}_BgRemovalSigmaHandler"):
-                                dpg.add_item_deactivated_after_edit_handler(callback=self._on_bg_removal_sigma_changed)
-                            dpg.bind_item_handler_registry(self.bg_removal_sigma_input_id, f"{self.tag}_BgRemovalSigmaHandler")
-                            self.crop_slider_id = dpg.add_slider_float(
-                                label="Crop (%)",
-                                width=-120,
-                                default_value=self.crop_percent,
-                                min_value=0.0,
-                                max_value=100.0,
-                                format="%.1f",
-                                callback=self._on_crop_changed,
-                            )
-
-                        dpg.add_separator()
-
-                        with dpg.tree_node(label="Oscilloscope", default_open=True, span_full_width=True):
-                            self.section_node_ids["oscilloscope"] = dpg.last_item()
-                            with dpg.child_window(height=260, border=False, autosize_x=True):
-                                self.scope_container_id = dpg.last_item()
-                                self.scope_empty_text_id = dpg.add_text("No oscilloscope data loaded.")
-
-                        dpg.add_separator()
-
-                        with dpg.tree_node(label="ROIs", default_open=True, span_full_width=True):
-                            self.section_node_ids["rois"] = dpg.last_item()
-                            with dpg.group():
-                                self.roi_controls_group_id = dpg.last_item()
-                            with dpg.child_window(height=1, border=False, autosize_x=True, no_scrollbar=True, no_scroll_with_mouse=True):
-                                self.rois_panel_id = dpg.last_item()
-
-                        dpg.add_separator()
-
-                        with dpg.tree_node(label="Settings", default_open=True, span_full_width=True):
-                            self.section_node_ids["settings"] = dpg.last_item()
-                            with dpg.child_window(height=260, border=False, autosize_x=True):
-                                self.settings_container_id = dpg.last_item()
-
-                    with dpg.child_window(height=self.playback_dock_height, border=False, no_scrollbar=True, tag=f"{self.tag}_PlaybackDock"):
-                        self.playback_dock_id = dpg.last_item()
-                        dpg.bind_item_theme(self.playback_dock_id, preview_playback_dock_theme)
-                        self.frame_slider_id = dpg.add_slider_int(
-                            label="",
-                            width=-1,
-                            min_value=0,
-                            max_value=0,
-                            default_value=0,
-                            callback=self._on_slider_changed,
-                        )
-                        with dpg.group(horizontal=True, horizontal_spacing=8):
-                            self.playback_controls_group_id = dpg.last_item()
-                            dpg.add_button(label="|<", width=44, callback=self._on_jump_to_start)
-                            dpg.add_button(label="<<", width=44, callback=self._on_rewind)
-                            self.play_button_id = dpg.add_button(label=self.play_icon, width=36, callback=self._on_toggle_play)
-                            self.repeat_button_id = dpg.add_button(label=self.repeat_icon, width=36, callback=self._on_toggle_repeat)
-                            dpg.add_button(label=">>", width=44, callback=self._on_fast_forward)
-                            dpg.add_button(label=">|", width=44, callback=self._on_jump_to_end)
-                            dpg.bind_item_font(self.play_button_id, self.icon_font)
-                            dpg.bind_item_font(self.repeat_button_id, self.icon_font)
+                    with dpg.child_window(width=self.right_panel_width, height=-1, border=True, no_scrollbar=True, no_scroll_with_mouse=True, tag=f"{self.tag}_RightPanel"):
+                        self.right_panel_id = dpg.last_item()
+                        with dpg.child_window(border=False, autosize_x=True, tag=f"{self.tag}_RightContent"):
+                            self.right_content_id = dpg.last_item()
+                            self._build_settings_section()
+                        self._build_playback_dock()
 
         self.rois_window = ROIsWindow(
             name="Preview ROIs",
@@ -475,6 +296,198 @@ class AcquisitionPreviewWindow:
         self._load_thread.start()
         self._playback_thread = threading.Thread(target=self._playback_worker, name=f"{self.tag}_Playback", daemon=True)
         self._playback_thread.start()
+
+    def _build_canvas_section(self):
+        with dpg.texture_registry(show=False):
+            self.texture_id = dpg.add_dynamic_texture(
+                width=1,
+                height=1,
+                default_value=np.zeros((4,), dtype=np.float32),
+            )
+        with dpg.drawlist(width=1, height=1, tag=f"{self.tag}_Canvas"):
+            self.canvas_id = dpg.last_item()
+            with dpg.draw_layer(tag=f"{self.tag}_ImageLayer"):
+                self.image_layer = dpg.last_item()
+            with dpg.draw_layer(tag=f"{self.tag}_OverlayLayer"):
+                self.overlay_layer = dpg.last_item()
+            self.image_draw_id = dpg.draw_image(
+                texture_tag=self.texture_id,
+                pmin=(0, 0),
+                pmax=(1, 1),
+                parent=self.image_layer,
+            )
+        with dpg.handler_registry(tag=f"{self.tag}_MouseHandler"):
+            self.mouse_handler_id = dpg.last_item()
+            dpg.add_mouse_down_handler(button=dpg.mvMouseButton_Left, callback=self._on_left_mouse_down)
+            dpg.add_mouse_down_handler(button=dpg.mvMouseButton_Middle, callback=self._on_middle_mouse_down)
+            dpg.add_mouse_move_handler(callback=self._on_mouse_move)
+            dpg.add_mouse_release_handler(button=dpg.mvMouseButton_Left, callback=self._on_mouse_release)
+            dpg.add_mouse_release_handler(button=dpg.mvMouseButton_Middle, callback=self._on_mouse_release)
+            dpg.add_mouse_wheel_handler(callback=self._on_mouse_wheel)
+            dpg.add_key_press_handler(key=dpg.mvKey_Delete, callback=self._on_delete_key_pressed)
+        with dpg.popup(self.canvas_id, mousebutton=dpg.mvMouseButton_Right):
+            dpg.add_button(label="Reset Zoom", width=140, callback=self._reset_zoom)
+
+    def _build_settings_section(self):
+        with dpg.group():
+            self.loading_text_id = dpg.add_text(f"Loading {os.path.basename(self.file_path)}...")
+            self.loading_progress_bar_id = dpg.add_progress_bar(
+                default_value=0.0,
+                width=-1,
+                overlay="",
+            )
+        dpg.add_separator()
+        with dpg.tree_node(label="Scaling", default_open=True, span_full_width=True):
+            self.section_node_ids["scaling"] = dpg.last_item()
+            self.autoscale_checkbox_id = dpg.add_checkbox(
+                label="Autoscale",
+                default_value=self.autoscale_enabled,
+                callback=self._on_autoscale_changed,
+            )
+            self.scale_min_input_id = dpg.add_input_float(
+                label="Min Z (%)",
+                width=-120,
+                default_value=0.0,
+                min_value=0.0,
+                max_value=100.0,
+                step=0.001,
+                format="%.3f",
+                callback=self._on_scale_limits_changed,
+            )
+            self.scale_max_input_id = dpg.add_input_float(
+                label="Max Z (%)",
+                width=-120,
+                default_value=100.0,
+                min_value=0.0,
+                max_value=100.0,
+                step=0.001,
+                format="%.3f",
+                callback=self._on_scale_limits_changed,
+            )
+            self.autoscale_grace_input_id = dpg.add_input_float(
+                label="Grace (%)",
+                width=-120,
+                default_value=self.autoscale_grace_percent,
+                min_value=0.0,
+                max_value=100.0,
+                step=0.5,
+                callback=self._on_autoscale_grace_changed,
+            )
+            self.mirrored_difference_checkbox_id = dpg.add_checkbox(
+                label="Mirrored",
+                default_value=self.mirrored_difference_scale,
+                callback=self._on_mirrored_difference_changed,
+            )
+            self.display_mode_combo_id = dpg.add_combo(
+                label="Display Mode",
+                items=["Normal", "Difference", "Contrast"],
+                default_value=self.display_mode,
+                width=-120,
+                callback=self._on_display_mode_changed,
+            )
+            self.color_scale_combo_id = dpg.add_combo(
+                label="Color Scale",
+                items=self.get_available_colormap_labels(),
+                default_value=self.get_selected_colormap_label(),
+                width=-120,
+                callback=self._on_colormap_changed,
+            )
+            dpg.add_button(label="Set Zero", width=-1, callback=self._on_set_zero)
+        dpg.add_separator()
+        with dpg.tree_node(label="Signal Processing", default_open=True, span_full_width=True):
+            self.section_node_ids["signal_processing"] = dpg.last_item()
+            self.lp_filter_checkbox_id = dpg.add_checkbox(
+                label="LP Filter",
+                default_value=self.lp_filter_enabled,
+                callback=self._on_lp_filter_enabled_changed,
+            )
+            self.lp_filter_cutoff_input_id = dpg.add_input_float(
+                label="Cutoff (Hz)",
+                width=-120,
+                default_value=self.lp_filter_cutoff_hz,
+                min_value=0.001,
+                min_clamped=True,
+                step=0.5,
+                on_enter=True,
+                callback=self._on_lp_filter_cutoff_changed,
+            )
+            with dpg.item_handler_registry(tag=f"{self.tag}_LpCutoffHandler"):
+                dpg.add_item_deactivated_after_edit_handler(callback=self._on_lp_filter_cutoff_changed)
+            dpg.bind_item_handler_registry(self.lp_filter_cutoff_input_id, f"{self.tag}_LpCutoffHandler")
+            self.drift_correction_checkbox_id = dpg.add_checkbox(
+                label="Drift Correction",
+                default_value=self.drift_correction_enabled,
+                callback=self._on_drift_correction_changed,
+            )
+            self.bg_removal_checkbox_id = dpg.add_checkbox(
+                label="BG Removal",
+                default_value=self.bg_removal_enabled,
+                callback=self._on_bg_removal_enabled_changed,
+            )
+            self.bg_removal_sigma_input_id = dpg.add_input_float(
+                label="BG Sigma (px)",
+                width=-120,
+                default_value=self.bg_removal_sigma,
+                min_value=1.0,
+                max_value=200.0,
+                step=1.0,
+                format="%.1f",
+                on_enter=True,
+                callback=self._on_bg_removal_sigma_changed,
+            )
+            with dpg.item_handler_registry(tag=f"{self.tag}_BgRemovalSigmaHandler"):
+                dpg.add_item_deactivated_after_edit_handler(callback=self._on_bg_removal_sigma_changed)
+            dpg.bind_item_handler_registry(self.bg_removal_sigma_input_id, f"{self.tag}_BgRemovalSigmaHandler")
+            self.crop_slider_id = dpg.add_slider_float(
+                label="Crop (%)",
+                width=-120,
+                default_value=self.crop_percent,
+                min_value=0.0,
+                max_value=100.0,
+                format="%.1f",
+                callback=self._on_crop_changed,
+            )
+        dpg.add_separator()
+        with dpg.tree_node(label="Oscilloscope", default_open=True, span_full_width=True):
+            self.section_node_ids["oscilloscope"] = dpg.last_item()
+            with dpg.child_window(height=260, border=False, autosize_x=True):
+                self.scope_container_id = dpg.last_item()
+                self.scope_empty_text_id = dpg.add_text("No oscilloscope data loaded.")
+        dpg.add_separator()
+        with dpg.tree_node(label="ROIs", default_open=True, span_full_width=True):
+            self.section_node_ids["rois"] = dpg.last_item()
+            with dpg.group():
+                self.roi_controls_group_id = dpg.last_item()
+            with dpg.child_window(height=1, border=False, autosize_x=True, no_scrollbar=True, no_scroll_with_mouse=True):
+                self.rois_panel_id = dpg.last_item()
+        dpg.add_separator()
+        with dpg.tree_node(label="Settings", default_open=True, span_full_width=True):
+            self.section_node_ids["settings"] = dpg.last_item()
+            with dpg.child_window(height=260, border=False, autosize_x=True):
+                self.settings_container_id = dpg.last_item()
+
+    def _build_playback_dock(self):
+        with dpg.child_window(height=self.playback_dock_height, border=False, no_scrollbar=True, tag=f"{self.tag}_PlaybackDock"):
+            self.playback_dock_id = dpg.last_item()
+            dpg.bind_item_theme(self.playback_dock_id, preview_playback_dock_theme)
+            self.frame_slider_id = dpg.add_slider_int(
+                label="",
+                width=-1,
+                min_value=0,
+                max_value=0,
+                default_value=0,
+                callback=self._on_slider_changed,
+            )
+            with dpg.group(horizontal=True, horizontal_spacing=8):
+                self.playback_controls_group_id = dpg.last_item()
+                dpg.add_button(label="|<", width=44, callback=self._on_jump_to_start)
+                dpg.add_button(label="<<", width=44, callback=self._on_rewind)
+                self.play_button_id = dpg.add_button(label=self.play_icon, width=36, callback=self._on_toggle_play)
+                self.repeat_button_id = dpg.add_button(label=self.repeat_icon, width=36, callback=self._on_toggle_repeat)
+                dpg.add_button(label=">>", width=44, callback=self._on_fast_forward)
+                dpg.add_button(label=">|", width=44, callback=self._on_jump_to_end)
+                dpg.bind_item_font(self.play_button_id, self.icon_font)
+                dpg.bind_item_font(self.repeat_button_id, self.icon_font)
 
     def is_closed(self):
         return self._is_closed
@@ -1491,6 +1504,30 @@ class AcquisitionPreviewWindow:
             return
 
         window_width, window_height = dpg.get_item_rect_size(self.window_id)
+
+        if self._embedded:
+            content_width = max(320, int(window_width))
+            content_height = max(320, int(window_height))
+            dock_height = min(self.playback_dock_height, content_height)
+            canvas_height = max(1, content_height - dock_height - 4)
+            self.feed_width = max(1, content_width)
+            self.feed_height = canvas_height
+            if self.playback_dock_id is not None and dpg.does_item_exist(self.playback_dock_id):
+                dpg.configure_item(self.playback_dock_id, width=content_width, height=dock_height)
+            controls_width = min(288, content_width - 20)
+            controls_x = max(10, int((content_width - controls_width) / 2.0))
+            controls_y = max(36, dock_height - 40)
+            if self.frame_slider_id is not None and dpg.does_item_exist(self.frame_slider_id):
+                dpg.configure_item(self.frame_slider_id, width=controls_width)
+                dpg.set_item_pos(self.frame_slider_id, (controls_x, max(8, controls_y - 28)))
+            if self.playback_controls_group_id is not None and dpg.does_item_exist(self.playback_controls_group_id):
+                dpg.set_item_pos(self.playback_controls_group_id, (controls_x, controls_y))
+            self._update_roi_panel_height()
+            dpg.configure_item(self.canvas_id, width=max(1, content_width), height=canvas_height)
+            self._update_image_draw_transform()
+            self._redraw_overlay()
+            return
+
         content_width = max(320, int(window_width) - 16)
         content_height = max(320, int(window_height) - 38)
         left_width = max(240, content_width - self.right_panel_width - 12)
@@ -2394,8 +2431,12 @@ class AcquisitionPreviewWindow:
 
         if self.texture_id is not None and dpg.does_item_exist(self.texture_id):
             dpg.delete_item(self.texture_id)
-        if self.window_id is not None and dpg.does_item_exist(self.window_id):
-            dpg.delete_item(self.window_id)
+        if self._embedded:
+            if self.right_panel_id is not None and dpg.does_item_exist(self.right_panel_id):
+                dpg.delete_item(self.right_panel_id, children_only=True)
+        else:
+            if self.window_id is not None and dpg.does_item_exist(self.window_id):
+                dpg.delete_item(self.window_id)
 
         self._is_closed = True
 
@@ -2405,12 +2446,13 @@ class AcquisitionPreviewWindow:
         if not dpg.does_item_exist(self.window_id):
             self._is_closed = True
             return False
-        is_window_shown = dpg.is_item_shown(self.window_id)
-        if is_window_shown:
-            self._was_ever_shown = True
-        elif self._was_ever_shown:
-            self.close()
-            return False
+        if not self._embedded:
+            is_window_shown = dpg.is_item_shown(self.window_id)
+            if is_window_shown:
+                self._was_ever_shown = True
+            elif self._was_ever_shown:
+                self.close()
+                return False
 
         self._apply_pending_loaded_payload()
         if self.rois_window is not None:

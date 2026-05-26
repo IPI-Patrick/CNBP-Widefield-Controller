@@ -23,7 +23,14 @@
       "Bash(Get-Item \"c:\\\\CodingProjects\\\\Widefield-Controller\\\\src\\\\APIs\\\\KST101\\\\Thorlabs.MotionControl.KCube.StepperMotor.h\")",
       "Bash(Select-Object -ExpandProperty Length)",
       "Bash(venv\\\\Scripts\\\\python.exe test_kst101.py)",
-      "Bash(python test_kst101.py)"
+      "Bash(python test_kst101.py)",
+      "Bash(Get-ChildItem -Path \"c:\\\\CodingProjects\\\\Widefield-Controller\" -Force)",
+      "Bash(Select-Object Name)",
+      "Bash(Select-Object Name, PSIsContainer)",
+      "Bash(Format-Table -AutoSize)",
+      "Bash(python -c ' *)",
+      "Bash(python -c \"import os; files = sorted\\(os.listdir\\('Src/Windows'\\)\\); print\\([f for f in files if f.endswith\\('.py'\\)]\\)\")",
+      "Bash(python src\\\\WidefieldController.py -dev)"
     ]
   }
 }

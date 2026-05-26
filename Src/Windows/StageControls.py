@@ -34,7 +34,6 @@ from Utils.themes import selected_theme
 _TRAVEL_MM      = 25.0
 _HALF_TRAVEL_MM = _TRAVEL_MM / 2.0
 
-_XY_PLOT_SIZE = 260
 _Z_BAR_WIDTH  = 50
 _AUTOFOCUS_PLOT_HEIGHT = 220
 _CONNECT_RETRY_ATTEMPTS = 3
@@ -225,22 +224,24 @@ class StageControls:
                     category=dpg.mvThemeCat_Plots,
                 )
 
-        # ── Window ──────────────────────────────────────────────────────
-        with dpg.window(
-            label="Stage Controls",
-            tag="#StageControls",
-            width=440,
-            height=900,
-            pos=(935, 10),
-            no_scrollbar=False,
-            no_resize=False,
-            no_scroll_with_mouse=False,
-        ):
-            self.window_id = dpg.last_item()
-
+        # ── Stage settings tab ──────────────────────────────────────────
+        _stage_tab = shared_state.layout_containers.get("stage_tab")
+        if _stage_tab:
+            self.window_id = _stage_tab
+        else:
+            self.window_id = dpg.add_window(
+                label="Stage Controls",
+                tag="#StageControls",
+                width=440,
+                height=900,
+                pos=(935, 10),
+                no_scrollbar=False,
+                no_resize=False,
+                no_scroll_with_mouse=False,
+            )
+        dpg.push_container_stack(self.window_id)
+        if True:
             self._build_connection_section()
-            dpg.add_separator()
-            self._build_position_section()
             dpg.add_separator()
             self._build_keypad_section()
             dpg.add_separator()
@@ -255,6 +256,14 @@ class StageControls:
             self._z_settings = self._build_axis_settings("z", "Z")
             dpg.add_separator()
             self._build_developer_section()
+        dpg.pop_container_stack()
+
+        # ── Position map (right sidebar or fallback to stage window) ────
+        _pos_map = shared_state.layout_containers.get("right_position_map")
+        _pos_container = _pos_map if _pos_map else self.window_id
+        dpg.push_container_stack(_pos_container)
+        self._build_position_section()
+        dpg.pop_container_stack()
 
         # ── Keypad item-handler registries (press-and-hold) ─────────────
         _keypad_btns = [
@@ -392,129 +401,140 @@ class StageControls:
                 )
 
     def _build_position_section(self):
-        with dpg.tree_node(
-            label="Position Map", default_open=True, span_full_width=True
-        ) as node:
-            self.section_node_ids["position_map"] = node
+        # Two-column table: XY plot (stretch, left) | Z bar (fixed width, right).
+        # Both plots use height=-1 so they fill 100% of the section height.
+        with dpg.table(
+            header_row=False,
+            borders_innerV=False,
+            borders_outerV=False,
+            borders_innerH=False,
+            borders_outerH=False,
+            policy=dpg.mvTable_SizingFixedFit,
+            height=-1,
+        ):
+            dpg.add_table_column(label="XY", width_stretch=True)
+            dpg.add_table_column(label="Z",  width_fixed=True, init_width_or_weight=_Z_BAR_WIDTH)
 
-            with dpg.group(horizontal=True):
-                # ── XY scatter map ─────────────────────────────────────
-                with dpg.plot(
-                    label="XY Stage Map",
-                    tag="#Stage_XY_Plot",
-                    width=_XY_PLOT_SIZE,
-                    height=_XY_PLOT_SIZE,
-                    no_title=True,
-                    no_menus=True,
-                    no_box_select=True,
-                    equal_aspects=True,
-                ):
-                    self.xy_plot_id = dpg.last_item()
+            with dpg.table_row():
+                # ── XY scatter map (left) ──────────────────────────────
+                with dpg.table_cell():
+                    with dpg.plot(
+                        label="XY Stage Map",
+                        tag="#Stage_XY_Plot",
+                        width=-1,
+                        height=-1,
+                        no_title=True,
+                        no_menus=True,
+                        no_box_select=True,
+                        equal_aspects=True,
+                    ):
+                        self.xy_plot_id = dpg.last_item()
 
-                    self._xy_x_axis = dpg.add_plot_axis(
-                        dpg.mvXAxis, label="",
-                        no_gridlines=False,
-                        no_tick_labels=True,
-                        no_tick_marks=True,
-                    )
-                    dpg.set_axis_limits(self._xy_x_axis, 0.0, _TRAVEL_MM)
+                        self._xy_x_axis = dpg.add_plot_axis(
+                            dpg.mvXAxis, label="",
+                            no_gridlines=False,
+                            no_tick_labels=True,
+                            no_tick_marks=True,
+                        )
+                        dpg.set_axis_limits(self._xy_x_axis, 0.0, _TRAVEL_MM)
 
-                    self._xy_y_axis = dpg.add_plot_axis(
-                        dpg.mvYAxis, label="",
-                        no_gridlines=False,
-                        no_tick_labels=True,
-                        no_tick_marks=True,
-                    )
-                    dpg.set_axis_limits(self._xy_y_axis, 0.0, _TRAVEL_MM)
+                        self._xy_y_axis = dpg.add_plot_axis(
+                            dpg.mvYAxis, label="",
+                            no_gridlines=False,
+                            no_tick_labels=True,
+                            no_tick_marks=True,
+                        )
+                        dpg.set_axis_limits(self._xy_y_axis, 0.0, _TRAVEL_MM)
 
-                    self._xy_h_line = dpg.add_line_series(
-                        [0.0, _TRAVEL_MM], [_HALF_TRAVEL_MM, _HALF_TRAVEL_MM],
-                        label="", parent=self._xy_y_axis,
-                    )
-                    dpg.bind_item_theme(self._xy_h_line, self._axis_line_theme)
+                        self._xy_h_line = dpg.add_line_series(
+                            [0.0, _TRAVEL_MM], [_HALF_TRAVEL_MM, _HALF_TRAVEL_MM],
+                            label="", parent=self._xy_y_axis,
+                        )
+                        dpg.bind_item_theme(self._xy_h_line, self._axis_line_theme)
 
-                    self._xy_v_line = dpg.add_line_series(
-                        [_HALF_TRAVEL_MM, _HALF_TRAVEL_MM], [0.0, _TRAVEL_MM],
-                        label="", parent=self._xy_y_axis,
-                    )
-                    dpg.bind_item_theme(self._xy_v_line, self._axis_line_theme)
+                        self._xy_v_line = dpg.add_line_series(
+                            [_HALF_TRAVEL_MM, _HALF_TRAVEL_MM], [0.0, _TRAVEL_MM],
+                            label="", parent=self._xy_y_axis,
+                        )
+                        dpg.bind_item_theme(self._xy_v_line, self._axis_line_theme)
 
-                    self._xy_pos_series = dpg.add_scatter_series(
-                        [0.0], [0.0],
-                        label="Stage XY",
-                        parent=self._xy_y_axis,
-                    )
-                    dpg.bind_item_theme(self._xy_pos_series, self._pos_marker_theme)
+                        self._xy_pos_series = dpg.add_scatter_series(
+                            [0.0], [0.0],
+                            label="Stage XY",
+                            parent=self._xy_y_axis,
+                        )
+                        dpg.bind_item_theme(self._xy_pos_series, self._pos_marker_theme)
 
-                dpg.add_spacer(width=4)
+                    # X/Y readout overlaid at the bottom-left of the XY cell
+                    with dpg.group(horizontal=True):
+                        dpg.add_text("X:")
+                        self._x_readout_id = dpg.add_text("--  mm", tag="#Stage_X_Readout")
+                        dpg.add_spacer(width=8)
+                        dpg.add_text("Y:")
+                        self._y_readout_id = dpg.add_text("--  mm", tag="#Stage_Y_Readout")
 
-                # ── Z bar indicator ────────────────────────────────────
-                with dpg.plot(
-                    label="Z Position",
-                    tag="#Stage_Z_Plot",
-                    width=_Z_BAR_WIDTH,
-                    height=_XY_PLOT_SIZE,
-                    no_title=True,
-                    no_menus=True,
-                    no_box_select=True,
-                ):
-                    self.z_plot_id = dpg.last_item()
+                # ── Z bar indicator (right) ────────────────────────────
+                with dpg.table_cell():
+                    with dpg.plot(
+                        label="Z Position",
+                        tag="#Stage_Z_Plot",
+                        width=-1,
+                        height=-1,
+                        no_title=True,
+                        no_menus=True,
+                        no_box_select=True,
+                    ):
+                        self.z_plot_id = dpg.last_item()
 
-                    self._z_x_axis = dpg.add_plot_axis(
-                        dpg.mvXAxis, label="",
-                        no_gridlines=True,
-                        no_tick_labels=True,
-                        no_tick_marks=True,
-                    )
-                    dpg.set_axis_limits(self._z_x_axis, -0.6, 0.6)
+                        self._z_x_axis = dpg.add_plot_axis(
+                            dpg.mvXAxis, label="",
+                            no_gridlines=True,
+                            no_tick_labels=True,
+                            no_tick_marks=True,
+                        )
+                        dpg.set_axis_limits(self._z_x_axis, -0.6, 0.6)
 
-                    self._z_y_axis = dpg.add_plot_axis(
-                        dpg.mvYAxis, label="",
-                        no_tick_labels=True,
-                        no_tick_marks=True,
-                    )
-                    dpg.set_axis_limits(self._z_y_axis, 0.0, _TRAVEL_MM)
+                        self._z_y_axis = dpg.add_plot_axis(
+                            dpg.mvYAxis, label="",
+                            no_tick_labels=True,
+                            no_tick_marks=True,
+                        )
+                        dpg.set_axis_limits(self._z_y_axis, 0.0, _TRAVEL_MM)
 
-                    self._z_bar_series = dpg.add_bar_series(
-                        [0.0], [0.0],
-                        weight=0.9,
-                        parent=self._z_y_axis,
-                    )
-                    dpg.bind_item_theme(self._z_bar_series, self._z_bar_theme)
-
-                    self._z_ref_line = dpg.add_line_series(
-                        [-0.6, 0.6], [_HALF_TRAVEL_MM, _HALF_TRAVEL_MM],
-                        label="", parent=self._z_y_axis,
-                    )
-                    dpg.bind_item_theme(self._z_ref_line, self._axis_line_theme)
-
-                    self._z_surface_lines = []
-                    for index in range(_AUTOFOCUS_MAX_SURFACE_MARKERS):
-                        surface_line = dpg.add_line_series(
-                            [], [],
-                            label=f"Surface {index + 1}",
+                        self._z_bar_series = dpg.add_bar_series(
+                            [0.0], [0.0],
+                            weight=0.9,
                             parent=self._z_y_axis,
                         )
-                        dpg.bind_item_theme(surface_line, self._surface_line_theme)
-                        self._z_surface_lines.append(surface_line)
+                        dpg.bind_item_theme(self._z_bar_series, self._z_bar_theme)
 
-                    self._z_best_focus_line = dpg.add_line_series(
-                        [], [],
-                        label="Best Focus",
-                        parent=self._z_y_axis,
-                    )
-                    dpg.bind_item_theme(self._z_best_focus_line, self._focus_target_line_theme)
+                        self._z_ref_line = dpg.add_line_series(
+                            [-0.6, 0.6], [_HALF_TRAVEL_MM, _HALF_TRAVEL_MM],
+                            label="", parent=self._z_y_axis,
+                        )
+                        dpg.bind_item_theme(self._z_ref_line, self._axis_line_theme)
 
-            dpg.add_spacer(height=4)
-            with dpg.group(horizontal=True):
-                dpg.add_text("X:")
-                self._x_readout_id = dpg.add_text("--  mm", tag="#Stage_X_Readout")
-                dpg.add_spacer(width=12)
-                dpg.add_text("Y:")
-                self._y_readout_id = dpg.add_text("--  mm", tag="#Stage_Y_Readout")
-                dpg.add_spacer(width=12)
-                dpg.add_text("Z:")
-                self._z_readout_id = dpg.add_text("--  mm", tag="#Stage_Z_Readout")
+                        self._z_surface_lines = []
+                        for index in range(_AUTOFOCUS_MAX_SURFACE_MARKERS):
+                            surface_line = dpg.add_line_series(
+                                [], [],
+                                label=f"Surface {index + 1}",
+                                parent=self._z_y_axis,
+                            )
+                            dpg.bind_item_theme(surface_line, self._surface_line_theme)
+                            self._z_surface_lines.append(surface_line)
+
+                        self._z_best_focus_line = dpg.add_line_series(
+                            [], [],
+                            label="Best Focus",
+                            parent=self._z_y_axis,
+                        )
+                        dpg.bind_item_theme(self._z_best_focus_line, self._focus_target_line_theme)
+
+                    # Z readout below the Z bar
+                    with dpg.group(horizontal=True):
+                        dpg.add_text("Z:")
+                        self._z_readout_id = dpg.add_text("--  mm", tag="#Stage_Z_Readout")
 
     def _build_keypad_section(self):
         with dpg.tree_node(
@@ -2476,7 +2496,6 @@ class StageControls:
         save_state_file(
             type(self).__name__,
             {
-                "window":   capture_window_state(self.window_id),
                 "sections": capture_item_open_states(self.section_node_ids),
                 "serials": {
                     ax: str(dpg.get_value(getattr(self, f"_{ax}_serial_combo"))).strip()
@@ -2499,7 +2518,6 @@ class StageControls:
             self._queue_startup_auto_connect()
             return
 
-        apply_window_state(self.window_id, state.get("window"))
         apply_item_open_states(self.section_node_ids, state.get("sections"))
 
         # Restore saved serial numbers without scanning hardware at load time

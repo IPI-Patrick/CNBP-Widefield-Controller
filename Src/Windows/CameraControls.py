@@ -14,6 +14,7 @@ from Drivers.PicoScope import CHANNEL_NAMES, SUPPORTED_AWG_WAVEFORMS
 from Utils.StorageDTypes import get_raw_storage_bytes
 from Utils import diskspeed
 from Windows.SubWindows.AcquisitionPreviewWindow import AcquisitionPreviewWindow
+from Windows.SubWindows.CalibrationModal import CalibrationModal
 from Windows.SubWindows.CameraFeed import CameraFeedWindow
 from Windows.SubWindows.Oscilloscope import OscilloscopeWindow
 from Windows.SubWindows.ZAxisControlsWindow import ZAxisControlsWindow
@@ -110,21 +111,27 @@ class CameraSystem:
         self._last_frame_scope_render_mean_count = -1
         self._frame_scope_render_snapshot = None
 
-        with dpg.window(
-            label                = "Camera Controls",
-            tag                  = "#CameraControls",
-            width                = 300,
-            height               = 620,
-            pos                  = (625, 10 ),
-            no_scrollbar         = False,
-            no_resize            = False,
-            no_scroll_with_mouse = False,
-        ):
+        _cam_tab = shared_state.layout_containers.get("camera_tab")
+        if _cam_tab and dpg.does_item_exist(_cam_tab):
+            self.window_id = _cam_tab
+        else:
+            dpg.add_window(
+                label                = "Camera Controls",
+                tag                  = "#CameraControls",
+                width                = 300,
+                height               = 620,
+                pos                  = (625, 10),
+                no_scrollbar         = False,
+                no_resize            = False,
+                no_scroll_with_mouse = False,
+            )
+            self.window_id = dpg.last_item()
+        dpg.push_container_stack(self.window_id)
+        if True:
 
             # STARTUP
             # ################################################################
             # Set up the window and thread lock
-            self.window_id      = dpg.last_item()
             self.lock           = threading.Lock()
 
             # Set up the camera
@@ -145,10 +152,21 @@ class CameraSystem:
             self.temperature_setpoint_value = self.temperature_setpoint_options[0] if self.temperature_setpoint_options else ""
 
             # Set up the Preview Window
+            _feed_container = shared_state.layout_containers.get("center_live_tab") or self.window_id
             self.camera_feed   = CameraFeedWindow(
-                parent      = self.window_id,
+                parent      = _feed_container,
                 Andor       = self.Andor
             )
+            self.calibration_mm_per_pixel = None
+            self.calibration_image_width_mm = None
+            self.calibration_image_height_mm = None
+            self._calibration_signature = None
+            self.calibration_modal = CalibrationModal(
+                tag_prefix="CameraCalibration",
+                on_accept=self._on_calibration_confirmed,
+            )
+            _scope_container = shared_state.layout_containers.get("right_scope")
+            _scope_embedded = bool(_scope_container and dpg.does_item_exist(_scope_container))
             self.frame_scope_window = OscilloscopeWindow(
                 [self._make_frame_scope_trace_getter(channel_name) for channel_name in CHANNEL_NAMES],
                 title="Frame Scope Means",
@@ -158,6 +176,8 @@ class CameraSystem:
                 pos=(625, 1255),
                 state_name="FrameScopeWindow",
                 tag="#FrameScope",
+                parent=_scope_container,
+                embedded=_scope_embedded,
             )
 
             with dpg.theme() as self.hardware_readout_theme:
@@ -306,6 +326,39 @@ class CameraSystem:
                     )
 
                     self._refresh_aoi_controls_from_camera()
+
+                dpg.add_separator()
+                with dpg.tree_node(label="Calibration", default_open=True, span_full_width=True) as calibration_node_id:
+                    self.section_node_ids["calibration"] = calibration_node_id
+                    self.calibrate_button_id = dpg.add_button(
+                        label="Calibrate",
+                        width=-1,
+                        callback=self._on_calibrate_pressed,
+                    )
+
+                    self.calibration_mm_per_pixel_input_id = dpg.add_input_text(
+                        label="um / px",
+                        width=-110,
+                        default_value="",
+                        readonly=True,
+                    )
+                    dpg.bind_item_theme(self.calibration_mm_per_pixel_input_id, self.hardware_readout_theme)
+
+                    self.calibration_image_width_mm_input_id = dpg.add_input_text(
+                        label="Width (um)",
+                        width=-110,
+                        default_value="",
+                        readonly=True,
+                    )
+                    dpg.bind_item_theme(self.calibration_image_width_mm_input_id, self.hardware_readout_theme)
+
+                    self.calibration_image_height_mm_input_id = dpg.add_input_text(
+                        label="Height (um)",
+                        width=-110,
+                        default_value="",
+                        readonly=True,
+                    )
+                    dpg.bind_item_theme(self.calibration_image_height_mm_input_id, self.hardware_readout_theme)
 
                 dpg.add_separator()
                 with dpg.tree_node(label="Acquisition Settings", default_open=True, span_full_width=True) as acquisition_settings_node_id:
@@ -545,6 +598,8 @@ class CameraSystem:
             ) as self.save_directory_dialog_id:
                 pass
 
+            dpg.pop_container_stack()
+
         self._update_preview_button_state()
         self._update_acquisition_button_state()
         self._update_acquisition_awg_visibility()
@@ -553,6 +608,7 @@ class CameraSystem:
         self._set_save_progress(0.0, "Save")
         self._refresh_hardware_requirements(force=True)
         self._sync_camera_cooler_readout()
+        self._sync_calibration_dimensions_from_feed(force=True)
 
     @property
     def settings(self):
@@ -663,6 +719,78 @@ class CameraSystem:
 
     def _on_acquisition_zero_on_start_changed(self, sender=None, app_data=None, user_data=None):
         self.acquisition_zero_on_start = bool(app_data)
+
+    def _has_calibration(self):
+        return self.calibration_mm_per_pixel is not None and float(self.calibration_mm_per_pixel) > 0.0
+
+    @staticmethod
+    def _format_calibration_value(value):
+        if value is None:
+            return ""
+        magnitude = abs(float(value))
+        if magnitude >= 100.0:
+            return f"{value:.2f}"
+        if magnitude >= 1.0:
+            return f"{value:.4f}".rstrip("0").rstrip(".")
+        return f"{value:.6f}".rstrip("0").rstrip(".")
+
+    def _update_calibration_readouts(self):
+        mm_per_pixel = self.calibration_mm_per_pixel
+        um_per_pixel = None if mm_per_pixel is None else mm_per_pixel * 1000.0
+        width_um = None if self.calibration_image_width_mm is None else self.calibration_image_width_mm * 1000.0
+        height_um = None if self.calibration_image_height_mm is None else self.calibration_image_height_mm * 1000.0
+        dpg.set_value(
+            self.calibration_mm_per_pixel_input_id,
+            self._format_calibration_value(um_per_pixel),
+        )
+        dpg.set_value(
+            self.calibration_image_width_mm_input_id,
+            self._format_calibration_value(width_um),
+        )
+        dpg.set_value(
+            self.calibration_image_height_mm_input_id,
+            self._format_calibration_value(height_um),
+        )
+
+    def _sync_calibration_dimensions_from_feed(self, force=False):
+        if not self._has_calibration():
+            self.calibration_image_width_mm = None
+            self.calibration_image_height_mm = None
+            self._calibration_signature = None
+            self.camera_feed.set_calibration_mm_per_pixel(None)
+            self._update_calibration_readouts()
+            return
+
+        signature = (
+            int(self.camera_feed.image_width),
+            int(self.camera_feed.image_height),
+            float(self.calibration_mm_per_pixel),
+        )
+        if not force and signature == self._calibration_signature:
+            return
+
+        self.calibration_image_width_mm = float(self.camera_feed.image_width) * float(self.calibration_mm_per_pixel)
+        self.calibration_image_height_mm = float(self.camera_feed.image_height) * float(self.calibration_mm_per_pixel)
+        self._calibration_signature = signature
+        self.camera_feed.set_calibration_mm_per_pixel(self.calibration_mm_per_pixel)
+        self._update_calibration_readouts()
+
+    def _on_calibrate_pressed(self, sender=None, app_data=None, user_data=None):
+        snapshot = self.camera_feed.get_display_snapshot()
+        if snapshot is None:
+            self._set_acquisition_progress(0.0, "Calibration: no frame available")
+            return
+
+        self.calibration_modal.open(
+            rgba=snapshot["rgba"],
+            image_width=snapshot["image_width"],
+            image_height=snapshot["image_height"],
+            preview_aspect_ratio=snapshot.get("preview_aspect_ratio"),
+        )
+
+    def _on_calibration_confirmed(self, payload):
+        self.calibration_mm_per_pixel = float(payload["mm_per_pixel"])
+        self._sync_calibration_dimensions_from_feed(force=True)
 
     def _on_acquisition_frame_rate_changed(self, sender=None, app_data=None, user_data=None):
         self.acquisition_frame_rate_hz = max(0.1, float(app_data or dpg.get_value(self.acquisition_frame_rate_input_id)))
@@ -1533,6 +1661,9 @@ class CameraSystem:
             "image_auto_center":                bool(dpg.get_value(self.settings_aoi_auto_center_checkbox_id)),
             "frame_storage_dtype":              str(self.Andor.storage_dtype_name),
             "preview_max_frames":               int(dpg.get_value(self.settings_preview_max_frames)),
+            "calibration_mm_per_pixel":         float(self.calibration_mm_per_pixel) if self._has_calibration() else 0.0,
+            "calibration_image_width_mm":       float(self.calibration_image_width_mm) if self.calibration_image_width_mm is not None else 0.0,
+            "calibration_image_height_mm":      float(self.calibration_image_height_mm) if self.calibration_image_height_mm is not None else 0.0,
             "acquisition_duration_seconds":     float(dpg.get_value(self.acquisition_duration_input_id)),
             "acquisition_frame_rate_hz":        float(dpg.get_value(self.acquisition_frame_rate_input_id)),
             "acquisition_scope_sample_rate_hz": float(dpg.get_value(self.acquisition_scope_rate_input_id)),
@@ -2265,12 +2396,14 @@ class CameraSystem:
 
     def render(self):
         self.camera_feed.render()
+        self.calibration_modal.render()
         self.z_axis_controls.render()
         if self._acquisition_preview_window is not None:
             if not self._acquisition_preview_window.render():
                 self._acquisition_preview_window = None
         self._render_frame_scope_window(force=self.Andor.frame_ready_event.is_set())
         self._sync_camera_cooler_readout()
+        self._sync_calibration_dimensions_from_feed()
 
         if self.started and self.preview_zero_reference_pending and self.Andor.frameIdx > 0:
             self.preview_zero_reference_pending = not self.camera_feed.ensure_zero_reference_from_latest_frame()
@@ -2344,6 +2477,10 @@ class CameraSystem:
         displayed_save_progress = self._get_animated_save_progress_value()
         save_progress_overlay = self._get_save_progress_overlay(displayed_save_progress)
         dpg.configure_item(self.snapshot_button_id, enabled=not self._snapshot_in_progress)
+        dpg.configure_item(
+            self.calibrate_button_id,
+            enabled=(not self.acquisition_in_progress) and (not self._save_in_progress) and self.camera_feed.has_display_snapshot(),
+        )
         # Disable Acquire and Preview while a save is in progress
         if self._save_in_progress:
             dpg.configure_item(self.acquire_button_id, enabled=False)
@@ -2361,7 +2498,6 @@ class CameraSystem:
         save_state_file(
             type(self).__name__,
             {
-                "window": capture_window_state(self.window_id),
                 "sections": capture_item_open_states(self.section_node_ids),
                 "exposure_time": float(dpg.get_value(self.settings_exposure_time)),
                 "max_exposure": bool(dpg.get_value(self.settings_max_exposure_checkbox_id)),
@@ -2376,6 +2512,9 @@ class CameraSystem:
                 "image_auto_center": bool(dpg.get_value(self.settings_aoi_auto_center_checkbox_id)),
                 "frame_storage_dtype": str(self.Andor.storage_dtype_name),
                 "preview_max_frames": int(dpg.get_value(self.settings_preview_max_frames)),
+                "calibration_mm_per_pixel": float(self.calibration_mm_per_pixel) if self._has_calibration() else 0.0,
+                "calibration_image_width_mm": float(self.calibration_image_width_mm) if self.calibration_image_width_mm is not None else 0.0,
+                "calibration_image_height_mm": float(self.calibration_image_height_mm) if self.calibration_image_height_mm is not None else 0.0,
                 "acquisition_duration_seconds": float(dpg.get_value(self.acquisition_duration_input_id)),
                 "acquisition_frame_rate_hz": float(dpg.get_value(self.acquisition_frame_rate_input_id)),
                 "acquisition_scope_sample_rate_hz": float(dpg.get_value(self.acquisition_scope_rate_input_id)),
@@ -2410,7 +2549,6 @@ class CameraSystem:
     def LoadState(self):
         state = load_state_file(type(self).__name__)
         if state:
-            apply_window_state(self.window_id, state.get("window"))
             apply_item_open_states(self.section_node_ids, state.get("sections"))
 
             property_map = (
@@ -2458,6 +2596,16 @@ class CameraSystem:
             if "max_exposure" in state:
                 dpg.set_value(self.settings_max_exposure_checkbox_id, bool(state["max_exposure"]))
                 self.max_exposure = bool(state["max_exposure"])
+
+            calibration_mm_per_pixel = float(state.get("calibration_mm_per_pixel", 0.0) or 0.0)
+            if calibration_mm_per_pixel > 0.0:
+                self.calibration_mm_per_pixel = calibration_mm_per_pixel
+                self.calibration_image_width_mm = float(state.get("calibration_image_width_mm", 0.0) or 0.0) or None
+                self.calibration_image_height_mm = float(state.get("calibration_image_height_mm", 0.0) or 0.0) or None
+            else:
+                self.calibration_mm_per_pixel = None
+                self.calibration_image_width_mm = None
+                self.calibration_image_height_mm = None
 
             self._apply_preview_max_frames(int(state.get("preview_max_frames", self.preview_max_frames)))
 
@@ -2532,3 +2680,4 @@ class CameraSystem:
             self.z_axis_controls.LoadState()
         if hasattr(self.camera_feed, "LoadState"):
             self.camera_feed.LoadState()
+        self._sync_calibration_dimensions_from_feed(force=True)

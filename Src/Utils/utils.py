@@ -44,7 +44,7 @@ def load_window_classes(folder):
     if "Unused" in folder:
         return []
     
-    for filename in os.listdir(folder):                
+    for filename in sorted(os.listdir(folder)):
 
         if filename.endswith(".py") and not filename.startswith("__"):
             module_name     = filename[:-3]

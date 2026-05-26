@@ -8,7 +8,7 @@ from dearpygui import dearpygui as dpg
 from Utils.shared_state import class_objects
 import Utils.shared_state as shared_state
 from Utils.console_capture import install_console_capture
-from Utils.state_persistence import apply_viewport_state, apply_window_layout, capture_viewport_state, capture_window_layout, get_init_file_path, load_state_file, normalize_viewport_state, save_state_file
+from Utils.state_persistence import apply_viewport_state, capture_viewport_state, get_init_file_path, load_state_file, normalize_viewport_state, save_state_file
 from Utils.utils import load_window_classes
 
 WINDOWS_FOLDER = os.path.join(os.path.dirname(__file__), "Windows")
@@ -19,114 +19,13 @@ VIEWPORT_STATE_NAME = "WidefieldController"
 VIEWPORT_SAVE_DEBOUNCE_SECONDS = 0.25
 VIEWPORT_STATE_DIRTY = False
 LAST_VIEWPORT_RESIZE_TIME = 0.0
-WINDOW_LAYOUT_DEFAULTS_STATE_NAME = "WindowLayoutDefaults"
 RESET_VIEWPORT_STATE = {
     "width": 1920,
     "height": 1080,
     "pos": [0, 0],
     "maximized": False,
 }
-DEFAULT_WINDOW_LAYOUTS = {}
 _CLEANUP_RAN = False
-
-
-def _get_window_layout_storage_key(item_id):
-    if item_id is None or not dpg.does_item_exist(item_id):
-        return None
-
-    alias = dpg.get_item_alias(item_id)
-    if isinstance(alias, str) and alias.strip():
-        return alias
-    return None
-
-
-def _iter_window_owners(root_objects):
-    stack = list(root_objects)
-    seen = set()
-
-    while stack:
-        current = stack.pop()
-        if current is None:
-            continue
-
-        object_id = id(current)
-        if object_id in seen:
-            continue
-        seen.add(object_id)
-
-        if hasattr(current, "window_id"):
-            yield current
-
-        if not hasattr(current, "__dict__"):
-            continue
-
-        for value in vars(current).values():
-            if value is None:
-                continue
-
-            if isinstance(value, dict):
-                stack.extend(v for v in value.values() if hasattr(v, "__dict__") or hasattr(v, "window_id"))
-                continue
-
-            if isinstance(value, (list, tuple, set)):
-                stack.extend(v for v in value if hasattr(v, "__dict__") or hasattr(v, "window_id"))
-                continue
-
-            if hasattr(value, "window_id") or hasattr(value, "SaveState") or hasattr(value, "LoadState"):
-                stack.append(value)
-
-
-def capture_default_window_layouts():
-    saved_layouts = load_state_file(WINDOW_LAYOUT_DEFAULTS_STATE_NAME).get("layouts", {})
-    DEFAULT_WINDOW_LAYOUTS.clear()
-    for owner in _iter_window_owners(class_objects):
-        window_id = getattr(owner, "window_id", None)
-        layout = capture_window_layout(window_id)
-        if not layout:
-            continue
-
-        storage_key = _get_window_layout_storage_key(window_id)
-        if storage_key and isinstance(saved_layouts, dict) and isinstance(saved_layouts.get(storage_key), dict):
-            DEFAULT_WINDOW_LAYOUTS[window_id] = dict(saved_layouts[storage_key])
-        else:
-            DEFAULT_WINDOW_LAYOUTS[window_id] = layout
-
-
-def reset_all_window_layouts():
-    for window_id, layout in DEFAULT_WINDOW_LAYOUTS.items():
-        apply_window_layout(window_id, layout)
-    dpg.save_init_file(str(get_init_file_path()))
-    print("Default window layout restored.")
-
-
-
-def save_current_layout_as_default():
-    saved_layouts = {}
-    for owner in _iter_window_owners(class_objects):
-        window_id = getattr(owner, "window_id", None)
-        layout = capture_window_layout(window_id)
-        if not layout:
-            continue
-
-        DEFAULT_WINDOW_LAYOUTS[window_id] = layout
-        storage_key = _get_window_layout_storage_key(window_id)
-        if storage_key:
-            saved_layouts[storage_key] = layout
-
-    save_state_file(WINDOW_LAYOUT_DEFAULTS_STATE_NAME, {"layouts": saved_layouts})
-    dpg.save_init_file(str(get_init_file_path()))
-    print("Current window layout saved as default.")
-
-
-def show_all_windows():
-    shown_count = 0
-    for owner in _iter_window_owners(class_objects):
-        window_id = getattr(owner, "window_id", None)
-        if window_id is None or not dpg.does_item_exist(window_id):
-            continue
-        dpg.show_item(window_id)
-        shown_count += 1
-    print(f"Reopened {shown_count} windows.")
 
 
 def create_performance_overlay():
@@ -253,27 +152,6 @@ def on_reset_viewport_shortcut(sender=None, app_data=None):
     reset_viewport_state()
 
 
-def on_reset_window_layout_shortcut(sender=None, app_data=None):
-    if not (dpg.is_key_down(dpg.mvKey_LControl) or dpg.is_key_down(dpg.mvKey_RControl)):
-        return
-
-    reset_all_window_layouts()
-
-
-def on_save_window_layout_default_shortcut(sender=None, app_data=None):
-    if not (dpg.is_key_down(dpg.mvKey_LControl) or dpg.is_key_down(dpg.mvKey_RControl)):
-        return
-
-    save_current_layout_as_default()
-
-
-def on_show_all_windows_shortcut(sender=None, app_data=None):
-    if not (dpg.is_key_down(dpg.mvKey_LControl) or dpg.is_key_down(dpg.mvKey_RControl)):
-        return
-
-    show_all_windows()
-
-
 def flush_pending_viewport_state_save():
     global VIEWPORT_STATE_DIRTY
 
@@ -285,40 +163,6 @@ def flush_pending_viewport_state_save():
 
     save_viewport_state()
     VIEWPORT_STATE_DIRTY = False
-
-def create_context_menu():
-    """Create the right-click context menu popup (hidden by default)."""
-    with dpg.window(
-        tag="CtxMenu_WindowManagement",
-        popup=True,
-        show=False,
-        no_title_bar=True,
-        no_move=True,
-        no_resize=True,
-        no_scrollbar=True,
-        no_collapse=True,
-        no_close=True,
-        no_saved_settings=True,
-        min_size=[1, 1],
-    ):
-        dpg.add_menu_item(label="Reset All Windows",  callback=_ctx_reset_all_windows)
-        dpg.add_menu_item(label="Save Windows State", callback=_ctx_save_windows_state)
-
-
-def _ctx_reset_all_windows(sender=None, app_data=None):
-    reset_all_window_layouts()
-
-
-def _ctx_save_windows_state(sender=None, app_data=None):
-    save_current_layout_as_default()
-
-
-def on_right_click(sender=None, app_data=None):
-    """Show the window-management context menu at the current mouse position."""    
-    mouse_pos = dpg.get_mouse_pos(local=False)
-    dpg.set_item_pos("CtxMenu_WindowManagement", [int(mouse_pos[0]), int(mouse_pos[1])])
-    dpg.configure_item("CtxMenu_WindowManagement", show=True)
-
 
 def _register_viewport_drop_callback(window_objects):
     def _on_viewport_drop(data, keys):
@@ -398,8 +242,6 @@ def setup():
         class_objects.append(cls())  # Each class should create its window in __init__
         # print(f"Failed to initialize window {cls.__name__}: {e}")
 
-    capture_default_window_layouts()
-
     for cls in class_objects:
         if hasattr(cls, "LoadState"):
             try:
@@ -412,14 +254,9 @@ def setup():
     atexit.register(cleanup_all_windows)
 
     create_performance_overlay()
-    create_context_menu()
 
     with dpg.handler_registry(tag="WidefieldControllerKeyHandlers"):
         dpg.add_key_press_handler(key=dpg.mvKey_R, callback=on_reset_viewport_shortcut)
-        dpg.add_key_press_handler(key=dpg.mvKey_B, callback=on_reset_window_layout_shortcut)
-        dpg.add_key_press_handler(key=dpg.mvKey_N, callback=on_save_window_layout_default_shortcut)
-        dpg.add_key_press_handler(key=dpg.mvKey_M, callback=on_show_all_windows_shortcut)
-        # dpg.add_mouse_click_handler(button=dpg.mvMouseButton_Right, callback=on_right_click)
 
 
     dpg.show_viewport()

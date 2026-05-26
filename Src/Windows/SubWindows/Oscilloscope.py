@@ -36,7 +36,7 @@ class OscilloscopeWindow:
 
 		if self._embedded:
 			with dpg.group(parent=parent) as self.root_container_id:
-				with dpg.child_window(border=False, width=-1, height=height, no_scrollbar=True, no_scroll_with_mouse=True):
+				with dpg.child_window(border=False, width=-1, height=-1, no_scrollbar=True, no_scroll_with_mouse=True):
 					self.content_container_id = dpg.last_item()
 		else:
 			with dpg.window(
