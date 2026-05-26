@@ -30,7 +30,13 @@
       "Bash(Format-Table -AutoSize)",
       "Bash(python -c ' *)",
       "Bash(python -c \"import os; files = sorted\\(os.listdir\\('Src/Windows'\\)\\); print\\([f for f in files if f.endswith\\('.py'\\)]\\)\")",
-      "Bash(python src\\\\WidefieldController.py -dev)"
+      "Bash(python src\\\\WidefieldController.py -dev)",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('src/Windows/SubWindows/AcquisitionPreviewWindow.py'\\).read\\(\\)\\); print\\('Syntax OK'\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('src/Windows/SubWindows/AcquisitionPreviewWindow.py'\\).read\\(\\)\\); print\\('OK'\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('src/Windows/AppLayout.py'\\).read\\(\\)\\); print\\('OK'\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('src/Windows/SubWindows/FunctionGenerator.py'\\).read\\(\\)\\); print\\('OK'\\)\")",
+      "Bash(Get-ChildItem -Path \"c:\\\\CodingProjects\\\\Widefield-Controller\\\\src\\\\Windows\" -Filter \"*.py\" -Recurse)",
+      "Bash(Select-Object -ExpandProperty FullName)"
     ]
   }
 }

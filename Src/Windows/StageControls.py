@@ -633,6 +633,8 @@ class StageControls:
                 dpg.add_spacer(height=4)
                 self._build_autofocus_phase_plot("fine", "Fine Focus")
 
+        dpg.add_separator()
+
         with dpg.tree_node(
             label="Auto Focus Settings", default_open=False, span_full_width=True
         ) as node:

@@ -28,23 +28,6 @@ RESET_VIEWPORT_STATE = {
 _CLEANUP_RAN = False
 
 
-def create_performance_overlay():
-    with dpg.window(
-        label="Performance Overlay",
-        tag="SoftwarePerformanceOverlay",
-        width=96,
-        height=28,
-        no_title_bar=True,
-        no_resize=True,
-        no_move=True,
-        no_scrollbar=True,
-        no_collapse=True,
-        no_close=True,
-        no_background=False,
-        no_saved_settings=True,
-    ):
-        dpg.add_text("0.0 UI FPS | 0.0 Capture FPS", tag="SoftwarePerformanceOverlayText")
-
 
 def save_viewport_state():
     saved_state = load_state_file(VIEWPORT_STATE_NAME).get("viewport")
@@ -86,20 +69,12 @@ def update_performance_overlay():
             capture_fps = 0.0
 
     label = f"{int(ui_fps)} UI FPS | {int(capture_fps)} Capture FPS"
-    dpg.set_value("SoftwarePerformanceOverlayText", label)
-
-    viewport_width = dpg.get_viewport_client_width()
-    viewport_height = dpg.get_viewport_client_height()
-    overlay_width = max(260, int(len(label) * 8.0) + 16)
-    overlay_height = 30
-    dpg.configure_item("SoftwarePerformanceOverlay", width=overlay_width, height=overlay_height)
-    dpg.set_item_pos(
-        "SoftwarePerformanceOverlay",
-        (
-            max(8, viewport_width - overlay_width - 16),
-            max(8, viewport_height - overlay_height - 16),
-        ), # type: ignore
-    )
+    if dpg.does_item_exist("SoftwarePerformanceOverlayText"):
+        dpg.set_value("SoftwarePerformanceOverlayText", label)
+        label_w = max(200, int(len(label) * 7))
+        toolbar_w = dpg.get_viewport_client_width()
+        x = max(8, toolbar_w - label_w - 12)
+        dpg.set_item_pos("SoftwarePerformanceOverlayText", (x, 20))
 
 
 def save_all_states():
@@ -252,8 +227,6 @@ def setup():
     LAST_STATE_SAVE_TIME = time.perf_counter()
     atexit.register(save_all_states)
     atexit.register(cleanup_all_windows)
-
-    create_performance_overlay()
 
     with dpg.handler_registry(tag="WidefieldControllerKeyHandlers"):
         dpg.add_key_press_handler(key=dpg.mvKey_R, callback=on_reset_viewport_shortcut)

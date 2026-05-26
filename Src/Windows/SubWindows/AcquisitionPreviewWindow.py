@@ -228,6 +228,44 @@ class AcquisitionPreviewWindow:
         self.edge_pick_threshold = 10
         self.rois_window = None
         self.section_node_ids = {}
+        self._export_frame_dialog_id = None
+        self._export_video_dialog_id = None
+        self._export_status_text_id = None
+
+        # Rendered Info overlay
+        self.info_show_frame_index = False
+        self.info_show_time = False
+        self.info_show_voltage = False
+        self.info_font_size = 14
+        self.info_position = "Top-Left"
+        self.info_voltage_channel = ""
+        self.info_overlay_checkbox_frame_id = None
+        self.info_overlay_checkbox_time_id = None
+        self.info_overlay_checkbox_voltage_id = None
+        self.info_overlay_font_size_id = None
+        self.info_overlay_position_combo_id = None
+        self.info_overlay_voltage_channel_combo_id = None
+
+        # Color bar and scale bar
+        self.colorbar_enabled = False
+        self.scale_bar_enabled = False
+        self.scale_bar_auto_width = True
+        self.scale_bar_width_um = 100.0
+        self.scale_bar_size = 1.0
+        self.scale_bar_position = "Bottom-Left"
+        self.scale_bar_x_offset = 26
+        self.scale_bar_y_offset = 26
+        self._last_frame_display_min = 0.0
+        self._last_frame_display_max = 1.0
+        self.colorbar_layer = None
+        self.colorbar_checkbox_id = None
+        self.scale_bar_enabled_checkbox_id = None
+        self.scale_bar_auto_width_checkbox_id = None
+        self.scale_bar_width_input_id = None
+        self.scale_bar_size_input_id = None
+        self.scale_bar_position_combo_id = None
+        self.scale_bar_x_offset_input_id = None
+        self.scale_bar_y_offset_input_id = None
 
         self._embedded = display_parent is not None
         if self._embedded:
@@ -283,6 +321,28 @@ class AcquisitionPreviewWindow:
             controls_parent=self.roi_controls_group_id,
             content_parent=self.rois_panel_id,
         )
+
+        with dpg.file_dialog(
+            show=False,
+            callback=self._on_export_frame_selected,
+            width=700,
+            height=400,
+            modal=True,
+            default_filename="frame",
+        ) as self._export_frame_dialog_id:
+            dpg.add_file_extension(".png", color=(80, 255, 80, 255))
+            dpg.add_file_extension(".jpg", color=(255, 220, 80, 255))
+
+        with dpg.file_dialog(
+            show=False,
+            callback=self._on_export_video_selected,
+            width=700,
+            height=400,
+            modal=True,
+            default_filename="video",
+        ) as self._export_video_dialog_id:
+            dpg.add_file_extension(".mp4", color=(80, 180, 255, 255))
+
         self._reset_zoom(redraw=False)
         self.LoadState()
         self._update_settings_controls_state()
@@ -310,6 +370,8 @@ class AcquisitionPreviewWindow:
                 self.image_layer = dpg.last_item()
             with dpg.draw_layer(tag=f"{self.tag}_OverlayLayer"):
                 self.overlay_layer = dpg.last_item()
+            with dpg.draw_layer(tag=f"{self.tag}_ColorbarLayer"):
+                self.colorbar_layer = dpg.last_item()
             self.image_draw_id = dpg.draw_image(
                 texture_tag=self.texture_id,
                 pmin=(0, 0),
@@ -465,6 +527,119 @@ class AcquisitionPreviewWindow:
             self.section_node_ids["settings"] = dpg.last_item()
             with dpg.child_window(height=260, border=False, autosize_x=True):
                 self.settings_container_id = dpg.last_item()
+        dpg.add_separator()
+        with dpg.tree_node(label="Rendered Info", default_open=False, span_full_width=True):
+            self.section_node_ids["rendered_info"] = dpg.last_item()
+            self.info_overlay_checkbox_frame_id = dpg.add_checkbox(
+                label="Frame Index",
+                default_value=self.info_show_frame_index,
+                callback=self._on_info_overlay_changed,
+            )
+            self.info_overlay_checkbox_time_id = dpg.add_checkbox(
+                label="Time",
+                default_value=self.info_show_time,
+                callback=self._on_info_overlay_changed,
+            )
+            self.info_overlay_checkbox_voltage_id = dpg.add_checkbox(
+                label="Voltage",
+                default_value=self.info_show_voltage,
+                callback=self._on_info_overlay_changed,
+            )
+            self.info_overlay_font_size_id = dpg.add_input_int(
+                label="Font Size",
+                width=-120,
+                default_value=self.info_font_size,
+                min_value=8,
+                max_value=48,
+                step=1,
+                callback=self._on_info_overlay_changed,
+            )
+            self.info_overlay_position_combo_id = dpg.add_combo(
+                label="Position",
+                items=["Top-Left", "Top-Right", "Bottom-Left", "Bottom-Right"],
+                default_value=self.info_position,
+                width=-120,
+                callback=self._on_info_overlay_changed,
+            )
+            self.info_overlay_voltage_channel_combo_id = dpg.add_combo(
+                label="Voltage Channel",
+                items=[],
+                default_value=self.info_voltage_channel,
+                width=-120,
+                callback=self._on_info_overlay_changed,
+            )
+        dpg.add_separator()
+        with dpg.tree_node(label="Color Scale", default_open=False, span_full_width=True):
+            self.section_node_ids["color_scale"] = dpg.last_item()
+            self.colorbar_checkbox_id = dpg.add_checkbox(
+                label="Show Color Bar",
+                default_value=self.colorbar_enabled,
+                callback=self._on_colorbar_enabled_changed,
+            )
+        dpg.add_separator()
+        with dpg.tree_node(label="Scale Bar", default_open=False, span_full_width=True):
+            self.section_node_ids["scale_bar"] = dpg.last_item()
+            self.scale_bar_enabled_checkbox_id = dpg.add_checkbox(
+                label="Show Scale Bar",
+                default_value=self.scale_bar_enabled,
+                callback=self._on_scale_bar_enabled_changed,
+            )
+            self.scale_bar_auto_width_checkbox_id = dpg.add_checkbox(
+                label="Auto Width",
+                default_value=self.scale_bar_auto_width,
+                callback=self._on_scale_bar_auto_width_changed,
+            )
+            self.scale_bar_width_input_id = dpg.add_input_float(
+                label="Width (um)",
+                width=-120,
+                default_value=self.scale_bar_width_um,
+                min_value=0.001,
+                step=10.0,
+                format="%.1f",
+                on_enter=True,
+                callback=self._on_scale_bar_width_changed,
+            )
+            self.scale_bar_size_input_id = dpg.add_input_float(
+                label="Size",
+                width=-120,
+                default_value=self.scale_bar_size,
+                min_value=0.1,
+                max_value=5.0,
+                step=0.1,
+                format="%.2f",
+                on_enter=True,
+                callback=self._on_scale_bar_size_changed,
+            )
+            self.scale_bar_position_combo_id = dpg.add_combo(
+                label="Position",
+                items=["Bottom-Left", "Bottom-Right", "Top-Left", "Top-Right"],
+                default_value=self.scale_bar_position,
+                width=-120,
+                callback=self._on_scale_bar_position_changed,
+            )
+            self.scale_bar_x_offset_input_id = dpg.add_input_int(
+                label="X-Offset",
+                width=-120,
+                default_value=self.scale_bar_x_offset,
+                step=1,
+                on_enter=True,
+                callback=self._on_scale_bar_x_offset_changed,
+            )
+            self.scale_bar_y_offset_input_id = dpg.add_input_int(
+                label="Y-Offset",
+                width=-120,
+                default_value=self.scale_bar_y_offset,
+                step=1,
+                on_enter=True,
+                callback=self._on_scale_bar_y_offset_changed,
+            )
+        dpg.add_separator()
+        with dpg.tree_node(label="Export", default_open=False, span_full_width=True):
+            self.section_node_ids["export"] = dpg.last_item()
+            dpg.add_button(label="Export Current Frame...", width=-1, callback=self._show_export_frame_dialog)
+            dpg.add_button(label="Export Video as MP4...", width=-1, callback=self._show_export_video_dialog)
+            dpg.add_spacer(height=4)
+            self._export_status_text_id = dpg.add_text("", wrap=0)
 
     def _build_playback_dock(self):
         with dpg.child_window(height=self.playback_dock_height, border=False, no_scrollbar=True, tag=f"{self.tag}_PlaybackDock"):
@@ -685,6 +860,12 @@ class AcquisitionPreviewWindow:
         frame_count = int(self._loaded_payload["frame_count"])
         dpg.configure_item(self.frame_slider_id, min_value=0, max_value=max(0, frame_count - 1))
         dpg.set_value(self.frame_slider_id, 0)
+        if self.info_overlay_voltage_channel_combo_id is not None and dpg.does_item_exist(self.info_overlay_voltage_channel_combo_id):
+            channels = list((self._loaded_payload.get("scope_plot_channels") or {}).keys())
+            dpg.configure_item(self.info_overlay_voltage_channel_combo_id, items=channels)
+            if channels and not self.info_voltage_channel:
+                self.info_voltage_channel = channels[0]
+                dpg.set_value(self.info_overlay_voltage_channel_combo_id, self.info_voltage_channel)
         self._ui_initialized = True
 
     def _update_repeat_button(self):
@@ -887,7 +1068,16 @@ class AcquisitionPreviewWindow:
         if frame_index not in self._drift_shift_cache:
             from skimage.registration import phase_cross_correlation
             frame_f32 = np.asarray(frame, dtype=np.float32)
-            shift, _, _ = phase_cross_correlation(reference, frame_f32, upsample_factor=10, normalization=None)
+            # Normalize to [0, 1] and cast to float64 to prevent float32 overflow
+            # in skimage's internal FFT amplitude computation. Shift result is
+            # scale-invariant so this doesn't affect drift accuracy.
+            scale = max(float(reference.max()), float(frame_f32.max()), 1.0)
+            shift, _, _ = phase_cross_correlation(
+                (reference / scale).astype(np.float64),
+                (frame_f32 / scale).astype(np.float64),
+                upsample_factor=10,
+                normalization=None,
+            )
             max_shift = min(frame_f32.shape[0], frame_f32.shape[1]) // 4
             dy = float(np.clip(float(shift[0]), -max_shift, max_shift))
             dx = float(np.clip(float(shift[1]), -max_shift, max_shift))
@@ -1261,6 +1451,8 @@ class AcquisitionPreviewWindow:
         return self._get_default_colormap_name()
 
     def _update_colormap_controls_state(self):
+        if not self._settings_ui_alive():
+            return
         self._ensure_valid_colormap_selection()
         labels = self.get_available_colormap_labels()
         dpg.configure_item(self.color_scale_combo_id, items=labels)
@@ -1430,7 +1622,14 @@ class AcquisitionPreviewWindow:
 
         return float(min_value), float(max_value)
 
+    def _settings_ui_alive(self):
+        """Return True if this instance's settings-panel widgets still exist.
+        In embedded mode they can be wiped by a subsequent file open."""
+        return self.scale_min_input_id is not None and dpg.does_item_exist(self.scale_min_input_id)
+
     def _update_settings_controls_state(self):
+        if not self._settings_ui_alive():
+            return
         is_signed_mode = self._is_signed_zero_reference_mode_active()
         input_min, input_max = self._get_scale_percent_bounds()
         dpg.configure_item(self.scale_min_input_id, min_value=input_min, max_value=input_max)
@@ -1506,12 +1705,29 @@ class AcquisitionPreviewWindow:
         window_width, window_height = dpg.get_item_rect_size(self.window_id)
 
         if self._embedded:
-            content_width = max(320, int(window_width))
-            content_height = max(320, int(window_height))
+            content_width = max(1, int(window_width))
+            content_height = max(1, int(window_height))
             dock_height = min(self.playback_dock_height, content_height)
-            canvas_height = max(1, content_height - dock_height - 4)
-            self.feed_width = max(1, content_width)
-            self.feed_height = canvas_height
+            available_w = max(1, content_width)
+            available_h = max(1, content_height - dock_height - 4)
+
+            if self.image_width > 0 and self.image_height > 0:
+                img_aspect = self.image_width / max(1, self.image_height)
+                if available_w / available_h > img_aspect:
+                    display_h = available_h
+                    display_w = max(1, int(available_h * img_aspect))
+                else:
+                    display_w = available_w
+                    display_h = max(1, int(available_w / max(1e-6, img_aspect)))
+            else:
+                display_w, display_h = available_w, available_h
+
+            x_off = (available_w - display_w) // 2
+            y_off = (available_h - display_h) // 2
+
+            self.feed_width = display_w
+            self.feed_height = display_h
+
             if self.playback_dock_id is not None and dpg.does_item_exist(self.playback_dock_id):
                 dpg.configure_item(self.playback_dock_id, width=content_width, height=dock_height)
             controls_width = min(288, content_width - 20)
@@ -1523,7 +1739,8 @@ class AcquisitionPreviewWindow:
             if self.playback_controls_group_id is not None and dpg.does_item_exist(self.playback_controls_group_id):
                 dpg.set_item_pos(self.playback_controls_group_id, (controls_x, controls_y))
             self._update_roi_panel_height()
-            dpg.configure_item(self.canvas_id, width=max(1, content_width), height=canvas_height)
+            dpg.configure_item(self.canvas_id, width=display_w, height=display_h)
+            dpg.set_item_pos(self.canvas_id, [x_off, y_off])
             self._update_image_draw_transform()
             self._redraw_overlay()
             return
@@ -1963,6 +2180,308 @@ class AcquisitionPreviewWindow:
         if self.preview_bounds is not None and self._is_valid_bounds(self.preview_bounds):
             x1, y1, x2, y2 = self._bounds_to_display(self.preview_bounds)
             dpg.draw_rectangle((x1, y1), (x2, y2), color=(80, 170, 255, 255), fill=(80, 170, 255, 25), thickness=2, parent=self.overlay_layer)
+        self._draw_info_overlay()
+        self._redraw_scale_bar()
+
+    def _get_calibration_mm_per_pixel(self):
+        if self._loaded_payload is None:
+            return None
+        saved_settings = self._loaded_payload.get("saved_settings", {})
+        for key in ("calibration_mm_per_pixel", "pixel_calibration_mm", "mm_per_pixel"):
+            v = saved_settings.get(key)
+            if v is not None:
+                try:
+                    val = float(v)
+                    if val > 0.0:
+                        return val
+                except (TypeError, ValueError):
+                    pass
+        return None
+
+    def _draw_info_overlay(self):
+        if not (self.info_show_frame_index or self.info_show_time or self.info_show_voltage):
+            return
+        if self._loaded_payload is None:
+            return
+        canvas_w, canvas_h = self._get_canvas_size()
+        font_size = max(8, int(self.info_font_size))
+        line_h = font_size + 4
+        lines = []
+        idx = self.current_frame_index
+        if self.info_show_frame_index:
+            frame_count = int(self._loaded_payload.get("frame_count", 0))
+            lines.append(f"Frame: {idx + 1} / {frame_count}")
+        if self.info_show_time:
+            timestamps = self._loaded_payload.get("relative_timestamps")
+            if timestamps is not None and idx < len(timestamps):
+                t = float(timestamps[idx])
+                lines.append(f"Time: {t:.3f} s")
+            else:
+                lines.append("Time: -")
+        if self.info_show_voltage:
+            ch = self.info_voltage_channel
+            scope_channels = self._loaded_payload.get("scope_plot_channels", {})
+            ch_data = scope_channels.get(ch)
+            if ch_data is not None:
+                y_values = ch_data.get("y_values")
+                if y_values is not None and idx < len(y_values):
+                    v = float(y_values[idx])
+                    lines.append(f"{ch}: {v:.4f} V")
+                else:
+                    lines.append(f"{ch}: -")
+            else:
+                lines.append("Voltage: -")
+        if not lines:
+            return
+        total_h = len(lines) * line_h
+        # Estimate max text width
+        max_chars = max(len(l) for l in lines)
+        estimated_w = max_chars * font_size * 0.54
+        pad_x = 8
+        pad_y = 6
+        margin = 10
+        if "Left" in self.info_position:
+            x0 = float(margin)
+        else:
+            x0 = float(canvas_w) - margin - estimated_w - pad_x * 2
+        if "Top" in self.info_position:
+            y0 = float(margin)
+        else:
+            y0 = float(canvas_h) - margin - total_h - pad_y * 2
+        dpg.draw_rectangle(
+            (x0, y0),
+            (x0 + estimated_w + pad_x * 2, y0 + total_h + pad_y * 2),
+            fill=(0, 0, 0, 140),
+            color=(0, 0, 0, 0),
+            parent=self.overlay_layer,
+        )
+        for i, line in enumerate(lines):
+            dpg.draw_text(
+                (x0 + pad_x, y0 + pad_y + i * line_h),
+                line,
+                color=(255, 255, 255, 230),
+                size=font_size,
+                parent=self.overlay_layer,
+            )
+
+    def _get_scale_bar_width_um(self):
+        if self.scale_bar_auto_width:
+            calibration = self._get_calibration_mm_per_pixel()
+            if calibration is None or calibration <= 0.0:
+                return self.scale_bar_width_um
+            um_per_pixel = calibration * 1000.0
+            view_w, _ = self._get_view_size()
+            canvas_w, _ = self._get_canvas_size()
+            if canvas_w <= 0 or view_w <= 0:
+                return self.scale_bar_width_um
+            target_frac = 0.2
+            ideal_um = um_per_pixel * view_w * target_frac
+            magnitudes = [0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5,
+                          1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000]
+            best = min(magnitudes, key=lambda m: abs(m - ideal_um))
+            return float(best)
+        return self.scale_bar_width_um
+
+    def _redraw_scale_bar(self):
+        if not self.scale_bar_enabled:
+            return
+        calibration = self._get_calibration_mm_per_pixel()
+        if calibration is None or calibration <= 0.0:
+            return
+        um_per_pixel = calibration * 1000.0
+        scale_bar_width_um = self._get_scale_bar_width_um()
+        scale_bar_width_pixels = scale_bar_width_um / um_per_pixel
+        if scale_bar_width_pixels <= 0.0:
+            return
+        canvas_width, canvas_height = self._get_canvas_size()
+        view_width_pixels, _ = self._get_view_size()
+        display_width_pixels = (scale_bar_width_pixels / max(1e-6, float(view_width_pixels))) * float(canvas_width)
+        if display_width_pixels <= 8.0:
+            return
+        size_scale = max(0.1, float(self.scale_bar_size))
+        tick_height = 8.0 * size_scale
+        line_thickness = max(1.0, 3.0 * size_scale)
+        label_size = max(10, int(round(16 * size_scale)))
+        label_gap_y = 6.0 * size_scale
+        bg_pad_x = 12.0 * size_scale
+        bg_pad_y = 8.0 * size_scale
+        x_offset = float(self.scale_bar_x_offset)
+        y_offset = float(self.scale_bar_y_offset)
+        if "Left" in self.scale_bar_position:
+            x_start = x_offset
+            x_end = x_start + display_width_pixels
+        else:
+            x_end = float(canvas_width) - x_offset
+            x_start = x_end - display_width_pixels
+        if "Bottom" in self.scale_bar_position:
+            y_pos = float(canvas_height) - y_offset - tick_height - bg_pad_y
+        else:
+            y_pos = y_offset + label_size + label_gap_y + bg_pad_y
+        if x_end <= x_start or x_start < 0.0 or x_end > float(canvas_width):
+            return
+        label_y = y_pos - label_size - label_gap_y
+        if label_y < 0.0 or (y_pos + tick_height + bg_pad_y) > float(canvas_height):
+            return
+        if scale_bar_width_um >= 1000.0:
+            label = f"{scale_bar_width_um / 1000.0:.3g} mm"
+        else:
+            label = f"{scale_bar_width_um:.3g} um"
+        estimated_text_width = len(label) * label_size * 0.54
+        bar_center = (x_start + x_end) / 2.0
+        label_x = bar_center - estimated_text_width / 2.0
+        dpg.draw_rectangle(
+            (x_start - bg_pad_x, label_y - bg_pad_y),
+            (x_end + bg_pad_x, y_pos + tick_height + bg_pad_y),
+            fill=(0, 0, 0, 140),
+            color=(0, 0, 0, 0),
+            parent=self.overlay_layer,
+        )
+        dpg.draw_text(
+            (label_x, label_y), label,
+            color=(255, 255, 255, 255), size=label_size,
+            parent=self.overlay_layer,
+        )
+        dpg.draw_line((x_start, y_pos), (x_end, y_pos), color=(255, 255, 255, 255), thickness=line_thickness, parent=self.overlay_layer)
+        dpg.draw_line((x_start, y_pos - tick_height), (x_start, y_pos + tick_height), color=(255, 255, 255, 255), thickness=max(1.0, 2.0 * size_scale), parent=self.overlay_layer)
+        dpg.draw_line((x_end, y_pos - tick_height), (x_end, y_pos + tick_height), color=(255, 255, 255, 255), thickness=max(1.0, 2.0 * size_scale), parent=self.overlay_layer)
+
+        obj_name = ""
+        if self._loaded_payload is not None:
+            obj_name = str(self._loaded_payload.get("saved_settings", {}).get("objective_name", "") or "").strip()
+        if obj_name:
+            obj_size = max(8, int(round(11 * size_scale)))
+            obj_est_w = len(obj_name) * obj_size * 0.54
+            obj_x = (x_start + x_end) / 2.0 - obj_est_w / 2.0
+            obj_y = y_pos + tick_height + 4.0 * size_scale
+            dpg.draw_text((obj_x, obj_y), obj_name, color=(200, 200, 200, 200), size=obj_size, parent=self.overlay_layer)
+
+    def _format_colorbar_value(self, value):
+        abs_val = abs(value)
+        if abs_val == 0.0:
+            return "0"
+        elif abs_val >= 10000:
+            return f"{value:.0f}"
+        elif abs_val >= 1000:
+            return f"{value:.1f}"
+        elif abs_val >= 10:
+            return f"{value:.2f}"
+        else:
+            return f"{value:.3f}"
+
+    def _redraw_colorbar(self):
+        if self.colorbar_layer is None or not dpg.does_item_exist(self.colorbar_layer):
+            return
+        dpg.delete_item(self.colorbar_layer, children_only=True)
+        if not self.colorbar_enabled:
+            return
+        canvas_w, canvas_h = self._get_canvas_size()
+        bar_w = 18
+        margin_r = 10
+        num_segments = 64
+        label_gap = 5
+        num_ticks = 5
+        bg_pad = 5
+        bar_h = max(40, min(220, canvas_h - 50))
+        bar_y1 = 20
+        bar_y2 = bar_y1 + bar_h
+        label_w = 58
+        bar_x2 = canvas_w - margin_r - label_w - label_gap
+        bar_x1 = bar_x2 - bar_w
+        if bar_x1 < 0:
+            return
+        is_double_sided = self._is_signed_zero_reference_mode_active()
+        lut = self._get_colormap_lut(double_sided=is_double_sided, samples=num_segments)
+        dpg.draw_rectangle(
+            (bar_x1 - bg_pad, bar_y1 - bg_pad - 8),
+            (bar_x2 + label_gap + label_w + bg_pad, bar_y2 + bg_pad + 8),
+            fill=(15, 15, 15, 160), color=(0, 0, 0, 0),
+            parent=self.colorbar_layer,
+        )
+        seg_h = bar_h / num_segments
+        for i in range(num_segments):
+            lut_idx = num_segments - 1 - i
+            r, g, b = lut[lut_idx]
+            fill_color = (int(r * 255), int(g * 255), int(b * 255), 255)
+            dpg.draw_rectangle(
+                (bar_x1, bar_y1 + i * seg_h),
+                (bar_x2, bar_y1 + (i + 1) * seg_h),
+                fill=fill_color, color=(0, 0, 0, 0),
+                parent=self.colorbar_layer,
+            )
+        dpg.draw_rectangle(
+            (bar_x1, bar_y1), (bar_x2, bar_y2),
+            color=(180, 180, 180, 180), fill=(0, 0, 0, 0), thickness=1,
+            parent=self.colorbar_layer,
+        )
+        scale_min = self._last_frame_display_min
+        scale_max = self._last_frame_display_max
+        for i in range(num_ticks):
+            t = i / (num_ticks - 1)
+            tick_y = bar_y1 + t * bar_h
+            value = scale_max + t * (scale_min - scale_max)
+            dpg.draw_line(
+                (bar_x2, tick_y), (bar_x2 + label_gap, tick_y),
+                color=(180, 180, 180, 200), thickness=1,
+                parent=self.colorbar_layer,
+            )
+            dpg.draw_text(
+                (bar_x2 + label_gap + 2, tick_y - 6),
+                self._format_colorbar_value(value),
+                color=(230, 230, 230, 220), size=12,
+                parent=self.colorbar_layer,
+            )
+
+    def _on_info_overlay_changed(self, sender=None, app_data=None, user_data=None):
+        if self.info_overlay_checkbox_frame_id is not None and dpg.does_item_exist(self.info_overlay_checkbox_frame_id):
+            self.info_show_frame_index = bool(dpg.get_value(self.info_overlay_checkbox_frame_id))
+        if self.info_overlay_checkbox_time_id is not None and dpg.does_item_exist(self.info_overlay_checkbox_time_id):
+            self.info_show_time = bool(dpg.get_value(self.info_overlay_checkbox_time_id))
+        if self.info_overlay_checkbox_voltage_id is not None and dpg.does_item_exist(self.info_overlay_checkbox_voltage_id):
+            self.info_show_voltage = bool(dpg.get_value(self.info_overlay_checkbox_voltage_id))
+        if self.info_overlay_font_size_id is not None and dpg.does_item_exist(self.info_overlay_font_size_id):
+            self.info_font_size = max(8, int(dpg.get_value(self.info_overlay_font_size_id)))
+        if self.info_overlay_position_combo_id is not None and dpg.does_item_exist(self.info_overlay_position_combo_id):
+            self.info_position = str(dpg.get_value(self.info_overlay_position_combo_id))
+        if self.info_overlay_voltage_channel_combo_id is not None and dpg.does_item_exist(self.info_overlay_voltage_channel_combo_id):
+            self.info_voltage_channel = str(dpg.get_value(self.info_overlay_voltage_channel_combo_id))
+        self._mark_image_dirty()
+
+    def _on_colorbar_enabled_changed(self, sender=None, app_data=None, user_data=None):
+        self.colorbar_enabled = bool(app_data)
+        self._redraw_colorbar()
+
+    def _on_scale_bar_enabled_changed(self, sender=None, app_data=None, user_data=None):
+        self.scale_bar_enabled = bool(app_data)
+        self._redraw_overlay()
+
+    def _on_scale_bar_auto_width_changed(self, sender=None, app_data=None, user_data=None):
+        self.scale_bar_auto_width = bool(app_data)
+        self._redraw_overlay()
+
+    def _on_scale_bar_width_changed(self, sender=None, app_data=None, user_data=None):
+        if self.scale_bar_width_input_id is not None and dpg.does_item_exist(self.scale_bar_width_input_id):
+            self.scale_bar_width_um = max(0.001, float(dpg.get_value(self.scale_bar_width_input_id)))
+        self._redraw_overlay()
+
+    def _on_scale_bar_size_changed(self, sender=None, app_data=None, user_data=None):
+        if self.scale_bar_size_input_id is not None and dpg.does_item_exist(self.scale_bar_size_input_id):
+            self.scale_bar_size = max(0.1, float(dpg.get_value(self.scale_bar_size_input_id)))
+        self._redraw_overlay()
+
+    def _on_scale_bar_position_changed(self, sender=None, app_data=None, user_data=None):
+        if self.scale_bar_position_combo_id is not None and dpg.does_item_exist(self.scale_bar_position_combo_id):
+            self.scale_bar_position = str(dpg.get_value(self.scale_bar_position_combo_id))
+        self._redraw_overlay()
+
+    def _on_scale_bar_x_offset_changed(self, sender=None, app_data=None, user_data=None):
+        if self.scale_bar_x_offset_input_id is not None and dpg.does_item_exist(self.scale_bar_x_offset_input_id):
+            self.scale_bar_x_offset = int(dpg.get_value(self.scale_bar_x_offset_input_id))
+        self._redraw_overlay()
+
+    def _on_scale_bar_y_offset_changed(self, sender=None, app_data=None, user_data=None):
+        if self.scale_bar_y_offset_input_id is not None and dpg.does_item_exist(self.scale_bar_y_offset_input_id):
+            self.scale_bar_y_offset = int(dpg.get_value(self.scale_bar_y_offset_input_id))
+        self._redraw_overlay()
 
     def _on_left_mouse_down(self, sender, app_data):
         self._on_mouse_down(dpg.mvMouseButton_Left)
@@ -2191,6 +2710,8 @@ class AcquisitionPreviewWindow:
         self._set_current_frame_index(self.current_frame_index + max(1, int(round(self.playback_fps))))
 
     def _rebuild_scope_plots(self):
+        if not self._settings_ui_alive():
+            return
         dpg.delete_item(self.scope_container_id, children_only=True)
         self.scope_plot_items = {}
 
@@ -2265,6 +2786,8 @@ class AcquisitionPreviewWindow:
     def _update_scope_marker(self):
         if self._loaded_payload is None or not self.scope_plot_items:
             return
+        if not self._settings_ui_alive():
+            return
 
         timestamps = np.asarray(self._loaded_payload["relative_timestamps"], dtype=np.float64)
         if timestamps.size <= 0:
@@ -2280,6 +2803,8 @@ class AcquisitionPreviewWindow:
             dpg.set_axis_limits(items["y_axis_id"], -self.scope_y_half_range_volts, self.scope_y_half_range_volts)
 
     def _rebuild_settings_table(self):
+        if not self._settings_ui_alive():
+            return
         dpg.delete_item(self.settings_container_id, children_only=True)
         if self._loaded_payload is None:
             dpg.add_text("No acquisition settings loaded.", parent=self.settings_container_id, wrap=360)
@@ -2300,8 +2825,8 @@ class AcquisitionPreviewWindow:
             borders_outerH=False,
             policy=dpg.mvTable_SizingStretchProp,
         ):
-            dpg.add_table_column(init_width_or_weight=0.46)
-            dpg.add_table_column(init_width_or_weight=0.54)
+            dpg.add_table_column(init_width_or_weight=0.80)
+            dpg.add_table_column(init_width_or_weight=0.20)
             for setting_name, value in sorted(saved_settings.items()):
                 with dpg.table_row():
                     dpg.add_text(self._format_setting_label(setting_name))
@@ -2319,10 +2844,14 @@ class AcquisitionPreviewWindow:
             return
 
         frame = self._get_display_frame()
+        min_value, max_value = self._compute_display_bounds(frame)
+        self._last_frame_display_min = min_value
+        self._last_frame_display_max = max_value
         rgba = self._frame_to_rgba(frame)
         dpg.set_value(self.texture_id, rgba)
         self._current_rgba = rgba
         self.image_dirty = False
+        self._redraw_colorbar()
 
     def SaveState(self):
         save_state_file(
@@ -2342,6 +2871,20 @@ class AcquisitionPreviewWindow:
                 "view_center_y": self.view_center_y,
                 "colormap_per_mode": dict(self._colormap_per_mode),
                 "crop_percent": float(self.crop_percent),
+                "info_show_frame_index": self.info_show_frame_index,
+                "info_show_time": self.info_show_time,
+                "info_show_voltage": self.info_show_voltage,
+                "info_font_size": self.info_font_size,
+                "info_position": self.info_position,
+                "info_voltage_channel": self.info_voltage_channel,
+                "colorbar_enabled": self.colorbar_enabled,
+                "scale_bar_enabled": self.scale_bar_enabled,
+                "scale_bar_auto_width": self.scale_bar_auto_width,
+                "scale_bar_width_um": self.scale_bar_width_um,
+                "scale_bar_size": self.scale_bar_size,
+                "scale_bar_position": self.scale_bar_position,
+                "scale_bar_x_offset": self.scale_bar_x_offset,
+                "scale_bar_y_offset": self.scale_bar_y_offset,
             },
         )
         if self.rois_window is not None and hasattr(self.rois_window, "SaveState"):
@@ -2394,10 +2937,268 @@ class AcquisitionPreviewWindow:
         if self.crop_slider_id is not None and dpg.does_item_exist(self.crop_slider_id):
             dpg.set_value(self.crop_slider_id, self.crop_percent)
 
+        self.info_show_frame_index = bool(state.get("info_show_frame_index", self.info_show_frame_index))
+        self.info_show_time = bool(state.get("info_show_time", self.info_show_time))
+        self.info_show_voltage = bool(state.get("info_show_voltage", self.info_show_voltage))
+        self.info_font_size = max(8, int(state.get("info_font_size", self.info_font_size)))
+        self.info_position = str(state.get("info_position", self.info_position))
+        self.info_voltage_channel = str(state.get("info_voltage_channel", self.info_voltage_channel))
+        self.colorbar_enabled = bool(state.get("colorbar_enabled", self.colorbar_enabled))
+        self.scale_bar_enabled = bool(state.get("scale_bar_enabled", self.scale_bar_enabled))
+        self.scale_bar_auto_width = bool(state.get("scale_bar_auto_width", self.scale_bar_auto_width))
+        self.scale_bar_width_um = max(0.001, float(state.get("scale_bar_width_um", self.scale_bar_width_um)))
+        self.scale_bar_size = max(0.1, float(state.get("scale_bar_size", self.scale_bar_size)))
+        self.scale_bar_position = str(state.get("scale_bar_position", self.scale_bar_position))
+        self.scale_bar_x_offset = int(state.get("scale_bar_x_offset", self.scale_bar_x_offset))
+        self.scale_bar_y_offset = int(state.get("scale_bar_y_offset", self.scale_bar_y_offset))
+
+        if self.info_overlay_checkbox_frame_id is not None and dpg.does_item_exist(self.info_overlay_checkbox_frame_id):
+            dpg.set_value(self.info_overlay_checkbox_frame_id, self.info_show_frame_index)
+        if self.info_overlay_checkbox_time_id is not None and dpg.does_item_exist(self.info_overlay_checkbox_time_id):
+            dpg.set_value(self.info_overlay_checkbox_time_id, self.info_show_time)
+        if self.info_overlay_checkbox_voltage_id is not None and dpg.does_item_exist(self.info_overlay_checkbox_voltage_id):
+            dpg.set_value(self.info_overlay_checkbox_voltage_id, self.info_show_voltage)
+        if self.info_overlay_font_size_id is not None and dpg.does_item_exist(self.info_overlay_font_size_id):
+            dpg.set_value(self.info_overlay_font_size_id, self.info_font_size)
+        if self.info_overlay_position_combo_id is not None and dpg.does_item_exist(self.info_overlay_position_combo_id):
+            dpg.set_value(self.info_overlay_position_combo_id, self.info_position)
+        if self.info_overlay_voltage_channel_combo_id is not None and dpg.does_item_exist(self.info_overlay_voltage_channel_combo_id):
+            dpg.set_value(self.info_overlay_voltage_channel_combo_id, self.info_voltage_channel)
+        if self.colorbar_checkbox_id is not None and dpg.does_item_exist(self.colorbar_checkbox_id):
+            dpg.set_value(self.colorbar_checkbox_id, self.colorbar_enabled)
+        if self.scale_bar_enabled_checkbox_id is not None and dpg.does_item_exist(self.scale_bar_enabled_checkbox_id):
+            dpg.set_value(self.scale_bar_enabled_checkbox_id, self.scale_bar_enabled)
+        if self.scale_bar_auto_width_checkbox_id is not None and dpg.does_item_exist(self.scale_bar_auto_width_checkbox_id):
+            dpg.set_value(self.scale_bar_auto_width_checkbox_id, self.scale_bar_auto_width)
+        if self.scale_bar_width_input_id is not None and dpg.does_item_exist(self.scale_bar_width_input_id):
+            dpg.set_value(self.scale_bar_width_input_id, self.scale_bar_width_um)
+        if self.scale_bar_size_input_id is not None and dpg.does_item_exist(self.scale_bar_size_input_id):
+            dpg.set_value(self.scale_bar_size_input_id, self.scale_bar_size)
+        if self.scale_bar_position_combo_id is not None and dpg.does_item_exist(self.scale_bar_position_combo_id):
+            dpg.set_value(self.scale_bar_position_combo_id, self.scale_bar_position)
+        if self.scale_bar_x_offset_input_id is not None and dpg.does_item_exist(self.scale_bar_x_offset_input_id):
+            dpg.set_value(self.scale_bar_x_offset_input_id, self.scale_bar_x_offset)
+        if self.scale_bar_y_offset_input_id is not None and dpg.does_item_exist(self.scale_bar_y_offset_input_id):
+            dpg.set_value(self.scale_bar_y_offset_input_id, self.scale_bar_y_offset)
+
         self._update_play_button()
         self._update_repeat_button()
         self._update_settings_controls_state()
         self._sync_scale_inputs_from_values()
+
+    # ------------------------------------------------------------------
+    # Export
+    # ------------------------------------------------------------------
+
+    def _show_export_frame_dialog(self):
+        if self._loaded_payload is None:
+            return
+        if self._export_frame_dialog_id is not None and dpg.does_item_exist(self._export_frame_dialog_id):
+            dpg.show_item(self._export_frame_dialog_id)
+
+    def _show_export_video_dialog(self):
+        if self._loaded_payload is None:
+            return
+        if self._export_video_dialog_id is not None and dpg.does_item_exist(self._export_video_dialog_id):
+            dpg.show_item(self._export_video_dialog_id)
+
+    def _on_export_frame_selected(self, sender, app_data):
+        file_path = str(app_data.get("file_path_name") or "").strip()
+        if not file_path:
+            return
+        if os.path.splitext(file_path.lower())[1] not in (".png", ".jpg", ".jpeg"):
+            file_path = f"{file_path}.png"
+        threading.Thread(target=self._write_frame_image, args=(file_path,), daemon=True).start()
+
+    def _on_export_video_selected(self, sender, app_data):
+        file_path = str(app_data.get("file_path_name") or "").strip()
+        if not file_path:
+            return
+        if os.path.splitext(file_path.lower())[1] != ".mp4":
+            file_path = f"{file_path}.mp4"
+        threading.Thread(target=self._write_video_mp4, args=(file_path,), daemon=True).start()
+
+    def _compose_frame_rgb(self, frame):
+        """Return RGB uint8 ndarray for frame with info/scalebar/colorbar composited."""
+        from PIL import Image, ImageDraw, ImageFont
+        frame_arr = np.asarray(frame)
+        h, w = frame_arr.shape[0], frame_arr.shape[1]
+        rgba_flat = self._frame_to_rgba(frame)
+        rgba = rgba_flat.reshape(h, w, 4)
+        rgb_arr = (rgba[:, :, :3] * 255).clip(0, 255).astype(np.uint8)
+        if not (self.info_show_frame_index or self.info_show_time or self.info_show_voltage
+                or self.scale_bar_enabled or self.colorbar_enabled):
+            return rgb_arr
+        img = Image.fromarray(rgb_arr, mode="RGB").convert("RGBA")
+        overlay = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(overlay)
+
+        def _pil_font(size):
+            try:
+                return ImageFont.load_default(size=size)
+            except TypeError:
+                return ImageFont.load_default()
+
+        # Info overlay
+        if (self.info_show_frame_index or self.info_show_time or self.info_show_voltage) and self._loaded_payload is not None:
+            font_size = max(8, int(self.info_font_size))
+            font = _pil_font(font_size)
+            idx = self.current_frame_index
+            lines = []
+            if self.info_show_frame_index:
+                fc = int(self._loaded_payload.get("frame_count", 0))
+                lines.append(f"Frame: {idx + 1} / {fc}")
+            if self.info_show_time:
+                ts = self._loaded_payload.get("relative_timestamps")
+                if ts is not None and idx < len(ts):
+                    lines.append(f"Time: {float(ts[idx]):.3f} s")
+                else:
+                    lines.append("Time: -")
+            if self.info_show_voltage:
+                ch = self.info_voltage_channel
+                sc = self._loaded_payload.get("scope_plot_channels", {})
+                ch_data = sc.get(ch)
+                if ch_data is not None:
+                    yv = ch_data.get("y_values")
+                    if yv is not None and idx < len(yv):
+                        lines.append(f"{ch}: {float(yv[idx]):.4f} V")
+                    else:
+                        lines.append(f"{ch}: -")
+                else:
+                    lines.append("Voltage: -")
+            if lines:
+                line_h = font_size + 4
+                pad_x, pad_y, margin = 8, 6, 10
+                total_th = len(lines) * line_h
+                est_w = max(len(l) for l in lines) * font_size * 0.54
+                x0 = margin if "Left" in self.info_position else w - margin - est_w - pad_x * 2
+                y0 = margin if "Top" in self.info_position else h - margin - total_th - pad_y * 2
+                draw.rectangle([(x0, y0), (x0 + est_w + pad_x * 2, y0 + total_th + pad_y * 2)], fill=(0, 0, 0, 140))
+                for i, line in enumerate(lines):
+                    draw.text((x0 + pad_x, y0 + pad_y + i * line_h), line, fill=(255, 255, 255, 230), font=font)
+
+        # Scale bar
+        if self.scale_bar_enabled:
+            calibration = self._get_calibration_mm_per_pixel()
+            if calibration is not None and calibration > 0.0:
+                um_per_pixel = calibration * 1000.0
+                sbw_um = self._get_scale_bar_width_um()
+                sbw_px = sbw_um / um_per_pixel
+                if sbw_px > 8.0:
+                    ss = max(0.1, float(self.scale_bar_size))
+                    tick_h_px = 8.0 * ss
+                    lbl_size = max(10, int(round(16 * ss)))
+                    lbl_gap = 6.0 * ss
+                    bg_px, bg_py = 12.0 * ss, 8.0 * ss
+                    xoff, yoff = float(self.scale_bar_x_offset), float(self.scale_bar_y_offset)
+                    if "Left" in self.scale_bar_position:
+                        x_start, x_end = xoff, xoff + sbw_px
+                    else:
+                        x_end, x_start = w - xoff, w - xoff - sbw_px
+                    y_pos = (h - yoff - tick_h_px - bg_py) if "Bottom" in self.scale_bar_position else (yoff + lbl_size + lbl_gap + bg_py)
+                    lbl_y = y_pos - lbl_size - lbl_gap
+                    if 0.0 <= x_start < x_end <= w and lbl_y >= 0.0 and (y_pos + tick_h_px + bg_py) <= h:
+                        sb_font = _pil_font(lbl_size)
+                        lbl = f"{sbw_um / 1000.0:.3g} mm" if sbw_um >= 1000.0 else f"{sbw_um:.3g} um"
+                        draw.rectangle([(x_start - bg_px, lbl_y - bg_py), (x_end + bg_px, y_pos + tick_h_px + bg_py)], fill=(0, 0, 0, 140))
+                        draw.text((x_start, lbl_y), lbl, fill=(255, 255, 255, 255), font=sb_font)
+                        t = max(1, int(round(3.0 * ss)))
+                        draw.line([(x_start, y_pos), (x_end, y_pos)], fill=(255, 255, 255, 255), width=t)
+                        t2 = max(1, int(round(2.0 * ss)))
+                        draw.line([(x_start, y_pos - tick_h_px), (x_start, y_pos + tick_h_px)], fill=(255, 255, 255, 255), width=t2)
+                        draw.line([(x_end, y_pos - tick_h_px), (x_end, y_pos + tick_h_px)], fill=(255, 255, 255, 255), width=t2)
+                        obj_name = str((self._loaded_payload or {}).get("saved_settings", {}).get("objective_name", "") or "").strip()
+                        if obj_name:
+                            obj_size = max(8, int(round(11 * ss)))
+                            obj_font = _pil_font(obj_size)
+                            obj_est_w = len(obj_name) * obj_size * 0.54
+                            obj_x = (x_start + x_end) / 2.0 - obj_est_w / 2.0
+                            obj_y = y_pos + tick_h_px + 4.0 * ss
+                            draw.text((obj_x, obj_y), obj_name, fill=(200, 200, 200, 200), font=obj_font)
+
+        # Colorbar
+        if self.colorbar_enabled:
+            n_seg = 64
+            bar_w_px = 18
+            margin_r = 10
+            label_gap = 5
+            n_ticks = 5
+            bg_pad = 5
+            bar_h = max(40, min(220, h - 50))
+            bar_y1 = 20
+            bar_y2 = bar_y1 + bar_h
+            label_w = 58
+            bar_x2 = w - margin_r - label_w - label_gap
+            bar_x1 = bar_x2 - bar_w_px
+            if bar_x1 >= 0:
+                is_ds = self._is_signed_zero_reference_mode_active()
+                lut = self._get_colormap_lut(double_sided=is_ds, samples=n_seg)
+                draw.rectangle([(bar_x1 - bg_pad, bar_y1 - bg_pad - 8), (bar_x2 + label_gap + label_w + bg_pad, bar_y2 + bg_pad + 8)], fill=(15, 15, 15, 160))
+                seg_h = bar_h / n_seg
+                for i in range(n_seg):
+                    r, g, b = lut[n_seg - 1 - i]
+                    draw.rectangle([(bar_x1, int(bar_y1 + i * seg_h)), (bar_x2, int(bar_y1 + (i + 1) * seg_h))], fill=(int(r * 255), int(g * 255), int(b * 255), 255))
+                draw.rectangle([(bar_x1, bar_y1), (bar_x2, bar_y2)], outline=(180, 180, 180, 180))
+                cb_font = _pil_font(12)
+                s_min, s_max = self._last_frame_display_min, self._last_frame_display_max
+                for i in range(n_ticks):
+                    t = i / (n_ticks - 1)
+                    tick_y = bar_y1 + t * bar_h
+                    value = s_max + t * (s_min - s_max)
+                    draw.line([(bar_x2, tick_y), (bar_x2 + label_gap, tick_y)], fill=(180, 180, 180, 200))
+                    draw.text((bar_x2 + label_gap + 2, tick_y - 6), self._format_colorbar_value(value), fill=(230, 230, 230, 220), font=cb_font)
+
+        return np.asarray(Image.alpha_composite(img, overlay).convert("RGB"))
+
+    def _write_frame_image(self, file_path):
+        try:
+            from PIL import Image
+            self._set_export_status("Exporting frame...")
+            frame = self._get_display_frame()
+            if frame is None:
+                self._set_export_status("No frame to export.")
+                return
+            rgb = self._compose_frame_rgb(frame)
+            Image.fromarray(rgb, mode="RGB").save(file_path)
+            self._set_export_status(f"Saved {os.path.basename(file_path)}")
+        except Exception as exc:
+            self._set_export_status(f"Error: {exc}")
+
+    def _write_video_mp4(self, file_path):
+        try:
+            import imageio
+            payload = self.get_loaded_payload()
+            if payload is None:
+                self._set_export_status("No video loaded.")
+                return
+            total = self._get_frame_count()
+            timestamps = np.asarray(payload.get("relative_timestamps", []), dtype=np.float64)
+            if len(timestamps) >= 2:
+                elapsed = float(timestamps[-1] - timestamps[0])
+                fps = max(1.0, (total - 1) / elapsed) if elapsed > 0 else float(self.playback_fps)
+            else:
+                fps = max(1.0, float(self.playback_fps))
+            self._set_export_status(f"Exporting 0/{total} frames...")
+            saved_index = self.current_frame_index
+            with imageio.get_writer(file_path, format="ffmpeg", fps=fps, codec="libx264") as writer:
+                for i in range(total):
+                    if self._is_closed:
+                        break
+                    self.current_frame_index = i
+                    frame = self._get_display_frame()
+                    if frame is None:
+                        continue
+                    writer.append_data(self._compose_frame_rgb(frame))
+                    self._set_export_status(f"Exporting {i + 1}/{total} frames...")
+            self.current_frame_index = saved_index
+            if not self._is_closed:
+                self._set_export_status(f"Saved {os.path.basename(file_path)}")
+        except Exception as exc:
+            self._set_export_status(f"Error: {exc}")
+
+    def _set_export_status(self, message):
+        if self._export_status_text_id is not None and dpg.does_item_exist(self._export_status_text_id):
+            dpg.set_value(self._export_status_text_id, message)
 
     def close(self):
         if self._closing:
@@ -2431,6 +3232,9 @@ class AcquisitionPreviewWindow:
 
         if self.texture_id is not None and dpg.does_item_exist(self.texture_id):
             dpg.delete_item(self.texture_id)
+        for dialog_id in (self._export_frame_dialog_id, self._export_video_dialog_id):
+            if dialog_id is not None and dpg.does_item_exist(dialog_id):
+                dpg.delete_item(dialog_id)
         if self._embedded:
             if self.right_panel_id is not None and dpg.does_item_exist(self.right_panel_id):
                 dpg.delete_item(self.right_panel_id, children_only=True)

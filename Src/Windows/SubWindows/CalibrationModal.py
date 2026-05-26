@@ -26,6 +26,11 @@ class CalibrationModal:
         self.point_draw_radius = 6.0
         self.preview_aspect_ratio = 1.0
         self._layout_dirty = True
+        self._objectives = []
+        self._current_objective_name = ""
+        self.add_new_checkbox_id = None
+        self.new_name_input_id = None
+        self.existing_combo_id = None
 
         with dpg.window(
             label="Calibration",
@@ -65,6 +70,28 @@ class CalibrationModal:
                     dpg.add_text("Drag points to refine them.")
                     dpg.add_spacer(height=6)
                     dpg.add_text("Mouse wheel zooms. Middle-drag or Ctrl+left-drag pans.")
+                    dpg.add_separator()
+
+                    dpg.add_text("Objective", color=[180, 180, 180])
+                    self.add_new_checkbox_id = dpg.add_checkbox(
+                        label="Add new objective",
+                        default_value=False,
+                        callback=self._on_add_new_changed,
+                    )
+                    self.new_name_input_id = dpg.add_input_text(
+                        label="Name",
+                        width=-1,
+                        hint="e.g. 40x, 100x oil",
+                        default_value="",
+                        show=False,
+                    )
+                    self.existing_combo_id = dpg.add_combo(
+                        label="Update",
+                        items=[],
+                        default_value="",
+                        width=-1,
+                        show=False,
+                    )
                     dpg.add_separator()
 
                     self.real_distance_input_id = dpg.add_input_float(
@@ -128,7 +155,8 @@ class CalibrationModal:
     def is_visible(self):
         return dpg.does_item_exist(self.window_id) and dpg.is_item_shown(self.window_id)
 
-    def open(self, *, rgba, image_width, image_height, preview_aspect_ratio=None):
+    def open(self, *, rgba, image_width, image_height, preview_aspect_ratio=None,
+             objectives=None, current_objective_name=""):
         self._ensure_texture_shape(image_height, image_width)
         self.preview_aspect_ratio = (
             float(preview_aspect_ratio)
@@ -139,8 +167,19 @@ class CalibrationModal:
         self.points = []
         self.hovered_point_index = None
         self.interaction = None
+        self._objectives = list(objectives or [])
+        self._current_objective_name = str(current_objective_name or "")
         self._reset_zoom(redraw=False)
         self._layout_dirty = True
+
+        # Reset objective section
+        dpg.set_value(self.add_new_checkbox_id, False)
+        dpg.set_value(self.new_name_input_id, "")
+        dpg.configure_item(self.existing_combo_id, items=self._objectives)
+        dpg.set_value(self.existing_combo_id, self._current_objective_name if self._current_objective_name in self._objectives else (self._objectives[0] if self._objectives else ""))
+        dpg.hide_item(self.new_name_input_id)
+        dpg.show_item(self.existing_combo_id) if self._objectives else dpg.hide_item(self.existing_combo_id)
+
         self._update_measurement_readout()
         self._redraw_overlay()
         dpg.show_item(self.window_id)
@@ -502,10 +541,24 @@ class CalibrationModal:
             return
         self._set_zoom_at_point(app_data, self._get_mouse_local())
 
+    def _on_add_new_changed(self, sender=None, app_data=None, user_data=None):
+        is_new = bool(dpg.get_value(self.add_new_checkbox_id))
+        dpg.show_item(self.new_name_input_id) if is_new else dpg.hide_item(self.new_name_input_id)
+        if self._objectives:
+            dpg.hide_item(self.existing_combo_id) if is_new else dpg.show_item(self.existing_combo_id)
+
     def _on_ok_pressed(self, sender=None, app_data=None, user_data=None):
         mm_per_pixel = self._get_mm_per_pixel()
         if mm_per_pixel is None:
             return
+
+        is_new = bool(dpg.get_value(self.add_new_checkbox_id))
+        if is_new:
+            objective_name = str(dpg.get_value(self.new_name_input_id) or "").strip()
+        else:
+            objective_name = str(dpg.get_value(self.existing_combo_id) or "").strip()
+            if not objective_name:
+                objective_name = self._current_objective_name
 
         payload = {
             "mm_per_pixel": float(mm_per_pixel),
@@ -516,6 +569,8 @@ class CalibrationModal:
             "points": [tuple(point) for point in self.points],
             "image_width_px": int(self.image_width),
             "image_height_px": int(self.image_height),
+            "is_new_objective": is_new,
+            "objective_name": objective_name,
         }
         self.close()
         if callable(self.on_accept):

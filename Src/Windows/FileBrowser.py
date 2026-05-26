@@ -64,7 +64,7 @@ class FileBrowser:
 
             dpg.add_separator()
 
-            with dpg.child_window(border=False, autosize_x=True, autosize_y=True):
+            with dpg.child_window(border=False, autosize_x=True, height=-12):
                 self.list_container_id = dpg.last_item()
 
         dpg.pop_container_stack()

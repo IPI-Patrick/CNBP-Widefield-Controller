@@ -161,6 +161,9 @@ class CameraSystem:
             self.calibration_image_width_mm = None
             self.calibration_image_height_mm = None
             self._calibration_signature = None
+            self.objectives = {}           # name → mm_per_pixel
+            self.current_objective_name = ""
+            self.objective_combo_id = None
             self.calibration_modal = CalibrationModal(
                 tag_prefix="CameraCalibration",
                 on_accept=self._on_calibration_confirmed,
@@ -330,6 +333,13 @@ class CameraSystem:
                 dpg.add_separator()
                 with dpg.tree_node(label="Calibration", default_open=True, span_full_width=True) as calibration_node_id:
                     self.section_node_ids["calibration"] = calibration_node_id
+                    self.objective_combo_id = dpg.add_combo(
+                        label="Objective",
+                        items=[],
+                        default_value="",
+                        width=-110,
+                        callback=self._on_objective_selected,
+                    )
                     self.calibrate_button_id = dpg.add_button(
                         label="Calibrate",
                         width=-1,
@@ -587,6 +597,10 @@ class CameraSystem:
                 modal=True,
             ) as self.save_dialog_id:
                 dpg.add_file_extension(".npz", color=(0, 255, 0, 255))
+                dpg.add_file_extension(".mp4", color=(80, 180, 255, 255))
+                dpg.add_file_extension(".avi", color=(80, 180, 255, 255))
+                dpg.add_file_extension(".png", color=(255, 220, 80, 255))
+                dpg.add_file_extension(".jpg", color=(255, 220, 80, 255))
 
             with dpg.file_dialog(
                 directory_selector=True,
@@ -758,6 +772,7 @@ class CameraSystem:
             self.calibration_image_height_mm = None
             self._calibration_signature = None
             self.camera_feed.set_calibration_mm_per_pixel(None)
+            self.camera_feed.set_objective_name("")
             self._update_calibration_readouts()
             return
 
@@ -773,7 +788,22 @@ class CameraSystem:
         self.calibration_image_height_mm = float(self.camera_feed.image_height) * float(self.calibration_mm_per_pixel)
         self._calibration_signature = signature
         self.camera_feed.set_calibration_mm_per_pixel(self.calibration_mm_per_pixel)
+        self.camera_feed.set_objective_name(self.current_objective_name)
         self._update_calibration_readouts()
+
+    def _sync_objective_combo(self):
+        if self.objective_combo_id is None or not dpg.does_item_exist(self.objective_combo_id):
+            return
+        items = sorted(self.objectives.keys())
+        dpg.configure_item(self.objective_combo_id, items=items)
+        dpg.set_value(self.objective_combo_id, self.current_objective_name if self.current_objective_name in items else "")
+
+    def _on_objective_selected(self, sender=None, app_data=None, user_data=None):
+        selected = str(dpg.get_value(self.objective_combo_id) or "").strip()
+        if selected and selected in self.objectives:
+            self.current_objective_name = selected
+            self.calibration_mm_per_pixel = self.objectives[selected]
+            self._sync_calibration_dimensions_from_feed(force=True)
 
     def _on_calibrate_pressed(self, sender=None, app_data=None, user_data=None):
         snapshot = self.camera_feed.get_display_snapshot()
@@ -786,10 +816,25 @@ class CameraSystem:
             image_width=snapshot["image_width"],
             image_height=snapshot["image_height"],
             preview_aspect_ratio=snapshot.get("preview_aspect_ratio"),
+            objectives=list(sorted(self.objectives.keys())),
+            current_objective_name=self.current_objective_name,
         )
 
     def _on_calibration_confirmed(self, payload):
-        self.calibration_mm_per_pixel = float(payload["mm_per_pixel"])
+        mm_per_pixel = float(payload["mm_per_pixel"])
+        is_new = bool(payload.get("is_new_objective", False))
+        objective_name = str(payload.get("objective_name", "")).strip()
+        if is_new and objective_name:
+            self.objectives[objective_name] = mm_per_pixel
+            self.current_objective_name = objective_name
+        elif objective_name:
+            self.objectives[objective_name] = mm_per_pixel
+            self.current_objective_name = objective_name
+        else:
+            if self.current_objective_name:
+                self.objectives[self.current_objective_name] = mm_per_pixel
+        self.calibration_mm_per_pixel = mm_per_pixel
+        self._sync_objective_combo()
         self._sync_calibration_dimensions_from_feed(force=True)
 
     def _on_acquisition_frame_rate_changed(self, sender=None, app_data=None, user_data=None):
@@ -1541,7 +1586,7 @@ class CameraSystem:
         self._set_save_progress(0.0, f"Saving 0/{total_frames} frames")
 
         try:
-            with zipfile.ZipFile(temp_path, mode="w", compression=zipfile.ZIP_DEFLATED, allowZip64=True) as archive:
+            with zipfile.ZipFile(temp_path, mode="w", compression=zipfile.ZIP_STORED, allowZip64=True) as archive:
                 for key, value in save_arrays.items():
                     if key == frame_key:
                         continue
@@ -1572,6 +1617,43 @@ class CameraSystem:
                 os.remove(temp_path)
             raise
 
+    def _write_mp4_with_progress(self, file_path, save_arrays):
+        import imageio
+        frame_array = save_arrays.get("camera_acquisitions")
+        if frame_array is None or frame_array.ndim < 3:
+            raise ValueError("No camera frames to export as video")
+        total_frames = frame_array.shape[0]
+        timestamps = np.asarray(save_arrays.get("camera_timestamps", []), dtype=np.float64)
+        if len(timestamps) >= 2:
+            elapsed = float(timestamps[-1] - timestamps[0])
+            fps = max(1.0, (total_frames - 1) / elapsed) if elapsed > 0 else 10.0
+        else:
+            fps = max(1.0, float(self.acquisition_frame_rate_hz or 10.0))
+
+        max_val = float(np.max(frame_array)) if frame_array.size > 0 else 1.0
+        self._set_save_progress(0.0, f"Exporting 0/{total_frames} frames")
+        with imageio.get_writer(file_path, format="ffmpeg", fps=fps, codec="libx264") as writer:
+            for i in range(total_frames):
+                frame = frame_array[i]
+                normalized = np.clip(
+                    (frame.astype(np.float32) / max(1e-9, max_val) * 255), 0, 255
+                ).astype(np.uint8)
+                rgb = np.stack([normalized] * 3, axis=-1)
+                writer.append_data(rgb)
+                self._set_save_progress((i + 1) / total_frames, f"Exporting {i+1}/{total_frames} frames")
+
+    def _write_image_file(self, file_path, save_arrays):
+        from PIL import Image
+        frame_array = save_arrays.get("camera_acquisitions")
+        if frame_array is None:
+            raise ValueError("No camera frames to export")
+        frame = frame_array[0] if frame_array.ndim >= 3 else frame_array
+        max_val = float(np.max(frame)) if frame.size > 0 else 1.0
+        normalized = np.clip(
+            (frame.astype(np.float32) / max(1e-9, max_val) * 255), 0, 255
+        ).astype(np.uint8)
+        Image.fromarray(normalized, mode="L").save(file_path)
+
     def _run_save_acquisition(self, file_path, payload):
         save_name = os.path.basename(file_path)
 
@@ -1579,7 +1661,13 @@ class CameraSystem:
             camera = payload["camera"]
             scope = payload["scope"] or {}
             save_arrays = self._build_acquisition_save_arrays(camera, scope, payload)
-            self._write_npz_with_progress(file_path, save_arrays)
+            ext = os.path.splitext(file_path.lower())[1]
+            if ext in (".mp4", ".avi"):
+                self._write_mp4_with_progress(file_path, save_arrays)
+            elif ext in (".png", ".jpg", ".jpeg"):
+                self._write_image_file(file_path, save_arrays)
+            else:
+                self._write_npz_with_progress(file_path, save_arrays)
         except Exception as exc:
             with self._acquisition_lock:
                 self._pending_save_result = {
@@ -1664,6 +1752,7 @@ class CameraSystem:
             "calibration_mm_per_pixel":         float(self.calibration_mm_per_pixel) if self._has_calibration() else 0.0,
             "calibration_image_width_mm":       float(self.calibration_image_width_mm) if self.calibration_image_width_mm is not None else 0.0,
             "calibration_image_height_mm":      float(self.calibration_image_height_mm) if self.calibration_image_height_mm is not None else 0.0,
+            "objective_name":                   str(self.current_objective_name or ""),
             "acquisition_duration_seconds":     float(dpg.get_value(self.acquisition_duration_input_id)),
             "acquisition_frame_rate_hz":        float(dpg.get_value(self.acquisition_frame_rate_input_id)),
             "acquisition_scope_sample_rate_hz": float(dpg.get_value(self.acquisition_scope_rate_input_id)),
@@ -2111,7 +2200,8 @@ class CameraSystem:
         file_path = str(app_data.get("file_path_name") or "").strip()
         if not file_path:
             return
-        if not file_path.lower().endswith(".npz"):
+        known_exts = {".npz", ".mp4", ".avi", ".png", ".jpg", ".jpeg"}
+        if os.path.splitext(file_path.lower())[1] not in known_exts:
             file_path = f"{file_path}.npz"
         self.last_save_directory = self._resolve_save_directory(os.path.dirname(file_path))
 
@@ -2515,6 +2605,8 @@ class CameraSystem:
                 "calibration_mm_per_pixel": float(self.calibration_mm_per_pixel) if self._has_calibration() else 0.0,
                 "calibration_image_width_mm": float(self.calibration_image_width_mm) if self.calibration_image_width_mm is not None else 0.0,
                 "calibration_image_height_mm": float(self.calibration_image_height_mm) if self.calibration_image_height_mm is not None else 0.0,
+                "objectives": {str(k): float(v) for k, v in self.objectives.items()},
+                "current_objective_name": str(self.current_objective_name or ""),
                 "acquisition_duration_seconds": float(dpg.get_value(self.acquisition_duration_input_id)),
                 "acquisition_frame_rate_hz": float(dpg.get_value(self.acquisition_frame_rate_input_id)),
                 "acquisition_scope_sample_rate_hz": float(dpg.get_value(self.acquisition_scope_rate_input_id)),
@@ -2597,15 +2689,27 @@ class CameraSystem:
                 dpg.set_value(self.settings_max_exposure_checkbox_id, bool(state["max_exposure"]))
                 self.max_exposure = bool(state["max_exposure"])
 
+            saved_objectives = state.get("objectives")
+            if isinstance(saved_objectives, dict):
+                self.objectives = {str(k): float(v) for k, v in saved_objectives.items() if float(v) > 0.0}
+            saved_objective_name = str(state.get("current_objective_name", "") or "")
+            if saved_objective_name in self.objectives:
+                self.current_objective_name = saved_objective_name
+
             calibration_mm_per_pixel = float(state.get("calibration_mm_per_pixel", 0.0) or 0.0)
             if calibration_mm_per_pixel > 0.0:
                 self.calibration_mm_per_pixel = calibration_mm_per_pixel
                 self.calibration_image_width_mm = float(state.get("calibration_image_width_mm", 0.0) or 0.0) or None
                 self.calibration_image_height_mm = float(state.get("calibration_image_height_mm", 0.0) or 0.0) or None
+                # If we have a current objective, its mm_per_pixel takes precedence (it was already set above)
+                if self.current_objective_name and self.current_objective_name in self.objectives:
+                    self.calibration_mm_per_pixel = self.objectives[self.current_objective_name]
             else:
                 self.calibration_mm_per_pixel = None
                 self.calibration_image_width_mm = None
                 self.calibration_image_height_mm = None
+
+            self._sync_objective_combo()
 
             self._apply_preview_max_frames(int(state.get("preview_max_frames", self.preview_max_frames)))
 

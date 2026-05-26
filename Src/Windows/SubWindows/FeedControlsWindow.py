@@ -271,6 +271,25 @@ class FeedControlsWindow:
 
         dpg.add_separator()
 
+        with dpg.tree_node(label="Crosshair", default_open=False, span_full_width=True) as crosshair_node_id:
+            self.section_node_ids["crosshair"] = crosshair_node_id
+            self.crosshair_enabled_id = dpg.add_checkbox(
+                label="Enabled",
+                default_value=self.parent.crosshair_enabled,
+                callback=self.parent._on_crosshair_enabled_changed,
+            )
+            self.crosshair_radius_id = dpg.add_slider_float(
+                label="Radius (%)",
+                width=-120,
+                default_value=self.parent.crosshair_radius_percent,
+                min_value=1.0,
+                max_value=100.0,
+                format="%.1f",
+                callback=self.parent._on_crosshair_radius_changed,
+            )
+
+        dpg.add_separator()
+
         with dpg.tree_node(label="Zero Reference", default_open=True, span_full_width=True) as zero_ref_node_id:
             self.section_node_ids["zero_reference"] = zero_ref_node_id
             dpg.add_button(label="Set Zero", width=-1, callback=self.parent._on_set_zero)

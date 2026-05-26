@@ -112,6 +112,7 @@ class CameraFeedWindow:
         self._processing_stop_event = threading.Event()
         self.colorbar_enabled = False
         self.calibration_mm_per_pixel = None
+        self.objective_name = ""
         self.scale_bar_enabled = False
         self.scale_bar_auto_width = True
         self.scale_bar_width_um = 100.0
@@ -123,6 +124,8 @@ class CameraFeedWindow:
         self._colorbar_last_max = None
         self._last_frame_display_min = 0.0
         self._last_frame_display_max = 1.0
+        self.crosshair_enabled = False
+        self.crosshair_radius_percent = 10.0
 
         # Embed into the provided parent container (e.g. "CenterLiveFeedContainer").
         # window_id is kept for backward compatibility with code that references it.
@@ -830,8 +833,8 @@ class CameraFeedWindow:
         if float(ref_norm.std()) < 1e-6:
             return 0.0, 0.0
         shift, _, _ = phase_cross_correlation(
-            ref_norm,
-            frame_f32 / ref_max,
+            ref_norm.astype(np.float64),
+            (frame_f32 / ref_max).astype(np.float64),
             upsample_factor=10,
             normalization="phase",
         )
@@ -947,6 +950,14 @@ class CameraFeedWindow:
     def _on_crop_changed(self, sender, app_data):
         self.crop_percent = float(np.clip(float(app_data), 0.0, 100.0))
         self._refresh_display_image()
+        self._redraw_overlay()
+
+    def _on_crosshair_enabled_changed(self, sender, app_data):
+        self.crosshair_enabled = bool(app_data)
+        self._redraw_overlay()
+
+    def _on_crosshair_radius_changed(self, sender, app_data):
+        self.crosshair_radius_percent = float(app_data)
         self._redraw_overlay()
 
     def _on_scale_bar_enabled_changed(self, sender, app_data):
@@ -1167,6 +1178,10 @@ class CameraFeedWindow:
             self.calibration_mm_per_pixel = None
         else:
             self.calibration_mm_per_pixel = float(mm_per_pixel)
+        self._redraw_overlay()
+
+    def set_objective_name(self, name):
+        self.objective_name = str(name or "")
         self._redraw_overlay()
 
     def _process_frame(self, frame=None):
@@ -1678,6 +1693,14 @@ class CameraFeedWindow:
         dpg.draw_line((x_start, y_pos - tick_height), (x_start, y_pos + tick_height), color=(255, 255, 255, 255), thickness=max(1.0, 2.0 * size_scale), parent=self.overlay_layer)
         dpg.draw_line((x_end, y_pos - tick_height), (x_end, y_pos + tick_height), color=(255, 255, 255, 255), thickness=max(1.0, 2.0 * size_scale), parent=self.overlay_layer)
 
+        obj_name = str(self.objective_name or "").strip()
+        if obj_name:
+            obj_size = max(8, int(round(11 * size_scale)))
+            obj_est_w = len(obj_name) * obj_size * 0.54
+            obj_x = (x_start + x_end) / 2.0 - obj_est_w / 2.0
+            obj_y = y_pos + tick_height + 4.0 * size_scale
+            dpg.draw_text((obj_x, obj_y), obj_name, color=(200, 200, 200, 200), size=obj_size, parent=self.overlay_layer)
+
     def _format_colorbar_value(self, value):
         abs_val = abs(value)
         if abs_val == 0.0:
@@ -1824,6 +1847,15 @@ class CameraFeedWindow:
             )
 
         self._redraw_scale_bar()
+
+        if self.crosshair_enabled:
+            cx = self.width / 2.0
+            cy = self.height / 2.0
+            radius = max(1.0, self.crosshair_radius_percent / 100.0 * self.width)
+            col = [255, 255, 255, 180]
+            dpg.draw_line([0, cy], [self.width, cy], color=col, thickness=1, parent=self.overlay_layer)
+            dpg.draw_line([cx, 0], [cx, self.height], color=col, thickness=1, parent=self.overlay_layer)
+            dpg.draw_circle([cx, cy], radius, color=col, thickness=1, parent=self.overlay_layer)
 
 
     def _process_camera_feed(self):

@@ -7,7 +7,7 @@ from Utils.state_persistence import load_state_file, save_state_file
 from Utils.themes import selected_theme, no_padding_theme
 
 # Layout constants
-TOOLBAR_H = 52
+TOOLBAR_H = 64
 LEFT_SIDEBAR_W = 285
 RIGHT_SIDEBAR_W = 285
 RIGHT_POSITION_MAP_H = 290
@@ -31,10 +31,15 @@ class AppLayout:
         self._last_viewport_h = 0
         self._skip_height_recalc = False
 
+        self._live_tab_uuid = None          # integer UUID of the Live Feed center tab
+        self._preview_tab_uuid = None       # integer UUID of the Preview left tab
+
         self._wired = False
         self._cam = None
         self._laser = None
         self._feed = None
+        self._pico = None
+        self._awg_btn = None
 
         icon_font_small = get_segmdl2_icon_font(12)
         icon_font = get_segmdl2_icon_font(18)
@@ -47,7 +52,7 @@ class AppLayout:
         with dpg.theme() as self._toolbar_theme:
             with dpg.theme_component(dpg.mvChildWindow):
                 dpg.add_theme_color(dpg.mvThemeCol_ChildBg, [30, 30, 30, 255])
-                dpg.add_theme_style(dpg.mvStyleVar_WindowPadding, 12, 10)
+                dpg.add_theme_style(dpg.mvStyleVar_WindowPadding, 28, 0)
 
         with dpg.theme() as self._active_btn_theme:
             with dpg.theme_component(dpg.mvButton):
@@ -57,7 +62,7 @@ class AppLayout:
 
         with dpg.theme() as self._icon_btn_theme:
             with dpg.theme_component(dpg.mvButton):
-                dpg.add_theme_style(dpg.mvStyleVar_FramePadding, 6, 4)
+                dpg.add_theme_style(dpg.mvStyleVar_FramePadding, 4, 3)
 
         with dpg.theme() as self._toolbar_label_theme:
             with dpg.theme_component(dpg.mvButton):
@@ -68,9 +73,9 @@ class AppLayout:
 
         with dpg.theme() as self._toolbar_ctrl_theme:
             with dpg.theme_component(dpg.mvSliderFloat):
-                dpg.add_theme_style(dpg.mvStyleVar_FramePadding, 4, 11)
+                dpg.add_theme_style(dpg.mvStyleVar_FramePadding, 4, 8)
             with dpg.theme_component(dpg.mvInputFloat):
-                dpg.add_theme_style(dpg.mvStyleVar_FramePadding, 4, 11)
+                dpg.add_theme_style(dpg.mvStyleVar_FramePadding, 4, 8)
 
         with dpg.handler_registry(tag="AppLayoutKeyHandlers"):
             dpg.add_key_press_handler(key=dpg.mvKey_Spacebar, callback=self._on_spacebar)
@@ -132,144 +137,131 @@ class AppLayout:
             dpg.bind_item_theme(dpg.last_item(), self._toolbar_theme)
 
             with dpg.group(horizontal=True):
-                # Preview / Stop Preview
-                self._preview_btn = dpg.add_button(
-                    label=chr(0xE768),
-                    tag="Toolbar_Preview",
-                    width=36, height=36,
-                    callback=self._on_preview,
-                )
-                dpg.bind_item_font(self._preview_btn, icon_font)
-                dpg.bind_item_theme(self._preview_btn, self._icon_btn_theme)
-                with dpg.tooltip(self._preview_btn):
-                    dpg.add_text("Start / Stop Preview")
 
-                # Acquire / Stop Acquire
-                self._acquire_btn = dpg.add_button(
-                    label=chr(0xE7C8),
-                    tag="Toolbar_Acquire",
-                    width=36, height=36,
-                    callback=self._on_acquire,
-                )
-                dpg.bind_item_font(self._acquire_btn, icon_font)
-                dpg.bind_item_theme(self._acquire_btn, self._icon_btn_theme)
-                with dpg.tooltip(self._acquire_btn):
-                    dpg.add_text("Start / Stop Acquisition")
+                # ── Camera ──────────────────────────────────────────────
+                with dpg.group():
+                    dpg.add_spacer(height=4)
+                    dpg.add_text("Camera", color=[140, 140, 140])
+                    with dpg.group(horizontal=True):
+                        self._preview_btn = dpg.add_button(
+                            label=chr(0xE768), tag="Toolbar_Preview",
+                            width=30, height=30, callback=self._on_preview,
+                        )
+                        dpg.bind_item_font(self._preview_btn, icon_font)
+                        dpg.bind_item_theme(self._preview_btn, self._icon_btn_theme)
+                        with dpg.tooltip(self._preview_btn):
+                            dpg.add_text("Start / Stop Preview")
 
-                # Snapshot
-                self._snapshot_btn = dpg.add_button(
-                    label=chr(0xE722),
-                    tag="Toolbar_Snapshot",
-                    width=36, height=36,
-                    callback=self._on_snapshot,
-                )
-                dpg.bind_item_font(self._snapshot_btn, icon_font)
-                dpg.bind_item_theme(self._snapshot_btn, self._icon_btn_theme)
-                with dpg.tooltip(self._snapshot_btn):
-                    dpg.add_text("Snapshot")
+                        self._acquire_btn = dpg.add_button(
+                            label=chr(0xE7C8), tag="Toolbar_Acquire",
+                            width=30, height=30, callback=self._on_acquire,
+                        )
+                        dpg.bind_item_font(self._acquire_btn, icon_font)
+                        dpg.bind_item_theme(self._acquire_btn, self._icon_btn_theme)
+                        with dpg.tooltip(self._acquire_btn):
+                            dpg.add_text("Start / Stop Acquisition")
 
-                # Save (next to other acquisition buttons)
-                self._save_btn = dpg.add_button(
-                    label=chr(0xE74E),
-                    tag="Toolbar_Save",
-                    width=36, height=36,
-                    callback=self._on_save,
-                )
-                dpg.bind_item_font(self._save_btn, icon_font)
-                dpg.bind_item_theme(self._save_btn, self._icon_btn_theme)
-                with dpg.tooltip(self._save_btn):
-                    dpg.add_text("Save Acquisition")
+                        self._snapshot_btn = dpg.add_button(
+                            label=chr(0xE722), tag="Toolbar_Snapshot",
+                            width=30, height=30, callback=self._on_snapshot,
+                        )
+                        dpg.bind_item_font(self._snapshot_btn, icon_font)
+                        dpg.bind_item_theme(self._snapshot_btn, self._icon_btn_theme)
+                        with dpg.tooltip(self._snapshot_btn):
+                            dpg.add_text("Snapshot")
 
-                self._toolbar_separator()
+                        self._save_btn = dpg.add_button(
+                            label=chr(0xE74E), tag="Toolbar_Save",
+                            width=30, height=30, callback=self._on_save,
+                        )
+                        dpg.bind_item_font(self._save_btn, icon_font)
+                        dpg.bind_item_theme(self._save_btn, self._icon_btn_theme)
+                        with dpg.tooltip(self._save_btn):
+                            dpg.add_text("Save Acquisition")
 
-                # Laser toggle
-                self._laser_btn = dpg.add_button(
-                    label=chr(0xE945),
-                    tag="Toolbar_Laser",
-                    width=36, height=36,
-                    callback=self._on_laser_toggle,
-                )
-                dpg.bind_item_font(self._laser_btn, icon_font)
-                dpg.bind_item_theme(self._laser_btn, self._icon_btn_theme)
-                with dpg.tooltip(self._laser_btn):
-                    dpg.add_text("Laser On / Off")
-
-                # Laser power slider
-                _lbl = dpg.add_button(label="Power", enabled=False)
-                dpg.bind_item_theme(_lbl, self._toolbar_label_theme)
-                self._laser_power_slider = dpg.add_slider_float(
-                    tag="Toolbar_LaserPower",
-                    width=160,
-                    min_value=0.0,
-                    max_value=200.0,
-                    format="%.1f mW",
-                    callback=self._on_laser_power,
-                )
-                dpg.bind_item_theme(self._laser_power_slider, self._toolbar_ctrl_theme)
+                        self._exposure_input = dpg.add_input_float(
+                            tag="Toolbar_Exposure", width=160,
+                            min_value=0.001, max_value=1.0, step=0.001,
+                            format="%.3f s", on_enter=True,
+                            callback=self._on_exposure,
+                        )
+                        dpg.bind_item_theme(self._exposure_input, self._toolbar_ctrl_theme)
 
                 self._toolbar_separator()
 
-                # Exposure time
-                _lbl2 = dpg.add_button(label="Exp", enabled=False)
-                dpg.bind_item_theme(_lbl2, self._toolbar_label_theme)
-                self._exposure_input = dpg.add_input_float(
-                    tag="Toolbar_Exposure",
-                    width=160,
-                    min_value=0.001,
-                    max_value=1.0,
-                    step=0.001,
-                    format="%.3f s",
-                    on_enter=True,
-                    callback=self._on_exposure,
-                )
-                dpg.bind_item_theme(self._exposure_input, self._toolbar_ctrl_theme)
+                # ── Laser ────────────────────────────────────────────────
+                with dpg.group():
+                    dpg.add_spacer(height=4)
+                    dpg.add_text("Laser", color=[140, 140, 140])
+                    with dpg.group(horizontal=True):
+                        self._laser_btn = dpg.add_button(
+                            label=chr(0xE945), tag="Toolbar_Laser",
+                            width=30, height=30, callback=self._on_laser_toggle,
+                        )
+                        dpg.bind_item_font(self._laser_btn, icon_font)
+                        dpg.bind_item_theme(self._laser_btn, self._icon_btn_theme)
+                        with dpg.tooltip(self._laser_btn):
+                            dpg.add_text("Laser On / Off")
+
+                        self._laser_power_slider = dpg.add_slider_float(
+                            tag="Toolbar_LaserPower", width=160,
+                            min_value=0.0, max_value=200.0,
+                            format="%.1f mW", callback=self._on_laser_power,
+                        )
+                        dpg.bind_item_theme(self._laser_power_slider, self._toolbar_ctrl_theme)
 
                 self._toolbar_separator()
 
-                # AutoScale toggle
-                self._autoscale_btn = dpg.add_button(
-                    label=chr(0xE81E),
-                    tag="Toolbar_AutoScale",
-                    width=36, height=36,
-                    callback=self._on_autoscale_toggle,
-                )
-                dpg.bind_item_font(self._autoscale_btn, icon_font)
-                dpg.bind_item_theme(self._autoscale_btn, self._icon_btn_theme)
-                with dpg.tooltip(self._autoscale_btn):
-                    dpg.add_text("Auto Scale On / Off")
+                # ── Scaling ──────────────────────────────────────────────
+                with dpg.group():
+                    dpg.add_spacer(height=4)
+                    dpg.add_text("Scaling", color=[140, 140, 140])
+                    with dpg.group(horizontal=True):
+                        self._autoscale_btn = dpg.add_button(
+                            label=chr(0xE81E), tag="Toolbar_AutoScale",
+                            width=30, height=30, callback=self._on_autoscale_toggle,
+                        )
+                        dpg.bind_item_font(self._autoscale_btn, icon_font)
+                        dpg.bind_item_theme(self._autoscale_btn, self._icon_btn_theme)
+                        with dpg.tooltip(self._autoscale_btn):
+                            dpg.add_text("Auto Scale On / Off")
 
-                # Scale min
-                _lbl3 = dpg.add_button(label="Min", enabled=False)
-                dpg.bind_item_theme(_lbl3, self._toolbar_label_theme)
-                self._scale_min_slider = dpg.add_slider_float(
-                    tag="Toolbar_ScaleMin",
-                    width=160,
-                    min_value=0.0,
-                    max_value=100.0,
-                    format="%.1f%%",
-                    callback=self._on_scale_min,
-                )
-                dpg.bind_item_theme(self._scale_min_slider, self._toolbar_ctrl_theme)
+                        self._scale_min_slider = dpg.add_slider_float(
+                            tag="Toolbar_ScaleMin", width=160,
+                            min_value=0.0, max_value=100.0,
+                            format="%.1f%%", callback=self._on_scale_min,
+                        )
+                        dpg.bind_item_theme(self._scale_min_slider, self._toolbar_ctrl_theme)
 
-                # Scale max
-                _lbl4 = dpg.add_button(label="Max", enabled=False)
-                dpg.bind_item_theme(_lbl4, self._toolbar_label_theme)
-                self._scale_max_slider = dpg.add_slider_float(
-                    tag="Toolbar_ScaleMax",
-                    width=160,
-                    min_value=0.0,
-                    max_value=100.0,
-                    default_value=100.0,
-                    format="%.1f%%",
-                    callback=self._on_scale_max,
-                )
-                dpg.bind_item_theme(self._scale_max_slider, self._toolbar_ctrl_theme)
+                        self._scale_max_slider = dpg.add_slider_float(
+                            tag="Toolbar_ScaleMax", width=160,
+                            min_value=0.0, max_value=100.0, default_value=100.0,
+                            format="%.1f%%", callback=self._on_scale_max,
+                        )
+                        dpg.bind_item_theme(self._scale_max_slider, self._toolbar_ctrl_theme)
 
+                self._toolbar_separator()
+
+                # ── Scope ────────────────────────────────────────────────
+                with dpg.group():
+                    dpg.add_spacer(height=4)
+                    dpg.add_text("Scope", color=[140, 140, 140])
+                    with dpg.group(horizontal=True):
+                        self._awg_btn = dpg.add_button(
+                            label="AWG Off", tag="Toolbar_AWG",
+                            width=70, height=30, callback=self._on_awg_toggle,
+                        )
+                        dpg.bind_item_theme(self._awg_btn, self._icon_btn_theme)
+                        with dpg.tooltip(self._awg_btn):
+                            dpg.add_text("AWG Output On / Off")
+
+            # Performance text — positioned dynamically at right edge each frame
+            self._perf_text_id = dpg.add_text("", tag="SoftwarePerformanceOverlayText", pos=(0, 16))
 
     def _toolbar_separator(self):
         dpg.add_spacer(width=6)
-        with dpg.drawlist(width=1, height=36):
-            dpg.draw_line([0, 4], [0, 32], color=[80, 80, 80, 200], thickness=1)
+        with dpg.drawlist(width=1, height=TOOLBAR_H):
+            dpg.draw_line([0, 0], [0, TOOLBAR_H], color=[80, 80, 80, 200], thickness=1)
         dpg.add_spacer(width=6)
 
     def _build_content_area(self):
@@ -318,6 +310,7 @@ class AppLayout:
                                 pass
 
                     with dpg.tab(label="Preview", tag="LeftTab_PreviewSettings", show=False):
+                        self._preview_tab_uuid = dpg.last_item()
                         with dpg.child_window(tag="LeftContent_PreviewSettings", height=-1, border=False):
                             pass
 
@@ -338,6 +331,7 @@ class AppLayout:
             ):
                 with dpg.tab_bar(tag="CenterTabBar"):
                     with dpg.tab(label="Live Feed", tag="CenterTab_Live", closable=False):
+                        self._live_tab_uuid = dpg.last_item()
                         with dpg.child_window(
                             tag="CenterLiveFeedContainer",
                             height=-1,
@@ -491,8 +485,10 @@ class AppLayout:
         if not dpg.does_item_exist("CenterTabBar"):
             return
 
+        # dpg.get_value() on a tab_bar returns the integer UUID of the active tab, not a string alias.
+        # A file tab is active when anything other than the live feed tab is selected.
         active = dpg.get_value("CenterTabBar")
-        is_file = isinstance(active, str) and active.startswith("CenterFileTab_")
+        is_file = bool(active) and active != self._live_tab_uuid
 
         control_tabs = [
             "LeftTab_Camera", "LeftTab_Feed", "LeftTab_Laser",
@@ -509,7 +505,7 @@ class AppLayout:
 
         if not is_file and dpg.does_item_exist("LeftTabBar"):
             current_left = dpg.get_value("LeftTabBar")
-            if current_left == "LeftTab_PreviewSettings" and dpg.does_item_exist("LeftTab_Camera"):
+            if current_left == self._preview_tab_uuid and dpg.does_item_exist("LeftTab_Camera"):
                 dpg.set_value("LeftTabBar", "LeftTab_Camera")
 
         # Keep toolbar sync
@@ -528,8 +524,10 @@ class AppLayout:
 
         if dpg.does_item_exist(self._preview_btn):
             if previewing:
+                dpg.configure_item(self._preview_btn, label=chr(0xE71A))
                 dpg.bind_item_theme(self._preview_btn, self._active_btn_theme)
             else:
+                dpg.configure_item(self._preview_btn, label=chr(0xE768))
                 dpg.bind_item_theme(self._preview_btn, self._icon_btn_theme)
 
         if dpg.does_item_exist(self._acquire_btn):
@@ -561,6 +559,24 @@ class AppLayout:
                 self._active_btn_theme if autoscale else self._icon_btn_theme,
             )
 
+        has_data = getattr(cam, "_completed_acquisition_payload", None) is not None
+        if dpg.does_item_exist(self._save_btn):
+            dpg.configure_item(self._save_btn, enabled=has_data)
+
+        pico = self._pico
+        if pico is not None and self._awg_btn is not None and dpg.does_item_exist(self._awg_btn):
+            fg = getattr(pico, "function_generator_window", None)
+            if fg is not None:
+                try:
+                    awg_on = bool(fg.get_awg_enabled())
+                    dpg.configure_item(self._awg_btn, label="AWG On" if awg_on else "AWG Off")
+                    dpg.bind_item_theme(
+                        self._awg_btn,
+                        self._active_btn_theme if awg_on else self._icon_btn_theme,
+                    )
+                except Exception:
+                    pass
+
     # ------------------------------------------------------------------
     # Toolbar wiring (called once on first render when class_objects ready)
     # ------------------------------------------------------------------
@@ -571,6 +587,7 @@ class AppLayout:
 
         self._cam = self._find("CameraSystem")
         self._laser = self._find("LaserControls")
+        self._pico = self._find("PicoScopeControl")
         self._feed = None
 
         cam = self._cam
@@ -611,7 +628,10 @@ class AppLayout:
     # ------------------------------------------------------------------
 
     def _on_spacebar(self, sender=None, app_data=None):
-        self._on_preview()
+        if dpg.is_key_down(dpg.mvKey_LShift) or dpg.is_key_down(dpg.mvKey_RShift):
+            self._on_acquire()
+        else:
+            self._on_preview()
 
     def _on_preview(self):
         cam = self._cam or self._find("CameraSystem")
@@ -706,6 +726,19 @@ class AppLayout:
         cam = self._cam or self._find("CameraSystem")
         if cam and hasattr(cam, "_show_save_dialog"):
             cam._show_save_dialog()
+
+    def _on_awg_toggle(self):
+        pico = self._pico or self._find("PicoScopeControl")
+        if pico is None:
+            return
+        fg = getattr(pico, "function_generator_window", None)
+        if fg is None:
+            return
+        try:
+            new_state = not fg.get_awg_enabled()
+            fg._on_awg_enabled_toggled(None, new_state, None)
+        except Exception:
+            pass
 
     # ------------------------------------------------------------------
     # State persistence
