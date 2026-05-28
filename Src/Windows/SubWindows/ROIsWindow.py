@@ -75,7 +75,7 @@ class ROIsWindow:
                 parent=self.parent_id,
                 tag=f"{self.tag}_Embedded",
                 width=-1,
-                height=self.height,
+                height=-1,
                 border=False,
                 no_scrollbar=True,
                 no_scroll_with_mouse=True,
@@ -193,7 +193,10 @@ class ROIsWindow:
         rect_size = item_state.get("rect_size")
 
         if rect_size is None:
-            rect_size = dpg.get_item_rect_size(item_id)
+            try:
+                rect_size = dpg.get_item_rect_size(item_id)
+            except (KeyError, SystemError):
+                rect_size = None
         if rect_min is None:
             rect_min = self._get_item_viewport_pos(item_id)
         if rect_max is None and rect_min is not None and rect_size is not None:
@@ -555,7 +558,7 @@ class ROIsWindow:
 
     def render_roi(self, roi):
         ui = self._roi_ui.get(roi.tag)
-        if ui is None:
+        if ui is None or "texture_id" not in ui:
             return
 
         with roi.data_lock:

@@ -5,6 +5,7 @@ import threading
 from Drivers.PicoScope import PicoScope as PicoScope4000Driver
 from Drivers.PicoScope2000 import PicoScope2000
 from Utils.fonts import get_segmdl2_icon_font
+import Utils.shared_state as shared_state
 from Utils.state_persistence import apply_item_open_states, apply_window_state, capture_item_open_states, capture_window_state, load_state_file, save_state_file
 from Utils.themes import red_green_button_enabled, red_green_button_disabled
 from Windows.SubWindows.FunctionGenerator import FunctionGeneratorWindow
@@ -61,17 +62,22 @@ class PicoScopeControl:
                 dpg.add_theme_color(dpg.mvThemeCol_Border, [0, 0, 0, 0])
                 dpg.add_theme_style(dpg.mvStyleVar_FrameBorderSize, 0)
 
-        with dpg.window(
-            label="PicoScope",
-            tag="#PicoScope",
-            width=360,
-            height=550,
-            pos=(945, 10),
-            no_scrollbar=False,
-            no_resize=False,
-            no_scroll_with_mouse=True,
-        ):
-            self.window_id = dpg.last_item()
+        _picoscope_tab = shared_state.layout_containers.get("picoscope_tab")
+        if _picoscope_tab:
+            self.window_id = _picoscope_tab
+        else:
+            self.window_id = dpg.add_window(
+                label="PicoScope",
+                tag="#PicoScope",
+                width=360,
+                height=550,
+                pos=(945, 10),
+                no_scrollbar=False,
+                no_resize=False,
+                no_scroll_with_mouse=True,
+            )
+        dpg.push_container_stack(self.window_id)
+        if True:
 
             with dpg.tree_node(label="Connection Settings", default_open=True, span_full_width=True) as connection_settings_node_id:
                 self.section_node_ids["connection_settings"] = connection_settings_node_id
@@ -152,6 +158,8 @@ class PicoScopeControl:
                     pass
 
             dpg.add_separator()
+
+        dpg.pop_container_stack()
 
         for channel_spec in CHANNEL_PANEL_SPECS:
             self._create_channel_panel(channel_spec)
@@ -615,7 +623,6 @@ class PicoScopeControl:
         save_state_file(
             type(self).__name__,
             {
-                "window": capture_window_state(self.window_id),
                 "sections": capture_item_open_states(self.section_node_ids),
                 "device_driver_family": self.driver_family,
                 "device_serial": self.driver.serial_number,
@@ -634,7 +641,6 @@ class PicoScopeControl:
         if not state:
             return
 
-        apply_window_state(self.window_id, state.get("window"))
         apply_item_open_states(self.section_node_ids, state.get("sections"))
 
         saved_driver_family = str(state.get("device_driver_family") or self.driver_family).strip().lower()

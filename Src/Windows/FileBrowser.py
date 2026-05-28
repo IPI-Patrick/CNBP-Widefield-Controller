@@ -1,13 +1,15 @@
 import io
 import os
 import threading
+import time
 import zipfile
 from pathlib import Path
 
 import numpy as np
 import dearpygui.dearpygui as dpg
 
-from Utils.state_persistence import apply_window_state, capture_window_state, load_state_file, save_state_file
+import Utils.shared_state as shared_state
+from Utils.state_persistence import load_state_file, save_state_file
 from Windows.SubWindows.AcquisitionPreviewWindow import AcquisitionPreviewWindow
 
 
@@ -30,15 +32,20 @@ class FileBrowser:
         self._delete_modal_id = None
         self._delete_modal_text_id = None
 
-        with dpg.window(
-            label="File Browser",
-            tag="#FileBrowser",
-            width=520,
-            height=480,
-            pos=(60, 120),
-            no_scroll_with_mouse=True,
-        ):
-            self.window_id = dpg.last_item()
+        _files_tab = shared_state.layout_containers.get("files_tab")
+        if _files_tab:
+            self.window_id = _files_tab
+        else:
+            self.window_id = dpg.add_window(
+                label="File Browser",
+                tag="#FileBrowser",
+                width=520,
+                height=480,
+                pos=(60, 120),
+                no_scroll_with_mouse=True,
+            )
+        dpg.push_container_stack(self.window_id)
+        if True:
 
             with dpg.group(horizontal=True):
                 self.directory_input_id = dpg.add_input_text(
@@ -57,18 +64,20 @@ class FileBrowser:
 
             dpg.add_separator()
 
-            with dpg.child_window(border=False, autosize_x=True, autosize_y=True):
+            with dpg.child_window(border=False, autosize_x=True, height=-12):
                 self.list_container_id = dpg.last_item()
 
-            with dpg.file_dialog(
-                directory_selector=True,
-                show=False,
-                callback=self._on_directory_selected,
-                width=700,
-                height=400,
-                modal=True,
-            ) as self.directory_dialog_id:
-                pass
+        dpg.pop_container_stack()
+
+        with dpg.file_dialog(
+            directory_selector=True,
+            show=False,
+            callback=self._on_directory_selected,
+            width=700,
+            height=400,
+            modal=True,
+        ) as self.directory_dialog_id:
+            pass
 
         with dpg.window(
             modal=True,
@@ -340,12 +349,31 @@ class FileBrowser:
             return
 
         existing_preview = self._preview_windows.get(file_path)
-        if existing_preview is not None and not existing_preview.is_closed() and dpg.does_item_exist(existing_preview.window_id):
-            dpg.show_item(existing_preview.window_id)
-            dpg.focus_item(existing_preview.window_id)
+        center_tab_bar = shared_state.layout_containers.get("center_tab_bar")
+        if existing_preview is not None and not existing_preview.is_closed():
+            if center_tab_bar and dpg.does_item_exist(center_tab_bar) and dpg.does_item_exist(existing_preview.window_id):
+                dpg.set_value(center_tab_bar, existing_preview._tab_id)
+            elif dpg.does_item_exist(existing_preview.window_id):
+                dpg.show_item(existing_preview.window_id)
+                dpg.focus_item(existing_preview.window_id)
             return
 
-        self._preview_windows[file_path] = AcquisitionPreviewWindow(file_path)
+        settings_parent = shared_state.layout_containers.get("preview_settings_tab")
+        if center_tab_bar and dpg.does_item_exist(center_tab_bar):
+            short_name = os.path.basename(file_path)
+            if len(short_name) > 28:
+                short_name = short_name[:25] + "..."
+            tab_tag = f"CenterFileTab_{int(time.time() * 1000)}"
+            with dpg.tab(label=short_name, closable=True, parent=center_tab_bar, tag=tab_tag):
+                display_parent = dpg.add_child_window(
+                    width=-1, height=-1, border=False, no_scrollbar=True, no_scroll_with_mouse=True,
+                )
+            preview = AcquisitionPreviewWindow(file_path, display_parent=display_parent, settings_parent=settings_parent)
+            preview._tab_id = tab_tag
+            self._preview_windows[file_path] = preview
+            dpg.set_value(center_tab_bar, tab_tag)
+        else:
+            self._preview_windows[file_path] = AcquisitionPreviewWindow(file_path)
 
     def _request_delete(self, sender, app_data, user_data=None):
         file_path = str(user_data or "").strip()
@@ -385,7 +413,15 @@ class FileBrowser:
             if preview_window is None:
                 closed_paths.append(file_path)
                 continue
+            tab_id = getattr(preview_window, "_tab_id", None)
+            if tab_id is not None and not dpg.does_item_exist(tab_id):
+                if not preview_window.is_closed():
+                    preview_window.close()
+                closed_paths.append(file_path)
+                continue
             if not preview_window.render():
+                if tab_id is not None and dpg.does_item_exist(tab_id):
+                    dpg.delete_item(tab_id)
                 closed_paths.append(file_path)
 
         for file_path in closed_paths:
@@ -401,7 +437,6 @@ class FileBrowser:
         save_state_file(
             type(self).__name__,
             {
-                "window": capture_window_state(self.window_id),
                 "directory_path": self.directory_path,
             },
         )
@@ -411,7 +446,6 @@ class FileBrowser:
         if not state:
             return
 
-        apply_window_state(self.window_id, state.get("window"))
         saved_directory = str(state.get("directory_path") or "").strip()
         if saved_directory:
             self._set_directory(saved_directory)

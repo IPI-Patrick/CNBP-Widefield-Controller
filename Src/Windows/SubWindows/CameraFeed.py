@@ -10,6 +10,7 @@ from skimage.registration import phase_cross_correlation
 from Utils.StorageDTypes import get_raw_storage_max_value
 from Utils.state_persistence import apply_window_state, capture_window_state, delete_state_file, list_state_files, load_state_file, save_state_file
 from Utils.themes import no_padding_theme, read_only_theme
+import Utils.shared_state as shared_state
 from Utils.shared_state import class_objects
 from Windows.SubWindows.FeedControlsWindow import FeedControlsWindow
 from Windows.SubWindows.ImageWindow import ImageWindow
@@ -110,55 +111,59 @@ class CameraFeedWindow:
         self._lp_filter_previous_output = None
         self._processing_stop_event = threading.Event()
         self.colorbar_enabled = False
+        self.calibration_mm_per_pixel = None
+        self.objective_name = ""
+        self.scale_bar_enabled = False
+        self.scale_bar_auto_width = True
+        self.scale_bar_width_um = 100.0
+        self.scale_bar_size = 1.0
+        self.scale_bar_position = "Bottom-Left"
+        self.scale_bar_x_offset = 26
+        self.scale_bar_y_offset = 26
         self._colorbar_last_min = None
         self._colorbar_last_max = None
         self._last_frame_display_min = 0.0
         self._last_frame_display_max = 1.0
+        self.crosshair_enabled = False
+        self.crosshair_radius_percent = 10.0
 
-        with dpg.window(
-            label=self.name,
-            tag=f"{self.tag}_Window",
-            width=self.width,
-            height=self.height,
-            pos=(10, 10),
-            no_scrollbar=True,
-            no_resize=False,
-            no_scroll_with_mouse = True,
-        ):
+        # Embed into the provided parent container (e.g. "CenterLiveFeedContainer").
+        # window_id is kept for backward compatibility with code that references it.
+        self.window_id = parent
+        self._last_container_w = 0
+        self._last_container_h = 0
 
-            self.window_id = dpg.last_item()
+        dpg.bind_item_theme(self.window_id, no_padding_theme)
 
-            dpg.bind_item_theme(self.window_id, no_padding_theme)
+        with dpg.drawlist(width=self.width, height=self.feed_height, parent=self.window_id, tag=f"{self.tag}_Canvas"):
+            self.canvas_id = dpg.last_item()
+            with dpg.draw_layer(tag=f"{self.tag}_ImageLayer"):
+                self.image_layer = dpg.last_item()
+            with dpg.draw_layer(tag=f"{self.tag}_OverlayLayer"):
+                self.overlay_layer = dpg.last_item()
+            with dpg.draw_layer(tag=f"{self.tag}_ColorbarLayer"):
+                self.colorbar_layer = dpg.last_item()
 
-            with dpg.item_handler_registry(tag=f"{self.tag}_ResizeHandler"):
-                dpg.add_item_resize_handler(callback=self._on_window_resize)
-                dpg.bind_item_handler_registry(self.window_id, f"{self.tag}_ResizeHandler")
+        with dpg.handler_registry(tag=f"{self.tag}_MouseHandler"):
+            dpg.add_mouse_down_handler(button=dpg.mvMouseButton_Left, callback=self._on_left_mouse_down)
+            dpg.add_mouse_down_handler(button=dpg.mvMouseButton_Middle, callback=self._on_middle_mouse_down)
+            dpg.add_mouse_down_handler(button=dpg.mvMouseButton_Right, callback=self._on_right_mouse_down)
+            dpg.add_mouse_move_handler(callback=self._on_mouse_move)
+            dpg.add_mouse_release_handler(button=dpg.mvMouseButton_Left, callback=self._on_mouse_release)
+            dpg.add_mouse_release_handler(button=dpg.mvMouseButton_Middle, callback=self._on_mouse_release)
+            dpg.add_mouse_wheel_handler(callback=self._on_mouse_wheel)
+            dpg.add_key_press_handler(key=dpg.mvKey_Delete, callback=self._on_delete_key_pressed)
 
-            with dpg.drawlist(width=self.width, height=self.feed_height, parent=self.window_id, tag=f"{self.tag}_Canvas"):
-                self.canvas_id = dpg.last_item()
-                with dpg.draw_layer(tag=f"{self.tag}_ImageLayer"):
-                    self.image_layer = dpg.last_item()
-                with dpg.draw_layer(tag=f"{self.tag}_OverlayLayer"):
-                    self.overlay_layer = dpg.last_item()
-                with dpg.draw_layer(tag=f"{self.tag}_ColorbarLayer"):
-                    self.colorbar_layer = dpg.last_item()
+        # Popup is created as a top-level item; it is triggered by right-clicking the canvas
+        dpg.push_container_stack(self.window_id)
+        with dpg.popup(self.canvas_id, mousebutton=dpg.mvMouseButton_Right):
+            self.canvas_popup_id = dpg.last_item()
+            self.set_frame_to_roi_button_id = dpg.add_button(label="Set Frame to ROI", width=140, callback=self._on_set_frame_to_roi)
+            dpg.add_button(label="Reset Zoom", width=140, callback=self._reset_zoom)
+        dpg.pop_container_stack()
 
-            with dpg.handler_registry(tag=f"{self.tag}_MouseHandler"):
-                dpg.add_mouse_down_handler(button=dpg.mvMouseButton_Left, callback=self._on_left_mouse_down)
-                dpg.add_mouse_down_handler(button=dpg.mvMouseButton_Middle, callback=self._on_middle_mouse_down)
-                dpg.add_mouse_down_handler(button=dpg.mvMouseButton_Right, callback=self._on_right_mouse_down)
-                dpg.add_mouse_move_handler(callback=self._on_mouse_move)
-                dpg.add_mouse_release_handler(button=dpg.mvMouseButton_Left, callback=self._on_mouse_release)
-                dpg.add_mouse_release_handler(button=dpg.mvMouseButton_Middle, callback=self._on_mouse_release)
-                dpg.add_mouse_wheel_handler(callback=self._on_mouse_wheel)
-                dpg.add_key_press_handler(key=dpg.mvKey_Delete, callback=self._on_delete_key_pressed)
-
-            with dpg.popup(self.canvas_id, mousebutton=dpg.mvMouseButton_Right):
-                self.canvas_popup_id = dpg.last_item()
-                self.set_frame_to_roi_button_id = dpg.add_button(label="Set Frame to ROI", width=140, callback=self._on_set_frame_to_roi)
-                dpg.add_button(label="Reset Zoom", width=140, callback=self._reset_zoom)
-
-        self.controls_window = FeedControlsWindow(self)
+        _feed_parent = shared_state.layout_containers.get("feed_tab")
+        self.controls_window = FeedControlsWindow(self, dpg_parent=_feed_parent)
         self.zero_reference_window = ImageWindow(
             tag_prefix=f"{self.tag}_Zero",
             label="Zero Reference",
@@ -168,7 +173,8 @@ class CameraFeedWindow:
             show=False,
             image_size=(self.image_height, self.image_width),
         )
-        self.rois_window = ROIsWindow()
+        _rois_parent = shared_state.layout_containers.get("right_rois")
+        self.rois_window = ROIsWindow(parent=_rois_parent)
 
         self.reset_texture()
 
@@ -283,6 +289,7 @@ class CameraFeedWindow:
                 parent=self.image_layer,
             )
 
+        self._on_window_resize()
         self._update_image_draw_transform()
         self._update_zero_window_texture_binding()
         if self.controls_window is not None:
@@ -295,14 +302,31 @@ class CameraFeedWindow:
         self._display_fps_window_frame_count = 0
 
     def _on_window_resize(self, sender=None, app_data=None):
-        new_width, new_height = dpg.get_item_rect_size(self.window_id)
-        self.width = max(1, int(new_width))
-        self.height = max(1, int(new_height))
-        self.feed_height = max(160, self.height)
-        dpg.configure_item(self.canvas_id, width=self.width, height=self.feed_height)
+        container_w, container_h = dpg.get_item_rect_size(self.window_id)
+        container_w = max(1, int(container_w))
+        container_h = max(1, int(container_h))
+
+        # Compute the largest display rect that maintains the camera aspect ratio
+        img_aspect = self.image_width / max(1, self.image_height)
+        if container_w / container_h > img_aspect:
+            display_h = container_h
+            display_w = max(1, int(container_h * img_aspect))
+        else:
+            display_w = container_w
+            display_h = max(1, int(container_w / max(1e-6, img_aspect)))
+        display_h = max(1, display_h)
+
+        x_off = (container_w - display_w) // 2
+        y_off = (container_h - display_h) // 2
+
+        self.width = display_w
+        self.height = display_h
+        self.feed_height = display_h
+        dpg.configure_item(self.canvas_id, width=display_w, height=display_h)
+        dpg.set_item_pos(self.canvas_id, [x_off, y_off])
 
         if hasattr(self, "image_draw_id") and dpg.does_item_exist(self.image_draw_id):
-            dpg.configure_item(self.image_draw_id, pmin=(0, 0), pmax=(self.width, self.feed_height))
+            dpg.configure_item(self.image_draw_id, pmin=(0, 0), pmax=(display_w, display_h))
 
         self._clamp_view_center()
         self._update_image_draw_transform()
@@ -345,6 +369,10 @@ class CameraFeedWindow:
 
         dpg.configure_item(self.controls_window.bg_removal_sigma_input_id, enabled=self.bg_removal_enabled)
         dpg.bind_item_theme(self.controls_window.bg_removal_sigma_input_id, None if self.bg_removal_enabled else read_only_theme)
+
+        scale_bar_width_enabled = not self.scale_bar_auto_width
+        dpg.configure_item(self.controls_window.scale_bar_width_input_id, enabled=scale_bar_width_enabled)
+        dpg.bind_item_theme(self.controls_window.scale_bar_width_input_id, None if scale_bar_width_enabled else read_only_theme)
 
     def _on_autoscale_changed(self, sender, app_data):
         self.autoscale_enabled = bool(app_data)
@@ -648,7 +676,6 @@ class CameraFeedWindow:
             return False
 
         self.Andor.set_zero_frame(frame)
-        self.zero_reference_window.show()
         self._request_zero_window_refresh()
         self._refresh_display_image()
         self._update_zero_window_texture_binding()
@@ -806,8 +833,8 @@ class CameraFeedWindow:
         if float(ref_norm.std()) < 1e-6:
             return 0.0, 0.0
         shift, _, _ = phase_cross_correlation(
-            ref_norm,
-            frame_f32 / ref_max,
+            ref_norm.astype(np.float64),
+            (frame_f32 / ref_max).astype(np.float64),
             upsample_factor=10,
             normalization="phase",
         )
@@ -923,6 +950,55 @@ class CameraFeedWindow:
     def _on_crop_changed(self, sender, app_data):
         self.crop_percent = float(np.clip(float(app_data), 0.0, 100.0))
         self._refresh_display_image()
+        self._redraw_overlay()
+
+    def _on_crosshair_enabled_changed(self, sender, app_data):
+        self.crosshair_enabled = bool(app_data)
+        self._redraw_overlay()
+
+    def _on_crosshair_radius_changed(self, sender, app_data):
+        self.crosshair_radius_percent = float(app_data)
+        self._redraw_overlay()
+
+    def _on_scale_bar_enabled_changed(self, sender, app_data):
+        self.scale_bar_enabled = bool(app_data)
+        self._redraw_overlay()
+
+    def _on_scale_bar_auto_width_changed(self, sender, app_data):
+        self.scale_bar_auto_width = bool(app_data)
+        self._update_settings_controls_state()
+        self._redraw_overlay()
+
+    def _on_scale_bar_width_changed(self, sender, app_data):
+        self.scale_bar_width_um = max(0.001, float(dpg.get_value(self.controls_window.scale_bar_width_input_id)))
+        dpg.set_value(self.controls_window.scale_bar_width_input_id, self.scale_bar_width_um)
+        self._redraw_overlay()
+
+    def _on_scale_bar_size_changed(self, sender, app_data):
+        self.scale_bar_size = max(0.1, float(dpg.get_value(self.controls_window.scale_bar_size_input_id)))
+        dpg.set_value(self.controls_window.scale_bar_size_input_id, self.scale_bar_size)
+        self._redraw_overlay()
+
+    @staticmethod
+    def _normalize_scale_bar_position(position):
+        valid_positions = {"Bottom-Left", "Bottom-Right", "Top-Left", "Top-Right"}
+        position = str(position or "").strip()
+        return position if position in valid_positions else "Bottom-Left"
+
+    def _on_scale_bar_position_changed(self, sender, app_data):
+        self.scale_bar_position = self._normalize_scale_bar_position(app_data)
+        dpg.set_value(self.controls_window.scale_bar_position_combo_id, self.scale_bar_position)
+        self._redraw_overlay()
+
+    def _on_scale_bar_x_offset_changed(self, sender, app_data):
+        self.scale_bar_x_offset = int(dpg.get_value(self.controls_window.scale_bar_x_offset_input_id))
+        dpg.set_value(self.controls_window.scale_bar_x_offset_input_id, self.scale_bar_x_offset)
+        self._redraw_overlay()
+
+    def _on_scale_bar_y_offset_changed(self, sender, app_data):
+        self.scale_bar_y_offset = int(dpg.get_value(self.controls_window.scale_bar_y_offset_input_id))
+        dpg.set_value(self.controls_window.scale_bar_y_offset_input_id, self.scale_bar_y_offset)
+        self._redraw_overlay()
 
     @staticmethod
     def _compute_crop_mask(height, width, crop_percent):
@@ -955,13 +1031,11 @@ class CameraFeedWindow:
     def _update_zero_window(self):
         if self.zero_reference_window is None:
             return
-        if not self.zero_reference_window.is_visible():
-            return
 
-        self._update_zero_window_texture_binding()
-        self.zero_reference_window.update_image_size()
-
+        # Only process if there is actually a zero frame set
         with self.Andor.frame_lock:
+            if self.Andor.zero is None:
+                return
             zero_version = int(getattr(self.Andor, "zero_version", 0))
             display_state_key = (
                 zero_version,
@@ -981,6 +1055,19 @@ class CameraFeedWindow:
         dpg.set_value(self.zero_reference_window.texture_id, self._zero_frame_to_rgba(display_frame))
         self.zero_window_state_key = display_state_key
         self.zero_window_refresh_requested = False
+
+        # Update the embedded display in the Feed settings sidebar
+        if self.controls_window is not None and hasattr(self.controls_window, "update_zero_reference"):
+            self.controls_window.update_zero_reference(
+                self.zero_reference_window.texture_id,
+                display_frame.shape[1],
+                display_frame.shape[0],
+            )
+
+        # Keep the floating window in sync if it happens to be visible
+        self._update_zero_window_texture_binding()
+        if self.zero_reference_window.is_visible():
+            self.zero_reference_window.update_image_size()
 
     def _frame_to_rgba(self, frame, min_value=None, max_value=None):
         if frame is None:
@@ -1059,6 +1146,43 @@ class CameraFeedWindow:
 
     def frame_to_rgba(self, frame):
         return self._frame_to_rgba(frame)
+
+    def has_display_snapshot(self):
+        with self.Andor.processed_frame_condition:
+            return self.Andor.processed_frame is not None
+
+    def get_display_snapshot(self):
+        with self.Andor.processed_frame_condition:
+            if self.Andor.processed_frame is None:
+                return None
+
+        with self._image_state_lock:
+            rgba = np.array(self.imageArray, copy=True)
+
+        expected_size = int(self.image_width) * int(self.image_height) * 4
+        if rgba.size != expected_size:
+            return None
+
+        canvas_width, canvas_height = self._get_canvas_size()
+        preview_aspect_ratio = float(canvas_width) / max(1.0, float(canvas_height))
+
+        return {
+            "rgba": rgba,
+            "image_width": int(self.image_width),
+            "image_height": int(self.image_height),
+            "preview_aspect_ratio": preview_aspect_ratio,
+        }
+
+    def set_calibration_mm_per_pixel(self, mm_per_pixel):
+        if mm_per_pixel is None or float(mm_per_pixel) <= 0.0:
+            self.calibration_mm_per_pixel = None
+        else:
+            self.calibration_mm_per_pixel = float(mm_per_pixel)
+        self._redraw_overlay()
+
+    def set_objective_name(self, name):
+        self.objective_name = str(name or "")
+        self._redraw_overlay()
 
     def _process_frame(self, frame=None):
         if frame is None:
@@ -1452,6 +1576,131 @@ class CameraFeedWindow:
         self.colorbar_enabled = bool(app_data)
         self._redraw_colorbar()
 
+    def _get_scale_bar_width_um(self):
+        if self.scale_bar_auto_width:
+            return self._get_auto_scale_bar_width_um()
+        return max(0.001, float(self.scale_bar_width_um))
+
+    def _get_auto_scale_bar_width_um(self):
+        if self.calibration_mm_per_pixel is None or self.calibration_mm_per_pixel <= 0.0:
+            return max(0.001, float(self.scale_bar_width_um))
+
+        view_width_pixels, _ = self._get_view_size()
+        visible_width_um = float(view_width_pixels) * float(self.calibration_mm_per_pixel) * 1000.0
+        target_width_um = max(0.001, visible_width_um * 0.22)
+        return self._get_preferred_scale_bar_width_um(target_width_um)
+
+    @staticmethod
+    def _get_preferred_scale_bar_width_um(target_width_um):
+        target_width_um = max(0.001, float(target_width_um))
+        exponent = int(np.floor(np.log10(target_width_um)))
+        candidates = []
+        for power in range(exponent - 1, exponent + 3):
+            base = 10.0 ** power
+            for factor in (1.0, 2.0, 5.0):
+                candidates.append(factor * base)
+
+        below_target = [candidate for candidate in candidates if candidate <= target_width_um]
+        if below_target:
+            return max(below_target)
+        return min(candidates)
+
+    @staticmethod
+    def _format_scale_bar_label(width_um):
+        width_um = float(width_um)
+        if width_um >= 1000.0:
+            value_mm = width_um / 1000.0
+            formatted = f"{value_mm:.3f}".rstrip("0").rstrip(".")
+            return f"{formatted} mm"
+        if width_um >= 10.0:
+            formatted = f"{width_um:.1f}".rstrip("0").rstrip(".")
+            return f"{formatted} um"
+        formatted = f"{width_um:.3f}".rstrip("0").rstrip(".")
+        return f"{formatted} um"
+
+    def _redraw_scale_bar(self):
+        if not self.scale_bar_enabled:
+            return
+        if self.calibration_mm_per_pixel is None or self.calibration_mm_per_pixel <= 0.0:
+            return
+
+        um_per_pixel = float(self.calibration_mm_per_pixel) * 1000.0
+        if um_per_pixel <= 0.0:
+            return
+
+        scale_bar_width_um = self._get_scale_bar_width_um()
+        scale_bar_width_pixels = scale_bar_width_um / um_per_pixel
+        if scale_bar_width_pixels <= 0.0:
+            return
+
+        canvas_width, canvas_height = self._get_canvas_size()
+        view_width_pixels, _ = self._get_view_size()
+        display_width_pixels = (scale_bar_width_pixels / max(1e-6, float(view_width_pixels))) * float(canvas_width)
+        if display_width_pixels <= 8.0:
+            return
+
+        size_scale = max(0.1, float(self.scale_bar_size))
+        tick_height = 8.0 * size_scale
+        line_thickness = max(1.0, 3.0 * size_scale)
+        label_size = max(10, int(round(16 * size_scale)))
+        label_gap_y = 6.0 * size_scale
+        bg_pad_x = 12.0 * size_scale
+        bg_pad_y = 8.0 * size_scale
+        x_offset = float(self.scale_bar_x_offset)
+        y_offset = float(self.scale_bar_y_offset)
+
+        if "Left" in self.scale_bar_position:
+            x_start = x_offset
+            x_end = x_start + display_width_pixels
+        else:
+            x_end = float(canvas_width) - x_offset
+            x_start = x_end - display_width_pixels
+
+        if "Bottom" in self.scale_bar_position:
+            y_pos = float(canvas_height) - y_offset - tick_height - bg_pad_y
+        else:
+            y_pos = y_offset + label_size + label_gap_y + bg_pad_y
+
+        if x_end <= x_start:
+            return
+        if x_start < 0.0 or x_end > float(canvas_width):
+            return
+
+        label_y = y_pos - label_size - label_gap_y
+        if label_y < 0.0 or (y_pos + tick_height + bg_pad_y) > float(canvas_height):
+            return
+
+        label = self._format_scale_bar_label(scale_bar_width_um)
+        # Estimate rendered text width (DPG default font ≈ 0.54 × size per char)
+        estimated_text_width = len(label) * label_size * 0.54
+        bar_center = (x_start + x_end) / 2.0
+        label_x = bar_center - estimated_text_width / 2.0
+        dpg.draw_rectangle(
+            (x_start - bg_pad_x, label_y - bg_pad_y),
+            (x_end + bg_pad_x, y_pos + tick_height + bg_pad_y),
+            fill=(0, 0, 0, 140),
+            color=(0, 0, 0, 0),
+            parent=self.overlay_layer,
+        )
+        dpg.draw_text(
+            (label_x, label_y),
+            label,
+            color=(255, 255, 255, 255),
+            size=label_size,
+            parent=self.overlay_layer,
+        )
+        dpg.draw_line((x_start, y_pos), (x_end, y_pos), color=(255, 255, 255, 255), thickness=line_thickness, parent=self.overlay_layer)
+        dpg.draw_line((x_start, y_pos - tick_height), (x_start, y_pos + tick_height), color=(255, 255, 255, 255), thickness=max(1.0, 2.0 * size_scale), parent=self.overlay_layer)
+        dpg.draw_line((x_end, y_pos - tick_height), (x_end, y_pos + tick_height), color=(255, 255, 255, 255), thickness=max(1.0, 2.0 * size_scale), parent=self.overlay_layer)
+
+        obj_name = str(self.objective_name or "").strip()
+        if obj_name:
+            obj_size = max(8, int(round(11 * size_scale)))
+            obj_est_w = len(obj_name) * obj_size * 0.54
+            obj_x = (x_start + x_end) / 2.0 - obj_est_w / 2.0
+            obj_y = y_pos + tick_height + 4.0 * size_scale
+            dpg.draw_text((obj_x, obj_y), obj_name, color=(200, 200, 200, 200), size=obj_size, parent=self.overlay_layer)
+
     def _format_colorbar_value(self, value):
         abs_val = abs(value)
         if abs_val == 0.0:
@@ -1596,6 +1845,17 @@ class CameraFeedWindow:
                 thickness=2,
                 parent=self.overlay_layer,
             )
+
+        self._redraw_scale_bar()
+
+        if self.crosshair_enabled:
+            cx = self.width / 2.0
+            cy = self.height / 2.0
+            radius = max(1.0, self.crosshair_radius_percent / 100.0 * self.width)
+            col = [255, 255, 255, 180]
+            dpg.draw_line([0, cy], [self.width, cy], color=col, thickness=1, parent=self.overlay_layer)
+            dpg.draw_line([cx, 0], [cx, self.height], color=col, thickness=1, parent=self.overlay_layer)
+            dpg.draw_circle([cx, cy], radius, color=col, thickness=1, parent=self.overlay_layer)
 
 
     def _process_camera_feed(self):
@@ -1896,7 +2156,7 @@ class CameraFeedWindow:
     def _on_delete_key_pressed(self, sender, app_data):
         if self.selected_roi is None:
             return
-        if not dpg.is_item_focused(self.window_id):
+        if not dpg.is_item_hovered(self.window_id):
             return
 
         self._close_roi(self.selected_roi.tag)
@@ -1921,9 +2181,15 @@ class CameraFeedWindow:
         save_state_file(
             self._state_name(),
             {
-                "window": capture_window_state(self.window_id),
                 "autoscale_enabled": bool(self.autoscale_enabled),
                 "colorbar_enabled": bool(self.colorbar_enabled),
+                "scale_bar_enabled": bool(self.scale_bar_enabled),
+                "scale_bar_auto_width": bool(self.scale_bar_auto_width),
+                "scale_bar_width_um": float(self.scale_bar_width_um),
+                "scale_bar_size": float(self.scale_bar_size),
+                "scale_bar_position": str(self.scale_bar_position),
+                "scale_bar_x_offset": int(self.scale_bar_x_offset),
+                "scale_bar_y_offset": int(self.scale_bar_y_offset),
                 "scale_min": float(self.scale_min),
                 "scale_max": float(self.scale_max),
                 "scale_min_percent": float(self.get_scale_min_percent()),
@@ -1961,11 +2227,15 @@ class CameraFeedWindow:
         if not state:
             return
 
-        apply_window_state(self.window_id, state.get("window"))
-        self._on_window_resize()
-
         self.autoscale_enabled = bool(state.get("autoscale_enabled", self.autoscale_enabled))
         self.colorbar_enabled = bool(state.get("colorbar_enabled", self.colorbar_enabled))
+        self.scale_bar_enabled = bool(state.get("scale_bar_enabled", self.scale_bar_enabled))
+        self.scale_bar_auto_width = bool(state.get("scale_bar_auto_width", self.scale_bar_auto_width))
+        self.scale_bar_width_um = float(state.get("scale_bar_width_um", self.scale_bar_width_um))
+        self.scale_bar_size = float(state.get("scale_bar_size", self.scale_bar_size))
+        self.scale_bar_position = self._normalize_scale_bar_position(state.get("scale_bar_position", self.scale_bar_position))
+        self.scale_bar_x_offset = int(state.get("scale_bar_x_offset", self.scale_bar_x_offset))
+        self.scale_bar_y_offset = int(state.get("scale_bar_y_offset", self.scale_bar_y_offset))
         self.autoscale_grace_percent = float(state.get("autoscale_grace_percent", self.autoscale_grace_percent))
         self.display_mode = str(state.get("display_mode", self.display_mode))
         self.mirrored_difference_scale = bool(state.get("mirrored_difference_scale", self.mirrored_difference_scale))
@@ -2022,6 +2292,13 @@ class CameraFeedWindow:
 
         dpg.set_value(self.controls_window.autoscale_checkbox_id, self.autoscale_enabled)
         dpg.set_value(self.controls_window.colorbar_checkbox_id, self.colorbar_enabled)
+        dpg.set_value(self.controls_window.scale_bar_enabled_checkbox_id, self.scale_bar_enabled)
+        dpg.set_value(self.controls_window.scale_bar_auto_width_checkbox_id, self.scale_bar_auto_width)
+        dpg.set_value(self.controls_window.scale_bar_width_input_id, self.scale_bar_width_um)
+        dpg.set_value(self.controls_window.scale_bar_size_input_id, self.scale_bar_size)
+        dpg.set_value(self.controls_window.scale_bar_position_combo_id, self.scale_bar_position)
+        dpg.set_value(self.controls_window.scale_bar_x_offset_input_id, self.scale_bar_x_offset)
+        dpg.set_value(self.controls_window.scale_bar_y_offset_input_id, self.scale_bar_y_offset)
         self._sync_scale_inputs_from_values()
         dpg.set_value(self.controls_window.autoscale_grace_input_id, self.autoscale_grace_percent)
         dpg.set_value(self.controls_window.display_mode_combo_id, self.display_mode)
@@ -2063,6 +2340,12 @@ class CameraFeedWindow:
 
 
     def render(self):
+        if dpg.does_item_exist(self.window_id):
+            rect = dpg.get_item_rect_size(self.window_id)
+            new_w, new_h = max(1, int(rect[0])), max(1, int(rect[1]))
+            if new_w != self._last_container_w or new_h != self._last_container_h:
+                self._last_container_w, self._last_container_h = new_w, new_h
+                self._on_window_resize()
         self.zero_reference_window.render()
         self.rois_window.rebuild_layout(self.rois)
         self.rois_window.render()

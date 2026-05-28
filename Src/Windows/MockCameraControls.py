@@ -11,15 +11,20 @@ class MockCameraControls:
         self._initialized = False
         self._pending_camera_state = None
 
-        with dpg.window(
-            label="Mock Camera Settings",
-            tag="#MockCameraControls",
-            width=300,
-            height=700,
-            pos=(650, 620),
-            show=False,
-        ):
-            self.window_id = dpg.last_item()
+        _mock_tab = shared_state.layout_containers.get("mock_camera_tab")
+        if _mock_tab:
+            self.window_id = _mock_tab
+        else:
+            self.window_id = dpg.add_window(
+                label="Mock Camera Settings",
+                tag="#MockCameraControls",
+                width=300,
+                height=700,
+                pos=(650, 620),
+                show=False,
+            )
+        dpg.push_container_stack(self.window_id)
+        if True:
 
             dpg.add_text("Simulation parameters (disconnected mode)")
             dpg.add_separator()
@@ -241,6 +246,8 @@ class MockCameraControls:
                     format="%.2f",
                     callback=self._on_fiducial_offset_changed,
                 )
+
+        dpg.pop_container_stack()
 
     # ── Camera access ───────────────────────────────────────────────────────────
 
@@ -484,7 +491,6 @@ class MockCameraControls:
         save_state_file(
             type(self).__name__,
             {
-                "window": capture_window_state(self.window_id),
                 "focus_sigma": float(dpg.get_value(self._focus_slider_id)),
                 "num_particles": int(dpg.get_value(self._num_particles_slider_id)),
                 "particle_min_radius": float(dpg.get_value(self._min_radius_slider_id)),
@@ -513,8 +519,6 @@ class MockCameraControls:
         state = load_state_file(type(self).__name__)
         if not state:
             return
-        apply_window_state(self.window_id, state.get("window"))
-
         keys = (
             "focus_sigma", "num_particles", "particle_min_radius", "particle_max_radius",
             "particle_mean", "particle_std", "particle_amplitude",

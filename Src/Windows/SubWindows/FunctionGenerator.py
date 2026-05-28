@@ -62,11 +62,12 @@ class FunctionGeneratorWindow:
             )
 
             self.awg_frequency_input_id = dpg.add_input_float(
-                label="Frequency (Hz)",
+                label="Period (ms)",
                 width=-120,
-                default_value=driver.awg_config["frequency_hz"],
-                min_value=0.0,
-                step=100.0,
+                default_value=1000.0 / max(1e-6, float(driver.awg_config["frequency_hz"])),
+                min_value=0.001,
+                min_clamped=True,
+                step=0.1,
                 callback=self._on_awg_setting_changed,
             )
 
@@ -88,9 +89,10 @@ class FunctionGeneratorWindow:
             )
 
     def get_awg_settings(self):
+        period_ms = max(1e-6, float(dpg.get_value(self.awg_frequency_input_id)))
         return {
             "waveform_type": dpg.get_value(self.awg_waveform_combo_id).lower(),
-            "frequency_hz": float(dpg.get_value(self.awg_frequency_input_id)),
+            "frequency_hz": 1000.0 / period_ms,
             "amplitude_vpp_volts": float(dpg.get_value(self.awg_amplitude_input_id)),
             "offset_volts": float(dpg.get_value(self.awg_offset_input_id)),
         }
@@ -126,8 +128,10 @@ class FunctionGeneratorWindow:
     def apply_to_driver(self):
         driver = self._get_driver()
         try:
-            driver.configure_awg(**self.get_awg_settings())
-            driver.set_awg_enabled(self._awg_enabled)
+            if hasattr(driver, "configure_awg"):
+                driver.configure_awg(**self.get_awg_settings())
+            if hasattr(driver, "set_awg_enabled"):
+                driver.set_awg_enabled(self._awg_enabled)
         except Exception as exc:
             self._set_error(str(exc))
 
@@ -138,10 +142,11 @@ class FunctionGeneratorWindow:
             dpg.configure_item(item_id, enabled=awg_config_enabled)
 
     def SaveState(self):
+        period_ms = max(1e-6, float(dpg.get_value(self.awg_frequency_input_id)))
         payload = {
             "enabled": bool(self._awg_enabled),
             "waveform": dpg.get_value(self.awg_waveform_combo_id),
-            "frequency_hz": float(dpg.get_value(self.awg_frequency_input_id)),
+            "period_ms": period_ms,
             "amplitude_vpp_volts": float(dpg.get_value(self.awg_amplitude_input_id)),
             "offset_volts": float(dpg.get_value(self.awg_offset_input_id)),
         }
@@ -163,8 +168,10 @@ class FunctionGeneratorWindow:
         waveform = str(state.get("waveform", dpg.get_value(self.awg_waveform_combo_id)))
         dpg.set_value(self.awg_waveform_combo_id, waveform)
 
-        if "frequency_hz" in state:
-            dpg.set_value(self.awg_frequency_input_id, float(state["frequency_hz"]))
+        if "period_ms" in state:
+            dpg.set_value(self.awg_frequency_input_id, float(state["period_ms"]))
+        elif "frequency_hz" in state:
+            dpg.set_value(self.awg_frequency_input_id, 1000.0 / max(1e-6, float(state["frequency_hz"])))
         if "amplitude_vpp_volts" in state:
             dpg.set_value(self.awg_amplitude_input_id, float(state["amplitude_vpp_volts"]))
         if "offset_volts" in state:

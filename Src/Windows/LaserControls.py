@@ -2,6 +2,7 @@ import Drivers.LaserDriver as LaserDriverModule
 from Drivers.PM1000 import PM1000
 import dearpygui.dearpygui as dpg
 from Utils.fonts import get_segmdl2_icon_font
+import Utils.shared_state as shared_state
 from Utils.state_persistence import (
     apply_item_open_states, apply_window_state,
     capture_item_open_states, capture_window_state,
@@ -34,17 +35,22 @@ class LaserControls:
         mdl = get_segmdl2_icon_font()
         self.section_node_ids = {}
 
-        with dpg.window(
-            label="Laser Controls",
-            tag="#LaserControls",
-            width=300,
-            height=500,
-            pos=(625, 325),
-            no_scrollbar=False,
-            no_resize=False,
-            no_scroll_with_mouse=True,
-        ):
-            self.window_id = dpg.last_item()
+        _laser_tab = shared_state.layout_containers.get("laser_tab")
+        if _laser_tab:
+            self.window_id = _laser_tab
+        else:
+            self.window_id = dpg.add_window(
+                label="Laser Controls",
+                tag="#LaserControls",
+                width=300,
+                height=500,
+                pos=(625, 325),
+                no_scrollbar=False,
+                no_resize=False,
+                no_scroll_with_mouse=True,
+            )
+        dpg.push_container_stack(self.window_id)
+        if True:
 
             with dpg.tree_node(label="Laser Connection", default_open=True, span_full_width=True) as laser_node:
                 self.section_node_ids["laser_connection"] = laser_node
@@ -138,7 +144,7 @@ class LaserControls:
             dpg.add_separator()
 
             with dpg.plot(
-                label="Laser Output", height=-1, width=-1,
+                label="Laser Output", height=200, width=-1,
                 no_title=True, no_menus=True, no_box_select=True,
             ):
                 dpg.add_plot_legend()
@@ -156,6 +162,8 @@ class LaserControls:
                     self.history_x, self.pm1000_history_y,  # type: ignore
                     label="Measured Power", parent=self.power_history_axis_id,
                 )
+
+        dpg.pop_container_stack()
 
         self._sync_laser_ui()
         self._sync_pm1000_ui()
@@ -329,7 +337,6 @@ class LaserControls:
         save_state_file(
             type(self).__name__,
             {
-                "window": capture_window_state(self.window_id),
                 "sections": capture_item_open_states(self.section_node_ids),
                 "laser_com_port": str(dpg.get_value(self.laser_com_port_id)),
                 "target_power_mw": float(dpg.get_value(self.target_power_source)),
@@ -342,7 +349,6 @@ class LaserControls:
         if not state:
             return
 
-        apply_window_state(self.window_id, state.get("window"))
         apply_item_open_states(self.section_node_ids, state.get("sections"))
 
         saved_port = str(state.get("laser_com_port") or "").strip()
