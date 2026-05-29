@@ -21,6 +21,14 @@ class ProcessingSettings:
         "zero_frame": None,         # numpy array or None
         "frame_rate_hz": 10.0,
         "max_value": 65535.0,
+        # Colormap / display settings — updated by CameraFeed GUI callbacks.
+        "colormap_lut_gpu": None,         # GPU LUT array shape (N, 3) float32, or None
+        "colormap_double_sided": False,   # True for Difference / Contrast modes
+        "autoscale_enabled": True,
+        "autoscale_grace_percent": 5.0,
+        "scale_min": 0.0,
+        "scale_max": 65535.0,
+        "mirrored_difference_scale": False,
     }
 
     def __init__(self):

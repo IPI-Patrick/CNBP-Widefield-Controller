@@ -387,9 +387,25 @@ class CameraFeedWindow:
         s.display_mode = self.display_mode
         s.frame_rate_hz = float(self.Andor.get_frame_rate())
         s.max_value = float(self.display_max)
+        self._sync_colormap_to_settings()
+
+    def _sync_colormap_to_settings(self):
+        """Upload the current colormap LUT to the GPU and sync display settings to Andor.settings."""
+        from Utils.gpu import to_gpu
+        double_sided = self._is_signed_zero_reference_mode_active()
+        lut_cpu = self._get_colormap_lut(double_sided=double_sided)
+        s = self.Andor.settings
+        s.colormap_lut_gpu          = to_gpu(lut_cpu)
+        s.colormap_double_sided     = double_sided
+        s.autoscale_enabled         = self.autoscale_enabled
+        s.autoscale_grace_percent   = self.autoscale_grace_percent
+        s.scale_min                 = self.scale_min
+        s.scale_max                 = self.scale_max
+        s.mirrored_difference_scale = self.mirrored_difference_scale
 
     def _on_autoscale_changed(self, sender, app_data):
         self.autoscale_enabled = bool(app_data)
+        self._sync_colormap_to_settings()
         self._update_settings_controls_state()
         self._refresh_display_image()
 
@@ -409,6 +425,7 @@ class CameraFeedWindow:
 
         self.scale_min = scale_min
         self.scale_max = scale_max
+        self._sync_colormap_to_settings()
         self._sync_scale_inputs_from_values()
         self._refresh_display_image()
         self._redraw_colorbar()
@@ -416,6 +433,7 @@ class CameraFeedWindow:
     def _on_autoscale_grace_changed(self, sender, app_data, user_data=None):
         grace = app_data if app_data is not None else float(dpg.get_value(self.controls_window.autoscale_grace_input_id))
         self.autoscale_grace_percent = max(0.0, float(grace))
+        self._sync_colormap_to_settings()
         self._refresh_display_image()
 
     def _on_mirrored_difference_changed(self, sender, app_data):
@@ -427,6 +445,7 @@ class CameraFeedWindow:
             self.scale_min = -amplitude
             self.scale_max = amplitude
             self._sync_scale_inputs_from_values()
+        self._sync_colormap_to_settings()
         self._refresh_display_image()
 
     def _on_lp_filter_enabled_changed(self, sender, app_data):
@@ -738,9 +757,17 @@ class CameraFeedWindow:
         return latest_frame
 
     def _refresh_display_image(self):
+        expected_rgba_size = self.image_width * self.image_height * 4
         with self.Andor.processed_frame_condition:
-            frame_ref = self.Andor.processed_frame
-        rgba = self._frame_to_rgba(frame_ref)
+            frame_ref  = self.Andor.processed_frame
+            rgba_ref   = self.Andor.processed_rgba
+            rgba_scale = self.Andor.processed_rgba_scale
+        if rgba_ref is not None and rgba_ref.size == expected_rgba_size:
+            rgba = rgba_ref
+            self._last_frame_display_min = float(rgba_scale[0])
+            self._last_frame_display_max = float(rgba_scale[1])
+        else:
+            rgba = self._frame_to_rgba(frame_ref)
         with self._image_state_lock:
             self.imageArray = rgba
             self.image_dirty = True
@@ -811,6 +838,7 @@ class CameraFeedWindow:
 
         self.colormap_name = self._colormap_per_mode.get(self.display_mode, self._get_default_colormap_name())
         self._ensure_valid_colormap_selection()
+        self._sync_colormap_to_settings()
         self._request_zero_window_refresh()
         self._refresh_display_image()
         self._update_zero_window_texture_binding()
@@ -823,6 +851,7 @@ class CameraFeedWindow:
         self.colormap_name = self._parse_colormap_label(app_data)
         self._ensure_valid_colormap_selection()
         self._colormap_per_mode[self.display_mode] = self.colormap_name
+        self._sync_colormap_to_settings()
         self._update_colormap_controls_state()
         self._request_zero_window_refresh()
         self._refresh_display_image()
@@ -1884,16 +1913,24 @@ class CameraFeedWindow:
 
     def _process_camera_feed(self):
         rendered_idx = -1
+        expected_rgba_size = self.image_width * self.image_height * 4
         while not self._processing_stop_event.is_set():
             try:
                 with self.Andor.processed_frame_condition:
                     if self.Andor.processed_frame_idx == rendered_idx:
-                        self.Andor.processed_frame_condition.wait(timeout=0.016)
+                        self.Andor.processed_frame_condition.wait(timeout=0.0016)
                         continue
-                    rendered_idx = self.Andor.processed_frame_idx
-                    frame_ref = self.Andor.processed_frame
+                    rendered_idx  = self.Andor.processed_frame_idx
+                    frame_ref     = self.Andor.processed_frame
+                    rgba_ref      = self.Andor.processed_rgba
+                    rgba_scale    = self.Andor.processed_rgba_scale
 
-                rgba = self._frame_to_rgba(frame_ref)
+                if rgba_ref is not None and rgba_ref.size == expected_rgba_size:
+                    rgba = rgba_ref
+                    self._last_frame_display_min = float(rgba_scale[0])
+                    self._last_frame_display_max = float(rgba_scale[1])
+                else:
+                    rgba = self._frame_to_rgba(frame_ref)
 
                 with self._image_state_lock:
                     self.imageArray = rgba

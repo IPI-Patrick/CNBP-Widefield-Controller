@@ -55,7 +55,7 @@ def request_viewport_state_save():
 def update_performance_overlay():
     SOFTWARE_FPS_TIMES.append(time.perf_counter())
     _times = list(SOFTWARE_FPS_TIMES)
-    _cutoff = _times[-1] - 10.0
+    _cutoff = _times[-1] - 5.0
     _recent = [t for t in _times if t >= _cutoff]
     ui_fps = 0.0 if len(_recent) < 2 else (len(_recent) - 1) / max(_recent[-1] - _recent[0], 1e-9)
 

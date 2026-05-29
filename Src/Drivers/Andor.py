@@ -78,6 +78,8 @@ class Andor:
         self.processed_frame      = np.zeros(frame_shape, dtype=np.float32)
         self.processed_frame_idx  = -1
         self.processed_frame_condition = threading.Condition()
+        self.processed_rgba       = None   # flat float32 RGBA from GPU colormap, or None
+        self.processed_rgba_scale = (0.0, 1.0)  # (min_val, max_val) used for colorbar
         self.scope_frame_mean_channels = ()
         self.scope_frame_mean_capacity = 0
         self.scope_frame_mean_buffers = {}
@@ -1036,6 +1038,56 @@ class Andor:
                 roi.plot_x.append(float(len(roi.plot_x)))
                 roi.plot_y.append(value)
 
+        # --- GPU Colormap ---
+        # Apply LUT on GPU when colormap_lut_gpu is set; store flat RGBA in state["_rgba"].
+        lut = settings.colormap_lut_gpu
+        if lut is not None:
+            double_sided = bool(settings.colormap_double_sided)
+            if settings.autoscale_enabled:
+                data_min = float(xp.min(frame_f32))
+                data_max = float(xp.max(frame_f32))
+                if data_max <= data_min:
+                    data_max = data_min + 1.0
+                grace = settings.autoscale_grace_percent / 100.0
+                padding = (data_max - data_min) * grace
+                if double_sided:
+                    min_val = data_min - padding
+                    max_val = data_max + padding
+                    if settings.mirrored_difference_scale:
+                        amp = max(abs(min_val), abs(max_val), 1e-12)
+                        min_val, max_val = -amp, amp
+                else:
+                    min_val = max(0.0, data_min - padding)
+                    max_val = min(float(settings.max_value), data_max + padding)
+            else:
+                min_val = float(settings.scale_min)
+                max_val = float(settings.scale_max)
+                if double_sided and settings.mirrored_difference_scale:
+                    amp = max(abs(min_val), abs(max_val), 1e-12)
+                    min_val, max_val = -amp, amp
+            if max_val <= min_val:
+                max_val = min_val + 1.0
+
+            if double_sided:
+                neg_ext = max(abs(min_val), 1e-12) if min_val < 0.0 else 1e12
+                pos_ext = max(max_val, 1e-12) if max_val > 0.0 else 1e12
+                neg_norm = xp.clip(0.5 + 0.5 * frame_f32 / neg_ext, 0.0, 0.5)
+                pos_norm = xp.clip(0.5 + 0.5 * frame_f32 / pos_ext, 0.5, 1.0)
+                normalized = xp.where(frame_f32 < 0.0, neg_norm, pos_norm)
+            else:
+                normalized = xp.clip((frame_f32 - min_val) / (max_val - min_val), 0.0, 1.0)
+
+            n_entries = lut.shape[0]
+            indices = xp.clip((normalized * (n_entries - 1)).astype(xp.int32), 0, n_entries - 1)
+            rgba_gpu = xp.empty((frame_f32.shape[0], frame_f32.shape[1], 4), dtype=xp.float32)
+            rgba_gpu[..., :3] = lut[indices]
+            rgba_gpu[..., 3] = 1.0
+            state["_rgba"] = to_cpu(rgba_gpu.reshape(-1))
+            state["_rgba_scale"] = (min_val, max_val)
+        else:
+            state["_rgba"] = None
+            state["_rgba_scale"] = (0.0, 1.0)
+
         # Move result back to CPU for storage and display.
         result = to_cpu(frame_f32)
         return result if result.dtype == np.float32 else result.astype(np.float32), state
@@ -1080,6 +1132,8 @@ class Andor:
                 return False
 
             processed, state = self.process_frame(frame, settings, rois, state)
+            state.pop("_rgba", None)
+            state.pop("_rgba_scale", None)
 
             if result_buffer is not None and i < len(result_buffer):
                 result_buffer[i] = processed
@@ -1135,11 +1189,16 @@ class Andor:
                     print(f"ProcessingThread error: {exc}")
                     continue
 
+                rgba       = state.pop("_rgba", None)
+                rgba_scale = state.pop("_rgba_scale", (0.0, 1.0))
+
                 # Track real processed-frame FPS (one append per frame).
                 self._processing_fps_times.append(time.time())
 
                 with self.processed_frame_condition:
                     self.processed_frame     = processed
+                    self.processed_rgba      = rgba
+                    self.processed_rgba_scale = rgba_scale
                     self.processed_frame_idx = current_idx
                     self.processed_frame_condition.notify_all()
 
