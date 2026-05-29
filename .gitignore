@@ -180,3 +180,7 @@ Scripts/
 AppState/
 Saves/
 dist/
+
+**.npz
+*.npz
+*.png

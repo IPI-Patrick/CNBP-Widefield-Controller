@@ -1,4 +1,4 @@
-import Drivers.LaserDriver as LaserDriverModule
+import Drivers.MPC_6000 as LaserDriverModule
 from Drivers.PM1000 import PM1000
 import dearpygui.dearpygui as dpg
 from Utils.fonts import get_segmdl2_icon_font
@@ -189,7 +189,10 @@ class LaserControls:
         if self.laser.connected:
             self.laser.disconnect()
         else:
-            self.laser.connect(dpg.get_value(self.laser_com_port_id))
+            try:
+                self.laser.connect(dpg.get_value(self.laser_com_port_id))
+            except Exception:
+                pass
 
     def _toggle_emission(self, sender=None, app_data=None, user_data=None):
         self.laser.set_emission(not self.laser.get_state()["emission_on"])
