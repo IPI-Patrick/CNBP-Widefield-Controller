@@ -36,7 +36,10 @@
       "Bash(python -c \"import ast; ast.parse\\(open\\('src/Windows/AppLayout.py'\\).read\\(\\)\\); print\\('OK'\\)\")",
       "Bash(python -c \"import ast; ast.parse\\(open\\('src/Windows/SubWindows/FunctionGenerator.py'\\).read\\(\\)\\); print\\('OK'\\)\")",
       "Bash(Get-ChildItem -Path \"c:\\\\CodingProjects\\\\Widefield-Controller\\\\src\\\\Windows\" -Filter \"*.py\" -Recurse)",
-      "Bash(Select-Object -ExpandProperty FullName)"
+      "Bash(Select-Object -ExpandProperty FullName)",
+      "Bash(Get-ChildItem -Path \"c:\\\\CodingProjects\\\\Widefield-Controller\\\\src\" -Recurse -Filter \"*.py\")",
+      "Bash(Select-Object -Property FullName)",
+      "Bash(Sort-Object FullName)"
     ]
   }
 }

@@ -1,4 +1,5 @@
 
+import math
 import time
 import numpy as np
 import threading
@@ -13,6 +14,8 @@ from Utils.StorageDTypes import (
     quantize_to_signed_storage_dtype,
 )
 from Utils.TypedDeque import TypedDeque
+from Utils.ProcessingSettings import ProcessingSettings
+from Utils.gpu import xp, to_gpu, to_cpu, ndimage_shift as _gpu_shift, phase_cross_correlation_ds, background_filter as _bg_filter
 
 
 class Andor:
@@ -32,7 +35,7 @@ class Andor:
         self.frame_ready_event  = threading.Event()        
         self.stop_capture_event = threading.Event()
         self.default_max_acquisitions = int(type(self).max_acquisitions)
-        self._capture_fps_times = deque(maxlen=60)
+        self._capture_fps_times = deque(maxlen=600)
 
         # Set up the camera
         self.sdk3               = AndorSDK3()
@@ -48,6 +51,13 @@ class Andor:
             self.camera     = MockCamera()
 
             print("Error: No camera found. Running in development mode.")
+
+        # Task 4: Auto-enable cooler at -10 °C on connection
+        try:
+            self.set_sensor_cooling_enabled(True)
+            self.set_temperature_setpoint_c(-10.0)
+        except Exception as _cooler_exc:
+            print(f"Warning: could not auto-enable cooler on connection: {_cooler_exc}")
 
         frame_shape             = (self.camera.AOIHeight, self.camera.AOIWidth)
         frame_dtype             = np.dtype(f'u{max(1, (self.bit_depth + 7)//8)}')
@@ -77,6 +87,20 @@ class Andor:
         self.frames_axis = np.zeros((0,), dtype=np.float64)
         self.estimated_time_axis = np.zeros((0,), dtype=np.float64)
         self._configure_display_axes_locked(self.default_max_acquisitions, self.get_frame_rate())
+
+        # Processing pipeline settings and ROI list (updated by GUI).
+        # Whenever any science setting changes, all ROI plot buffers are cleared
+        # so stale trace data is not shown alongside new data.
+        self.settings = ProcessingSettings()
+        self.settings.frame_rate_hz = float(self.get_frame_rate())
+        self.settings.max_value = float(self.frame_max_value)
+        self.settings.add_change_callback(self._on_settings_changed)
+        self.rois = []
+
+        # FPS tracking for the processing thread
+        self._processing_fps_times = deque(maxlen=600)
+        self._processing_thread_stop_event = threading.Event()
+        self._processing_thread_stop_event.set()  # no thread running yet
 
     def _new_raw_frame_buffer(self, iterable=None):
         return TypedDeque(iterable, maxlen=self.max_acquisitions, dtype=self.raw_storage_dtype, shape=self.frame_shape)
@@ -416,12 +440,15 @@ class Andor:
 
     def get_capture_loop_fps(self):
         with self.frame_lock:
-            if len(self._capture_fps_times) < 2:
-                return 0.0
-            elapsed = float(self._capture_fps_times[-1] - self._capture_fps_times[0])
-            if elapsed <= 0.0:
-                return 0.0
-            return float((len(self._capture_fps_times) - 1) / elapsed)
+            times = list(self._capture_fps_times)
+        if len(times) < 2:
+            return 0.0
+        cutoff = times[-1] - 2.0
+        recent = [t for t in times if t >= cutoff]
+        if len(recent) < 2:
+            return 0.0
+        elapsed = recent[-1] - recent[0]
+        return 0.0 if elapsed <= 0.0 else float((len(recent) - 1) / elapsed)
 
     def set_preview_max_frames(self, frame_count):
         frame_count = max(1, int(frame_count))
@@ -585,9 +612,32 @@ class Andor:
         # last_frame_ready_time       = None
 
         def _queue_capture_buffers():
-            for _ in range(buffer_count):
-                buf = np.empty((imgsize,), dtype='B')
-                cam.queue(buf, imgsize)
+            # Task 5: Refresh imgsize in case it changed (e.g. after AOI change),
+            # and catch AT_ERR_INVALIDSIZE by flushing and retrying once.
+            nonlocal imgsize
+            imgsize = cam.ImageSizeBytes
+            try:
+                for _ in range(buffer_count):
+                    buf = np.empty((imgsize,), dtype='B')
+                    cam.queue(buf, imgsize)
+            except (CameraException, Exception) as _queue_exc:
+                is_invalid_size = (
+                    isinstance(_queue_exc, CameraException)
+                    and getattr(_queue_exc, "err_code", None) == ErrorCodes.AT_ERR_INVALIDSIZE
+                )
+                if is_invalid_size:
+                    print("AT_ERR_INVALIDSIZE during buffer queue; flushing and retrying with refreshed size")
+                    try:
+                        cam.flush()
+                        imgsize = cam.ImageSizeBytes
+                        for _ in range(buffer_count):
+                            buf = np.empty((imgsize,), dtype='B')
+                            cam.queue(buf, imgsize)
+                    except Exception as _retry_exc:
+                        print(f"Buffer re-queue failed after AT_ERR_INVALIDSIZE flush: {_retry_exc}")
+                        raise
+                else:
+                    raise
 
         def _restart_acquisition_after_timeout():
             print("Preview timed out twice; restarting acquisition")
@@ -686,9 +736,29 @@ class Andor:
                         if not continuous and self.frameIdx >= self.max_acquisitions:
                             break
 
-                # Re-add this buffer to the queue
-                queue_buffer = getattr(acq, "buffer_data", getattr(acq, "_np_data"))
-                cam.queue(queue_buffer, imgsize)
+                # Re-add this buffer to the queue; handle AT_ERR_INVALIDSIZE by
+                # restarting the buffer pool with the current image size.
+                try:
+                    queue_buffer = getattr(acq, "buffer_data", getattr(acq, "_np_data"))
+                    cam.queue(queue_buffer, imgsize)
+                except (CameraException, Exception) as _requeue_exc:
+                    is_invalid_size = (
+                        isinstance(_requeue_exc, CameraException)
+                        and getattr(_requeue_exc, "err_code", None) == ErrorCodes.AT_ERR_INVALIDSIZE
+                    )
+                    if is_invalid_size:
+                        print("AT_ERR_INVALIDSIZE on buffer re-queue; flushing and re-seeding buffers")
+                        try:
+                            cam.AcquisitionStop()
+                            cam.flush()
+                            _queue_capture_buffers()
+                            cam.AcquisitionStart()
+                            _consecutive_timeout_count = 0
+                        except Exception as _recover_exc:
+                            print(f"Failed to recover from AT_ERR_INVALIDSIZE: {_recover_exc}")
+                            break
+                    else:
+                        raise
 
                 # If the stop event is triggered, stop
                 if self.stop_capture_event.is_set():
@@ -744,4 +814,355 @@ class Andor:
         if self.capture_thread and self.capture_thread.is_alive():
             self.capture_thread.join(timeout=2.0)
         self.capture_thread = None
+
+    # ══════════════════════════════════════════════════════════════════════
+    # Unified processing pipeline
+    # ══════════════════════════════════════════════════════════════════════
+
+    def _on_settings_changed(self, field_name, new_value):
+        """Clear all ROI plot buffers whenever any processing setting changes."""
+        for roi in list(self.rois):
+            try:
+                roi.clear_plot_buffers()
+            except Exception:
+                pass
+
+    # ------------------------------------------------------------------
+    # Static frame-shift helpers (used by process_frame for drift correction)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _shift_frame_for_display(frame, dy, dx):
+        if dy == 0 and dx == 0:
+            return frame
+        shifted = np.zeros_like(frame)
+        h, w = frame.shape[:2]
+        src_y = slice(max(0, -dy), h - max(0, dy))
+        dst_y = slice(max(0, dy), h - max(0, -dy))
+        src_x = slice(max(0, -dx), w - max(0, dx))
+        dst_x = slice(max(0, dx), w - max(0, -dx))
+        shifted[dst_y, dst_x] = frame[src_y, src_x]
+        return shifted
+
+    @staticmethod
+    def _shift_frame_subpixel(frame, dy, dx):
+        frame_f32 = np.asarray(frame, dtype=np.float32)
+        dy_int = int(math.floor(dy))
+        dx_int = int(math.floor(dx))
+        fy = float(dy - dy_int)
+        fx = float(dx - dx_int)
+        s00 = Andor._shift_frame_for_display(frame_f32, dy_int, dx_int)
+        row0 = (
+            (1.0 - fx) * s00
+            + fx * Andor._shift_frame_for_display(frame_f32, dy_int, dx_int + 1)
+            if fx > 1e-6 else s00
+        )
+        if fy > 1e-6:
+            s10 = Andor._shift_frame_for_display(frame_f32, dy_int + 1, dx_int)
+            row1 = (
+                (1.0 - fx) * s10
+                + fx * Andor._shift_frame_for_display(frame_f32, dy_int + 1, dx_int + 1)
+                if fx > 1e-6 else s10
+            )
+            return (1.0 - fy) * row0 + fy * row1
+        return row0
+
+    @staticmethod
+    def _compute_drift_valid_mask(shape, dy, dx):
+        h, w = shape
+        mask = np.ones(shape, dtype=bool)
+        top    = max(0, math.ceil(dy))
+        bottom = max(0, math.ceil(-dy))
+        left   = max(0, math.ceil(dx))
+        right  = max(0, math.ceil(-dx))
+        if top    > 0: mask[:top, :]        = False
+        if bottom > 0: mask[h - bottom:, :] = False
+        if left   > 0: mask[:, :left]       = False
+        if right  > 0: mask[:, w - right:]  = False
+        return mask
+
+    # ------------------------------------------------------------------
+    # process_frame — full science pipeline for a single raw frame
+    # ------------------------------------------------------------------
+
+    def process_frame(self, raw_frame, settings, rois=None, state=None):
+        """Apply the full science pipeline to one raw frame.
+
+        Pipeline order: Drift-Correction → LP-Filter → BG-Removal →
+        Difference/Contrast → Crop → ROI-Calculation.
+
+        Parameters
+        ----------
+        raw_frame   : array-like, raw pixel data
+        settings    : ProcessingSettings
+        rois        : list of ProcessingROI (optional)
+        state       : dict carrying LP-filter continuity between calls.
+                      Pass ``None`` to start a fresh filter chain.
+
+        Returns
+        -------
+        (processed_frame : float32 ndarray, updated_state : dict)
+        """
+        if rois is None:
+            rois = []
+        if state is None:
+            state = {}
+
+        # Move to GPU (no-op when GPU unavailable); all ops below run on-device.
+        frame_f32 = to_gpu(np.asarray(raw_frame, dtype=np.float32))
+
+        # --- Refresh zero_frame caches when the reference array changes ---
+        # Keyed by object identity — changes whenever a new zero frame is captured.
+        zero_id = id(settings.zero_frame) if settings.zero_frame is not None else None
+        if state.get("_zero_id") != zero_id:
+            state["_zero_id"] = zero_id
+            if settings.zero_frame is not None:
+                _ref_cpu = np.asarray(settings.zero_frame, dtype=np.float32)
+                state["zero_gpu"]    = to_gpu(_ref_cpu)
+                state["ref_std_ok"]  = float(_ref_cpu.std()) >= 1e-6
+                _ds = 4
+                _ref_ds = xp.asarray(_ref_cpu[::_ds, ::_ds], dtype=xp.float64)
+                state["ref_fft_ds"]  = xp.fft.rfft2(_ref_ds)  # cached FFT of downsampled ref
+            else:
+                state["zero_gpu"]    = None
+                state["ref_std_ok"]  = False
+                state["ref_fft_ds"]  = None
+
+        # --- Drift Correction ---
+        # One FFT per frame (reference FFT cached above) + tiny corr-map D2H transfer.
+        drift_border = None
+        if settings.drift_correction_enabled and state.get("ref_std_ok") and state.get("ref_fft_ds") is not None:
+            try:
+                dy, dx = phase_cross_correlation_ds(
+                    None, frame_f32, downsample=4, _ref_fft=state["ref_fft_ds"]
+                )
+                if abs(dy) > 0.05 or abs(dx) > 0.05:
+                    frame_f32 = _gpu_shift(frame_f32, (dy, dx))
+                drift_border = (
+                    max(0, math.ceil(dy)),
+                    max(0, math.ceil(-dy)),
+                    max(0, math.ceil(dx)),
+                    max(0, math.ceil(-dx)),
+                )
+            except Exception:
+                pass
+
+        # --- LP Filter ---
+        # Filter coefficients are recomputed only when cutoff or frame-rate changes.
+        if settings.lp_filter_enabled:
+            lp_key = (settings.lp_filter_cutoff_hz, settings.frame_rate_hz)
+            if state.get("_lp_key") != lp_key:
+                sample_rate = max(float(settings.frame_rate_hz), 1e-6)
+                nyquist     = sample_rate * 0.5
+                cutoff = float(np.clip(settings.lp_filter_cutoff_hz, 1e-6,
+                                       max(1e-6, nyquist * 0.99)))
+                k    = float(np.tan(np.pi * cutoff / sample_rate))
+                norm = 1.0 / (1.0 + k)
+                state["_lp_key"]    = lp_key
+                state["_lp_coeffs"] = (k * norm, k * norm, (k - 1.0) * norm)
+            b0, b1, a1 = state["_lp_coeffs"]
+
+            prev_in  = state.get("lp_prev_input")
+            prev_out = state.get("lp_prev_output")
+            if prev_in is not None and prev_out is not None:
+                filtered = xp.clip(
+                    b0 * frame_f32 + b1 * prev_in - a1 * prev_out,
+                    0.0, float(settings.max_value),
+                ).astype(xp.float32)
+            else:
+                filtered = frame_f32.copy()
+
+            # lp_prev_input saves the pre-filter frame; no copy needed because
+            # frame_f32 is immediately rebound to `filtered` and subsequent ops
+            # (BG, Diff, crop) all produce new arrays rather than mutating it.
+            state["lp_prev_input"]  = frame_f32
+            state["lp_prev_output"] = filtered
+            frame_f32 = filtered
+        else:
+            state["lp_prev_input"]  = None
+            state["lp_prev_output"] = None
+
+        # --- Background Removal ---
+        # uniform_filter approximates Gaussian in O(N·M) regardless of sigma.
+        if settings.bg_removal_enabled:
+            bg = _bg_filter(frame_f32, float(settings.bg_removal_sigma))
+            frame_f32 = xp.clip(frame_f32 - bg, 0.0, None)
+
+        # --- Difference / Contrast ---
+        # zero_gpu is cached — no per-frame host→device upload.
+        if settings.display_mode in ("Difference", "Contrast") and state.get("zero_gpu") is not None:
+            zero_f = state["zero_gpu"]
+            if settings.bg_removal_enabled:
+                zero_bg = _bg_filter(zero_f, float(settings.bg_removal_sigma))
+                zero_f = xp.clip(zero_f - zero_bg, 0.0, None)
+            if settings.display_mode == "Difference":
+                frame_f32 = frame_f32 - zero_f
+            else:  # Contrast
+                frame_f32 = (frame_f32 - zero_f) / (zero_f + 1.0) * 100.0
+
+        # --- Zero-out drifted border (slice-based) ---
+        if drift_border is not None:
+            top, bottom, left, right = drift_border
+            h_fr, w_fr = frame_f32.shape
+            if top    > 0: frame_f32[:top, :]             = 0.0
+            if bottom > 0: frame_f32[h_fr - bottom:, :]  = 0.0
+            if left   > 0: frame_f32[:, :left]            = 0.0
+            if right  > 0: frame_f32[:, w_fr - right:]    = 0.0
+
+        # --- Crop (slice-based) ---
+        if settings.crop_percent < 100.0:
+            h_fr, w_fr = frame_f32.shape[:2]
+            frac = float(np.clip(settings.crop_percent, 0.0, 100.0)) / 100.0
+            ch   = int(round(h_fr * frac))
+            cw   = int(round(w_fr * frac))
+            top  = (h_fr - ch) // 2
+            left = (w_fr - cw) // 2
+            frame_out = xp.zeros((h_fr, w_fr), dtype=xp.float32)
+            frame_out[top:top + ch, left:left + cw] = frame_f32[top:top + ch, left:left + cw]
+            frame_f32 = frame_out
+
+        # --- ROI Calculation ---
+        # Use slice_bounds (rectangular slice) — no GPU boolean mask upload.
+        if rois:
+            frame_shape = frame_f32.shape[:2]
+            for roi in rois:
+                if roi._frame_shape != frame_shape:
+                    roi.update_mask(frame_shape)
+                y1, y2, x1, x2 = roi.slice_bounds
+                if y2 > y1 and x2 > x1:
+                    value = float(xp.mean(frame_f32[y1:y2, x1:x2]))
+                else:
+                    value = float("nan")
+                roi.plot_x.append(float(len(roi.plot_x)))
+                roi.plot_y.append(value)
+
+        # Move result back to CPU for storage and display.
+        result = to_cpu(frame_f32)
+        return result if result.dtype == np.float32 else result.astype(np.float32), state
+
+    # ------------------------------------------------------------------
+    # process_frames — batch processing (used by the preview window)
+    # ------------------------------------------------------------------
+
+    def process_frames(self, frame_buffer, settings, rois=None,
+                       result_buffer=None, stop_event=None, progress_callback=None):
+        """Process every frame in *frame_buffer* through the science pipeline.
+
+        Parameters
+        ----------
+        frame_buffer      : iterable of raw frames
+        settings          : ProcessingSettings
+        rois              : list of ProcessingROI (optional; buffers reset at start)
+        result_buffer     : numpy array (n, h, w) to store processed frames, or None
+        stop_event        : threading.Event — when set, processing halts early
+        progress_callback : callable(float 0..1) called after each frame
+
+        Returns
+        -------
+        True if all frames were processed; False if stopped early.
+        """
+        if rois is None:
+            rois = []
+
+        # Clear ROI buffers so the new trace starts from scratch.
+        for roi in rois:
+            roi.clear_plot_buffers()
+
+        frames = list(frame_buffer)
+        n = len(frames)
+        if n == 0:
+            return True
+
+        state = {}
+
+        for i, frame in enumerate(frames):
+            if stop_event is not None and stop_event.is_set():
+                return False
+
+            processed, state = self.process_frame(frame, settings, rois, state)
+
+            if result_buffer is not None and i < len(result_buffer):
+                result_buffer[i] = processed
+
+            if progress_callback is not None:
+                try:
+                    progress_callback((i + 1) / max(n, 1))
+                except Exception:
+                    pass
+
+        return True
+
+    # ------------------------------------------------------------------
+    # create_processing_thread — live-feed background worker
+    # ------------------------------------------------------------------
+
+    def create_processing_thread(self):
+        """Start a background thread that processes each new raw frame.
+
+        The thread waits on ``frame_ready_event``, grabs the latest raw frame
+        from ``latest_frame``, runs the full science pipeline via
+        ``process_frame`` using ``self.settings`` and ``self.rois``, and stores
+        the result in ``processed_frame`` before notifying
+        ``processed_frame_condition``.
+
+        Any previously running processing thread is stopped first.
+        """
+        # Stop any old thread.
+        self._processing_thread_stop_event.set()
+        self._processing_fps_times.clear()
+
+        stop_event = threading.Event()
+        self._processing_thread_stop_event = stop_event
+
+        def _loop():
+            state = {}
+
+            while not stop_event.is_set():
+                fired = self.frame_ready_event.wait(timeout=0.1)
+                if not fired:
+                    continue
+                self.frame_ready_event.clear()
+
+                with self.frame_lock:
+                    current_idx = int(self.frameIdx)
+                    raw_frame   = np.array(self.latest_frame, copy=True)
+
+                try:
+                    processed, state = self.process_frame(
+                        raw_frame, self.settings, self.rois, state
+                    )
+                except Exception as exc:
+                    print(f"ProcessingThread error: {exc}")
+                    continue
+
+                # Track real processed-frame FPS (one append per frame).
+                self._processing_fps_times.append(time.time())
+
+                with self.processed_frame_condition:
+                    self.processed_frame     = processed
+                    self.processed_frame_idx = current_idx
+                    self.processed_frame_condition.notify_all()
+
+        thread = threading.Thread(target=_loop, daemon=True, name="AndorProcessingThread")
+        thread.start()
+
+    def stop_processing_thread(self):
+        """Signal the processing thread to stop and wait briefly for it to exit."""
+        self._processing_thread_stop_event.set()
+
+    # ------------------------------------------------------------------
+    # get_processing_fps — real frames-per-second of the processing thread
+    # ------------------------------------------------------------------
+
+    def get_processing_fps(self):
+        """Return the actual processed-frames-per-second of the live pipeline."""
+        times = list(self._processing_fps_times)
+        if len(times) < 2:
+            return 0.0
+        cutoff = times[-1] - 2.0
+        recent = [t for t in times if t >= cutoff]
+        if len(recent) < 2:
+            return 0.0
+        elapsed = recent[-1] - recent[0]
+        return 0.0 if elapsed <= 0.0 else float((len(recent) - 1) / elapsed)
 

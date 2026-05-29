@@ -16,6 +16,7 @@ import threading
 import time
 
 import dearpygui.dearpygui as dpg
+from Utils.custom_widgets import add_input_float, add_input_int
 import numpy as np
 
 import Utils.shared_state as shared_state
@@ -642,37 +643,37 @@ class StageControls:
 
             dpg.add_text("Tenengrad autofocus on live camera frames", color=[160, 160, 160, 220])
 
-            self._autofocus_widgets["search_range_mm"] = dpg.add_input_float(
+            self._autofocus_widgets["search_range_mm"] = add_input_float(
                 label="Range +/-", width=-110,
                 default_value=self._autofocus_settings["search_range_mm"],
                 min_value=0.05, min_clamped=True,
                 step=0.1, format="%.3f mm",
             )
-            self._autofocus_widgets["coarse_step_mm"] = dpg.add_input_float(
+            self._autofocus_widgets["coarse_step_mm"] = add_input_float(
                 label="Coarse Step", width=-110,
                 default_value=self._autofocus_settings["coarse_step_mm"],
                 min_value=0.01, min_clamped=True,
                 step=0.05, format="%.3f mm",
             )
-            self._autofocus_widgets["fine_step_mm"] = dpg.add_input_float(
+            self._autofocus_widgets["fine_step_mm"] = add_input_float(
                 label="Fine Step", width=-110,
                 default_value=self._autofocus_settings["fine_step_mm"],
                 min_value=0.001, min_clamped=True,
                 step=0.01, format="%.3f mm",
             )
-            self._autofocus_widgets["settle_time_s"] = dpg.add_input_float(
+            self._autofocus_widgets["settle_time_s"] = add_input_float(
                 label="Settle Time", width=-110,
                 default_value=self._autofocus_settings["settle_time_s"],
                 min_value=0.01, min_clamped=True,
                 step=0.05, format="%.3f s",
             )
-            self._autofocus_widgets["frames_per_position"] = dpg.add_input_int(
+            self._autofocus_widgets["frames_per_position"] = add_input_int(
                 label="Frames / Pos", width=-110,
                 default_value=int(self._autofocus_settings["frames_per_position"]),
                 min_value=1, min_clamped=True,
                 step=1,
             )
-            self._autofocus_widgets["roi_fraction"] = dpg.add_input_float(
+            self._autofocus_widgets["roi_fraction"] = add_input_float(
                 label="ROI Fraction", width=-110,
                 default_value=self._autofocus_settings["roi_fraction"],
                 min_value=0.1, max_value=1.0,
@@ -702,7 +703,7 @@ class StageControls:
                 ("z_slow", "Z Slow", self._DEFAULT_SPEEDS_MM_S["z_slow"]),
             ]
             for key, label, default in fields:
-                self._speed_input_ids[key] = dpg.add_input_float(
+                self._speed_input_ids[key] = add_input_float(
                     label=label,
                     width=-110,
                     default_value=default,
@@ -805,12 +806,12 @@ class StageControls:
             dpg.add_separator()
             dpg.add_text("Velocity Profile", color=[160, 160, 160, 220])
 
-            w["max_velocity"] = dpg.add_input_float(
+            w["max_velocity"] = add_input_float(
                 label="Max Velocity", width=-110,
                 default_value=5.0, min_value=0.001, min_clamped=True,
                 step=0.5, format="%.3f mm/s",
             )
-            w["acceleration"] = dpg.add_input_float(
+            w["acceleration"] = add_input_float(
                 label="Acceleration", width=-110,
                 default_value=5.0, min_value=0.001, min_clamped=True,
                 step=0.5, format="%.3f mm/s\xb2",
@@ -819,17 +820,17 @@ class StageControls:
             dpg.add_separator()
             dpg.add_text("Jog Profile", color=[160, 160, 160, 220])
 
-            w["jog_step"] = dpg.add_input_float(
+            w["jog_step"] = add_input_float(
                 label="Step Size", width=-110,
                 default_value=0.5, min_value=0.001, min_clamped=True,
                 step=0.1, format="%.3f mm",
             )
-            w["jog_max_vel"] = dpg.add_input_float(
+            w["jog_max_vel"] = add_input_float(
                 label="Jog Max Vel", width=-110,
                 default_value=2.0, min_value=0.001, min_clamped=True,
                 step=0.5, format="%.3f mm/s",
             )
-            w["jog_accel"] = dpg.add_input_float(
+            w["jog_accel"] = add_input_float(
                 label="Jog Accel", width=-110,
                 default_value=5.0, min_value=0.001, min_clamped=True,
                 step=0.5, format="%.3f mm/s\xb2",
@@ -838,7 +839,7 @@ class StageControls:
             dpg.add_separator()
             dpg.add_text("Backlash Compensation", color=[160, 160, 160, 220])
 
-            w["backlash"] = dpg.add_input_float(
+            w["backlash"] = add_input_float(
                 label="Backlash", width=-110,
                 default_value=0.0, min_value=0.0, min_clamped=True,
                 step=0.01, format="%.4f mm",
@@ -931,7 +932,7 @@ class StageControls:
 
     def _make_key_press_cb(self, axis: str, direction: str):
         def cb(sender=None, app_data=None, user_data=None):
-            if self._input_is_focused():
+            if shared_state.currently_editing or self._input_is_focused():
                 return
             if direction in self._jog_held[axis]:
                 return  # key-repeat fired by DPG; already moving, ignore
@@ -946,6 +947,8 @@ class StageControls:
 
     def _make_shift_press_cb(self, key_name: str):
         def cb(sender=None, app_data=None, user_data=None):
+            if shared_state.currently_editing:
+                return
             if key_name in self._shift_held_keys:
                 return
             self._shift_held_keys.add(key_name)
@@ -960,7 +963,8 @@ class StageControls:
 
     def _make_speed_changed_cb(self, speed_key: str):
         def cb(sender=None, app_data=None, user_data=None):
-            self._on_speed_changed(speed_key, app_data)
+            value = app_data if app_data is not None else float(dpg.get_value(self._speed_input_ids[speed_key]))
+            self._on_speed_changed(speed_key, value)
         return cb
 
     def _set_autofocus_result(

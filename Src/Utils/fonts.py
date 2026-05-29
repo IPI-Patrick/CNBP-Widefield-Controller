@@ -22,6 +22,7 @@ SEGMDL2_SHARED_GLYPHS = [
     0xE8CD,  # Connect
     0xE8EE,  # Repeat
     0xE945,  # Power / Laser toggle
+    0xE9CA,  # Frigid / Temperature (snowflake/cold — used for sensor temperature indicator)
 ]
 
 

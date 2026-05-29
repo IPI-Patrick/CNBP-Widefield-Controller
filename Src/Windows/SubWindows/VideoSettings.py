@@ -1,6 +1,7 @@
 import threading
 import numpy as np
 import dearpygui.dearpygui as dpg
+from Utils.custom_widgets import add_input_float
 from Utils.state_persistence import apply_item_open_states, apply_window_state, capture_item_open_states, capture_window_state, load_state_file, save_state_file
 from Utils.themes import red_green_button_disabled, red_green_button_enabled
 
@@ -46,13 +47,13 @@ class VideoSettings:
 
                 with dpg.tree_node(label="Zero Frame", default_open=True, span_full_width=True) as zero_frame_node_id:
                     self.section_node_ids["zero_frame"] = zero_frame_node_id
-                    self.zero_frame_time = dpg.add_input_float(
-                        label           = "Time",      
-                        width           = -40,          
+                    self.zero_frame_time = add_input_float(
+                        label           = "Time",
+                        width           = -40,
                         default_value   = 2.0,
                         min_value       = 0.1,
                         max_value       = 100.0,
-                        format          = "%.1f s",                
+                        format          = "%.1f s",
                     )
 
                     self.zero_frame_progess = dpg.add_progress_bar(

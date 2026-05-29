@@ -1,4 +1,5 @@
 import dearpygui.dearpygui as dpg
+from Utils.custom_widgets import add_input_float, add_input_int
 import Utils.shared_state as shared_state
 from Utils.state_persistence import apply_window_state, capture_window_state, load_state_file, save_state_file
 
@@ -206,7 +207,7 @@ class MockCameraControls:
             dpg.add_separator()
 
             with dpg.tree_node(label="Global Pulse", default_open=True, span_full_width=True):
-                self._pulse_period_id = dpg.add_input_float(
+                self._pulse_period_id = add_input_float(
                     label="Period (s)",
                     width=-130,
                     default_value=3.0,
@@ -228,7 +229,7 @@ class MockCameraControls:
             dpg.add_separator()
 
             with dpg.tree_node(label="Fiducials", default_open=True, span_full_width=True):
-                self._fiducial_size_id = dpg.add_input_int(
+                self._fiducial_size_id = add_input_int(
                     label="Size (px)",
                     width=-130,
                     default_value=6,

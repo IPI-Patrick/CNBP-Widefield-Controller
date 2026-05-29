@@ -7,8 +7,9 @@ from matplotlib import colormaps
 from matplotlib.colors import LinearSegmentedColormap, to_rgb
 from skimage.registration import phase_cross_correlation
 
+from Utils.ProcessingROI import ProcessingROI
 from Utils.StorageDTypes import get_raw_storage_max_value
-from Utils.state_persistence import apply_window_state, capture_window_state, delete_state_file, list_state_files, load_state_file, save_state_file
+from Utils.state_persistence import delete_state_file, list_state_files, load_state_file, save_state_file
 from Utils.themes import no_padding_theme, read_only_theme
 import Utils.shared_state as shared_state
 from Utils.shared_state import class_objects
@@ -179,8 +180,9 @@ class CameraFeedWindow:
         self.reset_texture()
 
         self._update_settings_controls_state()
+        self._sync_science_settings_to_andor()
         threading.Thread(target=self._process_camera_feed, daemon=True).start()
-        threading.Thread(target=self._processing_loop, daemon=True).start()
+        self.Andor.create_processing_thread()
 
     def _get_scale_limit_for_mode(self):
         if self._is_signed_zero_reference_mode_active():
@@ -374,12 +376,24 @@ class CameraFeedWindow:
         dpg.configure_item(self.controls_window.scale_bar_width_input_id, enabled=scale_bar_width_enabled)
         dpg.bind_item_theme(self.controls_window.scale_bar_width_input_id, None if scale_bar_width_enabled else read_only_theme)
 
+    def _sync_science_settings_to_andor(self):
+        s = self.Andor.settings
+        s.lp_filter_enabled = self.lp_filter_enabled
+        s.lp_filter_cutoff_hz = self.lp_filter_cutoff_hz
+        s.drift_correction_enabled = self.drift_correction_enabled
+        s.bg_removal_enabled = self.bg_removal_enabled
+        s.bg_removal_sigma = self.bg_removal_sigma
+        s.crop_percent = self.crop_percent
+        s.display_mode = self.display_mode
+        s.frame_rate_hz = float(self.Andor.get_frame_rate())
+        s.max_value = float(self.display_max)
+
     def _on_autoscale_changed(self, sender, app_data):
         self.autoscale_enabled = bool(app_data)
         self._update_settings_controls_state()
         self._refresh_display_image()
 
-    def _on_scale_limits_changed(self, sender, app_data):
+    def _on_scale_limits_changed(self, sender, app_data, user_data=None):
         scale_min = float(self._scale_percent_to_value(dpg.get_value(self.controls_window.scale_min_input_id)))
         scale_max = float(self._scale_percent_to_value(dpg.get_value(self.controls_window.scale_max_input_id)))
 
@@ -399,8 +413,9 @@ class CameraFeedWindow:
         self._refresh_display_image()
         self._redraw_colorbar()
 
-    def _on_autoscale_grace_changed(self, sender, app_data):
-        self.autoscale_grace_percent = max(0.0, float(app_data))
+    def _on_autoscale_grace_changed(self, sender, app_data, user_data=None):
+        grace = app_data if app_data is not None else float(dpg.get_value(self.controls_window.autoscale_grace_input_id))
+        self.autoscale_grace_percent = max(0.0, float(grace))
         self._refresh_display_image()
 
     def _on_mirrored_difference_changed(self, sender, app_data):
@@ -417,17 +432,17 @@ class CameraFeedWindow:
     def _on_lp_filter_enabled_changed(self, sender, app_data):
         self.lp_filter_enabled = bool(app_data)
         self.Andor.set_lp_filter_enabled(self.lp_filter_enabled)
-        self._reset_processing_state()
+        self.Andor.settings.lp_filter_enabled = self.lp_filter_enabled
         self._sync_scale_state_to_active_frame()
         self._update_settings_controls_state()
         self._refresh_display_image()
         self._request_all_roi_rebuilds(clear_existing=True)
 
-    def _on_lp_filter_cutoff_changed(self, sender, app_data):
+    def _on_lp_filter_cutoff_changed(self, sender, app_data, user_data=None):
         self.lp_filter_cutoff_hz = max(1e-3, float(dpg.get_value(self.controls_window.lp_filter_cutoff_input_id)))
         dpg.set_value(self.controls_window.lp_filter_cutoff_input_id, self.lp_filter_cutoff_hz)
         self.Andor.set_lp_filter_cutoff_hz(self.lp_filter_cutoff_hz)
-        self._reset_processing_state()
+        self.Andor.settings.lp_filter_cutoff_hz = self.lp_filter_cutoff_hz
         self._sync_scale_state_to_active_frame()
         self._refresh_display_image()
         self._request_all_roi_rebuilds(clear_existing=True)
@@ -707,7 +722,10 @@ class CameraFeedWindow:
                 return False
             latest_frame = np.array(self.Andor.latest_frame, copy=True)
         self._focus_reference_score = self._compute_focus_score(latest_frame)
-        return self._set_zero_reference_frame(latest_frame)
+        result = self._set_zero_reference_frame(latest_frame)
+        if result:
+            self.Andor.settings.zero_frame = np.array(latest_frame, copy=True)
+        return result
 
     def _get_active_frame_locked(self):
         latest_frame, _, has_frames, _ = self.Andor.get_processed_frame_view_locked(
@@ -783,7 +801,7 @@ class CameraFeedWindow:
 
         self._save_scale_state_for_mode(old_mode)
         self.display_mode = new_mode
-        self._reset_processing_state()
+        self.Andor.settings.display_mode = self.display_mode
 
         self._restore_or_default_scale_for_mode(new_mode)
         dpg.set_value(self.controls_window.autoscale_checkbox_id, self.autoscale_enabled)
@@ -925,30 +943,30 @@ class CameraFeedWindow:
 
     def _on_drift_correction_changed(self, sender, app_data):
         self.drift_correction_enabled = bool(app_data)
-        if self.drift_correction_enabled:
-            self._reset_drift_state()
+        self.Andor.settings.drift_correction_enabled = self.drift_correction_enabled
         self._refresh_display_image()
         self._request_all_roi_rebuilds()
 
     def _on_bg_removal_enabled_changed(self, sender, app_data):
         self.bg_removal_enabled = bool(app_data)
+        self.Andor.settings.bg_removal_enabled = self.bg_removal_enabled
         self._update_settings_controls_state()
-        self._reset_processing_state()
         self._sync_scale_state_to_active_frame()
         self._refresh_display_image()
         self._request_all_roi_rebuilds(clear_existing=True)
 
-    def _on_bg_removal_sigma_changed(self, sender, app_data):
+    def _on_bg_removal_sigma_changed(self, sender, app_data, user_data=None):
         self.bg_removal_sigma = max(1.0, float(dpg.get_value(self.controls_window.bg_removal_sigma_input_id)))
         dpg.set_value(self.controls_window.bg_removal_sigma_input_id, self.bg_removal_sigma)
+        self.Andor.settings.bg_removal_sigma = self.bg_removal_sigma
         if self.bg_removal_enabled:
-            self._reset_processing_state()
             self._sync_scale_state_to_active_frame()
             self._refresh_display_image()
             self._request_all_roi_rebuilds(clear_existing=True)
 
     def _on_crop_changed(self, sender, app_data):
         self.crop_percent = float(np.clip(float(app_data), 0.0, 100.0))
+        self.Andor.settings.crop_percent = self.crop_percent
         self._refresh_display_image()
         self._redraw_overlay()
 
@@ -969,12 +987,12 @@ class CameraFeedWindow:
         self._update_settings_controls_state()
         self._redraw_overlay()
 
-    def _on_scale_bar_width_changed(self, sender, app_data):
+    def _on_scale_bar_width_changed(self, sender, app_data, user_data=None):
         self.scale_bar_width_um = max(0.001, float(dpg.get_value(self.controls_window.scale_bar_width_input_id)))
         dpg.set_value(self.controls_window.scale_bar_width_input_id, self.scale_bar_width_um)
         self._redraw_overlay()
 
-    def _on_scale_bar_size_changed(self, sender, app_data):
+    def _on_scale_bar_size_changed(self, sender, app_data, user_data=None):
         self.scale_bar_size = max(0.1, float(dpg.get_value(self.controls_window.scale_bar_size_input_id)))
         dpg.set_value(self.controls_window.scale_bar_size_input_id, self.scale_bar_size)
         self._redraw_overlay()
@@ -990,12 +1008,12 @@ class CameraFeedWindow:
         dpg.set_value(self.controls_window.scale_bar_position_combo_id, self.scale_bar_position)
         self._redraw_overlay()
 
-    def _on_scale_bar_x_offset_changed(self, sender, app_data):
+    def _on_scale_bar_x_offset_changed(self, sender, app_data, user_data=None):
         self.scale_bar_x_offset = int(dpg.get_value(self.controls_window.scale_bar_x_offset_input_id))
         dpg.set_value(self.controls_window.scale_bar_x_offset_input_id, self.scale_bar_x_offset)
         self._redraw_overlay()
 
-    def _on_scale_bar_y_offset_changed(self, sender, app_data):
+    def _on_scale_bar_y_offset_changed(self, sender, app_data, user_data=None):
         self.scale_bar_y_offset = int(dpg.get_value(self.controls_window.scale_bar_y_offset_input_id))
         dpg.set_value(self.controls_window.scale_bar_y_offset_input_id, self.scale_bar_y_offset)
         self._redraw_overlay()
@@ -1532,6 +1550,11 @@ class CameraFeedWindow:
         self.roi_index += 1
         self.rois.append(roi)
         self.selected_roi = roi
+
+        x1, y1, x2, y2 = normalized_bounds
+        proc_roi = ProcessingROI(x=x1, y=y1, w=x2 - x1, h=y2 - y1, tag=roi_tag)
+        self.Andor.rois.append(proc_roi)
+
         self.rois_window.invalidate_autoscale_cache(pending_tags=[roi.tag])
         roi.request_trace_rebuild()
         self.rois_window.rebuild_layout(self.rois)
@@ -1561,6 +1584,7 @@ class CameraFeedWindow:
             delete_state_file(roi_to_remove.state_name())
         roi_to_remove.close()
         self.rois.remove(roi_to_remove)
+        self.Andor.rois = [r for r in self.Andor.rois if r.tag != tag]
         self.rois_window.rebuild_layout(self.rois)
         self.rois_window.invalidate_autoscale_cache()
         if self.selected_roi is roi_to_remove:
@@ -1882,97 +1906,6 @@ class CameraFeedWindow:
                 print(e)
                 print()
 
-    def _processing_loop(self):
-        while not self._processing_stop_event.is_set():
-            fired = self.Andor.frame_ready_event.wait(timeout=0.1)
-            if not fired:
-                continue
-            self.Andor.frame_ready_event.clear()
-
-            with self.Andor.frame_lock:
-                current_idx = int(self.Andor.frameIdx)
-                raw_frame = np.array(self.Andor.latest_frame, copy=True)
-
-            processed = self.process_frame(raw_frame)
-
-            with self.Andor.processed_frame_condition:
-                self.Andor.processed_frame = processed
-                self.Andor.processed_frame_idx = current_idx
-                self.Andor.processed_frame_condition.notify_all()
-
-    def process_frame(self, raw_frame):
-        frame_f32 = np.asarray(raw_frame, dtype=np.float32)
-
-        # LP filter
-        if self.lp_filter_enabled:
-            coefficients = self.Andor.get_lp_filter_coefficients()
-            filtered_f32 = self.Andor.apply_lp_filter_step(
-                frame_f32,
-                self._lp_filter_previous_input,
-                self._lp_filter_previous_output,
-                coefficients,
-            )
-            self._lp_filter_previous_input = np.array(frame_f32, copy=True)
-            self._lp_filter_previous_output = np.array(filtered_f32, copy=True)
-            source_frame = np.array(self.Andor.coerce_raw_frame_to_storage(filtered_f32), copy=True)
-        else:
-            source_frame = np.array(raw_frame, copy=True)
-            self._lp_filter_previous_input = None
-            self._lp_filter_previous_output = None
-
-        # Drift correction — shift is always estimated from the raw frame so that LP filter
-        # temporal lag does not corrupt the estimate; the correction is applied to source_frame.
-        if self.drift_correction_enabled:
-            source_frame = self._apply_drift_correction_for_display(
-                np.asarray(source_frame, dtype=np.float32),
-                estimate_from=frame_f32,
-            )
-        else:
-            self._drift_valid_mask = None
-
-        # Background removal (after drift, before zero reference).
-        # Applied in all modes including Difference and Contrast so that the static
-        # illumination profile is removed from both the current frame and the zero
-        # reference before computing the difference or contrast ratio.
-        bg_removal_active = self.bg_removal_enabled
-        if bg_removal_active:
-            source_frame = self._apply_background_removal(
-                np.asarray(source_frame, dtype=np.float32), self.bg_removal_sigma
-            )
-
-        # Zero reference (Difference / Contrast modes)
-        with self.Andor.frame_lock:
-            zero_frame_raw = np.array(self.Andor.zero, copy=True) if self._is_signed_zero_reference_mode_active() else None
-
-        if zero_frame_raw is not None and bg_removal_active:
-            zero_frame = self._apply_background_removal(
-                np.asarray(zero_frame_raw, dtype=np.float32), self.bg_removal_sigma
-            )
-        else:
-            zero_frame = zero_frame_raw
-
-        result = np.asarray(
-            self._process_analysis_frame(source_frame, zero_frame=zero_frame),
-            dtype=np.float32,
-        )
-
-        # Zero out the drift-shifted border so it doesn't contaminate Difference/Contrast scaling.
-        if self._drift_valid_mask is not None:
-            result = np.array(result, copy=True)
-            result[~self._drift_valid_mask] = 0.0
-
-        # Crop: set pixels outside the centred crop region to 0 as the final display step.
-        crop_mask = self._compute_crop_mask(result.shape[0], result.shape[1], self.crop_percent)
-        if crop_mask is not None:
-            result = np.array(result, copy=True)
-            result[~crop_mask] = 0.0
-
-        return result
-
-    def _reset_processing_state(self):
-        self._lp_filter_previous_input  = None
-        self._lp_filter_previous_output = None
-
     def _on_left_mouse_down(self, sender, app_data):
         self._on_mouse_down(sender, app_data, dpg.mvMouseButton_Left)
 
@@ -2154,6 +2087,8 @@ class CameraFeedWindow:
         self.context_menu_roi = None
 
     def _on_delete_key_pressed(self, sender, app_data):
+        if shared_state.currently_editing:
+            return
         if self.selected_roi is None:
             return
         if not dpg.is_item_hovered(self.window_id):
@@ -2289,6 +2224,7 @@ class CameraFeedWindow:
 
         self.Andor.set_lp_filter_cutoff_hz(self.lp_filter_cutoff_hz)
         self.Andor.set_lp_filter_enabled(self.lp_filter_enabled)
+        self._sync_science_settings_to_andor()
 
         dpg.set_value(self.controls_window.autoscale_checkbox_id, self.autoscale_enabled)
         dpg.set_value(self.controls_window.colorbar_checkbox_id, self.colorbar_enabled)
@@ -2384,11 +2320,18 @@ class CameraFeedWindow:
     def _update_focus_indicator(self):
         if self.controls_window is None:
             return
+        # Throttle to ~10 Hz — focus quality doesn't need per-frame updates.
+        self._focus_skip = getattr(self, "_focus_skip", 0) + 1
+        if self._focus_skip < 6:
+            return
+        self._focus_skip = 0
+
         with self.Andor.frame_lock:
             latest_frame = self.Andor.latest_frame
         if latest_frame is None:
             return
-        current_score = self._compute_focus_score(latest_frame)
+        # 4× spatial downsample — 16× fewer pixels, same focus-quality signal.
+        current_score = self._compute_focus_score(latest_frame[::4, ::4])
         ref = self._focus_reference_score
         if ref is None or ref <= 0.0:
             self._focus_level = 0.0

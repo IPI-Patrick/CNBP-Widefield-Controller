@@ -26,15 +26,19 @@ class Acquisition:
 
 class MockCamera:
     ExposureTime            = 0.01
+    min_ExposureTime        = 0.000028
+    max_ExposureTime        = 30.0
     FrameRate               = 100.0
+    min_FrameRate           = 0.001
+    max_FrameRate           = 1000.0
     TriggerMode             = "Internal"
     CycleMode               = "Continuous"
     min_AOIWidth            = 1
-    max_AOIWidth            = 1024
-    AOIWidth                = 1024
+    max_AOIWidth            = 2048
+    AOIWidth                = 2048
     min_AOIHeight           = 1
-    max_AOIHeight           = 1024
-    AOIHeight               = 1024
+    max_AOIHeight           = 2048
+    AOIHeight               = 2048
     BitDepth                = 16
     options_bitDepth        = [8, 10, 12, 14, 16]
     options_CycleMode       = ["Continuous", "Single"]

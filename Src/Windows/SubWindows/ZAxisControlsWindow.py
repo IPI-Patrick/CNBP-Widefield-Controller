@@ -1,4 +1,5 @@
 import dearpygui.dearpygui as dpg
+from Utils.custom_widgets import add_input_float, add_input_int
 
 from Drivers.ZAxisDriver import ZAxisDriver
 from Utils.fonts import get_segmdl2_icon_font
@@ -100,25 +101,25 @@ class ZAxisControlsWindow:
 
             with dpg.tree_node(label="Motion", default_open=True, span_full_width=True) as motion_node:
                 self.section_node_ids["motion"] = motion_node
-                self.jog_steps_id = dpg.add_input_int(
+                self.jog_steps_id = add_input_int(
                     label="Jog Steps", width=-110, default_value=100,
                     min_value=1, min_clamped=True, step=10,
                     callback=self._on_jog_steps_changed,
                 )
-                self.jog_revs_id = dpg.add_input_float(
+                self.jog_revs_id = add_input_float(
                     label="Jog Revs", width=-110,
                     default_value=_steps_to_revs(100),
                     min_value=_steps_to_revs(1), min_clamped=True,
                     step=0.001, format="%.6f rev",
                     callback=self._on_jog_revs_changed,
                 )
-                self.speed_id = dpg.add_input_float(
+                self.speed_id = add_input_float(
                     label="Move Speed", width=-110, default_value=0.01,
                     min_value=0.0001, min_clamped=True,
                     step=0.001, format="%.4f rev/s",
                     callback=self._on_motion_profile_changed,
                 )
-                self.accel_id = dpg.add_input_float(
+                self.accel_id = add_input_float(
                     label="Acceleration", width=-110, default_value=28.125,
                     min_value=0.0001, min_clamped=True,
                     step=1.0, format="%.3f deg/s^2",
@@ -234,10 +235,12 @@ class ZAxisControlsWindow:
             self._syncing_jog = False
 
     def _on_jog_steps_changed(self, sender=None, app_data=None, user_data=None):
-        self._sync_jog_from_steps(int(app_data))
+        steps = app_data if app_data is not None else int(dpg.get_value(self.jog_steps_id))
+        self._sync_jog_from_steps(int(steps))
 
     def _on_jog_revs_changed(self, sender=None, app_data=None, user_data=None):
-        self._sync_jog_from_revs(float(app_data))
+        revs = app_data if app_data is not None else float(dpg.get_value(self.jog_revs_id))
+        self._sync_jog_from_revs(float(revs))
 
     # --- Motion commands ---
 

@@ -1,6 +1,7 @@
 import math
 
 import dearpygui.dearpygui as dpg
+from Utils.custom_widgets import add_input_float
 import numpy as np
 
 from Utils.themes import no_padding_theme, read_only_theme
@@ -94,7 +95,7 @@ class CalibrationModal:
                     )
                     dpg.add_separator()
 
-                    self.real_distance_input_id = dpg.add_input_float(
+                    self.real_distance_input_id = add_input_float(
                         label="Real Distance Between Points",
                         width=-1,
                         default_value=100.0,
@@ -102,13 +103,8 @@ class CalibrationModal:
                         min_clamped=True,
                         step=1.0,
                         format="%.3f um",
-                        on_enter=True,
                         callback=self._on_real_distance_changed,
                     )
-                    with dpg.item_handler_registry(tag=f"{self.tag_prefix}_DistanceHandler"):
-                        dpg.add_item_deactivated_after_edit_handler(callback=self._on_real_distance_changed)
-                    dpg.bind_item_handler_registry(self.real_distance_input_id, f"{self.tag_prefix}_DistanceHandler")
-
                     self.pixel_distance_input_id = dpg.add_input_text(
                         label="Pixel Distance",
                         width=-1,
