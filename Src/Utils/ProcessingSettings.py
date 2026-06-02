@@ -14,8 +14,16 @@ class ProcessingSettings:
         "lp_filter_enabled": False,
         "lp_filter_cutoff_hz": 10.0,
         "drift_correction_enabled": False,
+        "phase_every": 1,           # recompute drift shift every N frames (reuse between)
         "bg_removal_enabled": False,
         "bg_removal_sigma": 20.0,
+        # Background model: "spatial" = exact uniform_filter (default, unchanged
+        # science); "temporal" = fast fused EMA kernel (>1000 fps path).
+        "bg_mode": "spatial",
+        "bg_temporal_alpha": 0.02,  # EMA rate for temporal mode: bg += alpha*(f-bg)
+        # Use the GIL-free C++/CUDA backend (fastproc) for the temporal path.
+        # Off by default; requires the compiled extension and bg_mode=="temporal".
+        "use_cpp_backend": False,
         "crop_percent": 100.0,
         "display_mode": "Normal",   # "Normal" | "Difference" | "Contrast"
         "zero_frame": None,         # numpy array or None

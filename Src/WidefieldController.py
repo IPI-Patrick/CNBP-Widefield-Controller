@@ -170,6 +170,14 @@ def _register_viewport_drop_callback(window_objects):
 def setup():
     # Create the window
     global LAST_STATE_SAVE_TIME
+
+    # Lower the GIL switch interval (default 5 ms). At high capture rates the
+    # main Dear PyGui render loop holds the GIL in long chunks; the default 5 ms
+    # lets it starve the camera processing thread (which needs the GIL for its
+    # per-frame CuPy launches), capping Processing FPS below Capture FPS. A finer
+    # switch interval lets the processing thread interleave each frame.
+    sys.setswitchinterval(0.0005)
+
     install_console_capture(max_lines=100)
     loaded_viewport_state = load_state_file(VIEWPORT_STATE_NAME).get("viewport")
     viewport_state = normalize_viewport_state(loaded_viewport_state)

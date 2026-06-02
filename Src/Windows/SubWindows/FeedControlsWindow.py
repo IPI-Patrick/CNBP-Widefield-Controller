@@ -209,6 +209,46 @@ class FeedControlsWindow:
                 callback=self.parent._on_bg_removal_sigma_changed,
             )
 
+            # Background model: Spatial (exact uniform_filter) or Temporal
+            # (fast fused EMA kernel — the >1000 fps path).
+            self.bg_mode_combo_id = dpg.add_combo(
+                label="BG Mode",
+                items=["Spatial", "Temporal"],
+                default_value="Temporal" if self.parent.bg_mode == "temporal" else "Spatial",
+                width=-120,
+                callback=self.parent._on_bg_mode_changed,
+            )
+
+            self.bg_temporal_alpha_input_id = add_input_float(
+                label="EMA Alpha",
+                width=-120,
+                default_value=self.parent.bg_temporal_alpha,
+                min_value=0.0001,
+                max_value=1.0,
+                step=0.01,
+                format="%.4f",
+                callback=self.parent._on_bg_temporal_alpha_changed,
+            )
+
+            # Recompute drift every N frames, reuse the shift between (1 = every frame).
+            self.phase_every_input_id = add_input_int(
+                label="Drift Every N",
+                width=-120,
+                default_value=self.parent.phase_every,
+                min_value=1,
+                max_value=240,
+                step=1,
+                callback=self.parent._on_phase_every_changed,
+            )
+
+            # GIL-free C++/CUDA backend for the temporal path (requires the
+            # compiled fastproc extension; only active when BG Mode = Temporal).
+            self.use_cpp_backend_checkbox_id = dpg.add_checkbox(
+                label="C++ Backend (temporal)",
+                default_value=self.parent.use_cpp_backend,
+                callback=self.parent._on_cpp_backend_changed,
+            )
+
 
             self.crop_slider_id = dpg.add_slider_float(
                 label="Crop (%)",

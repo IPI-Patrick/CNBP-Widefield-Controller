@@ -1785,6 +1785,10 @@ class CameraSystem:
             "save_base_filename":               str(dpg.get_value(self.save_base_filename_input_id) or ""),
             "save_file_index":                  int(dpg.get_value(self.save_file_index_input_id)),
             "save_prompt_every_time":           bool(dpg.get_value(self.save_prompt_every_time_checkbox_id)),
+            "bg_mode":                          str(getattr(self.camera_feed, "bg_mode", "spatial")),
+            "bg_temporal_alpha":                float(getattr(self.camera_feed, "bg_temporal_alpha", 0.02)),
+            "use_cpp_backend":                  bool(getattr(self.camera_feed, "use_cpp_backend", False)),
+            "phase_every":                      int(getattr(self.camera_feed, "phase_every", 1)),
         }
 
     def _build_completed_acquisition_payload(self, stopped_early):

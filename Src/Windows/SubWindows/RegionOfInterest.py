@@ -60,10 +60,17 @@ class RegionOfInterest:
         # Detect whether the parent provides full-history access (preview mode).
         self._full_history_mode = hasattr(self.parent, "get_roi_processing_update")
 
-        with self.Andor.processed_frame_condition:
-            proc_frame = self.Andor.processed_frame
         x1, y1, x2, y2 = self._normalize_bounds(self.bounds)
-        initial_crop = np.array(proc_frame[y1:y2, x1:x2], copy=True) if proc_frame is not None and x2 > x1 and y2 > y1 else np.zeros((1, 1), dtype=np.float32)
+        # Live mode: crop comes from the GPU-resident processed frame. Preview
+        # mode (or before any frame): fall back to the CPU processed_frame.
+        initial_crop = self.Andor.get_roi_crop_cpu(y1, y2, x1, x2)
+        if initial_crop is None:
+            with self.Andor.processed_frame_condition:
+                proc_frame = self.Andor.processed_frame
+            if proc_frame is not None and x2 > x1 and y2 > y1:
+                initial_crop = np.array(proc_frame[y1:y2, x1:x2], copy=True)
+            else:
+                initial_crop = np.zeros((1, 1), dtype=np.float32)
         self.image_width = max(1, int(initial_crop.shape[1]))
         self.image_height = max(1, int(initial_crop.shape[0]))
         self.pending_image_rgba = self._frame_to_rgba(initial_crop)
@@ -154,7 +161,6 @@ class RegionOfInterest:
                 if not rebuild_requested and current_idx == self._last_processed_frame_idx:
                     self.Andor.processed_frame_condition.wait(timeout=0.05)
                     continue
-                frame_ref = self.Andor.processed_frame
 
             # processed_frame_idx <= 0 means no real frame has been delivered yet.
             # -1 is the value set by clear_buffers(); 0 can occur when _processing_loop
@@ -165,11 +171,6 @@ class RegionOfInterest:
             if current_idx <= 0:
                 self._last_processed_frame_idx = current_idx
                 time.sleep(0.02)
-                continue
-
-            if frame_ref is None:
-                self._last_processed_frame_idx = current_idx
-                time.sleep(0.01)
                 continue
 
             if rebuild_requested:
@@ -200,9 +201,12 @@ class RegionOfInterest:
                 self._last_processed_frame_idx = current_idx
                 continue
 
-            crop = np.array(frame_ref[y1:y2, x1:x2], copy=True)
-            if crop.size == 0:
+            # Crop on the GPU and transfer only the (small) crop to the host,
+            # rather than pulling the whole processed frame across PCIe.
+            crop = self.Andor.get_roi_crop_cpu(y1, y2, x1, x2)
+            if crop is None or crop.size == 0:
                 self._last_processed_frame_idx = current_idx
+                time.sleep(0.005)
                 continue
 
             y_value = self.rois_window.compute_trace_value(crop)

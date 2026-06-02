@@ -990,7 +990,8 @@ class AcquisitionPreviewWindow:
         # Synchronously process current frame for instant feedback.
         cur = int(np.clip(self.current_frame_index, 0, len(raw_frames) - 1))
         state = {"lp_prev_input": None, "lp_prev_output": None}
-        processed, _ = andor.process_frame(raw_frames[cur], settings, rois=[], state=state)
+        processed, _ = andor.process_frame(raw_frames[cur], settings, rois=[], state=state,
+                                           want_cpu_frame=True)
         buf[cur] = processed
         self._push_processed_frame()
         self._mark_image_dirty()

@@ -71,6 +71,10 @@ class CameraFeedWindow:
         self.drift_correction_enabled = False
         self.bg_removal_enabled = False
         self.bg_removal_sigma = 20.0
+        self.bg_mode = "spatial"          # "spatial" (exact) or "temporal" (fast EMA, >1000fps)
+        self.bg_temporal_alpha = 0.02     # EMA rate for temporal mode
+        self.use_cpp_backend = False      # GIL-free C++/CUDA backend for the temporal path
+        self.phase_every = 1              # recompute drift shift every N frames (1 = every frame)
         self.crop_percent = 100.0
         self._drift_reference_frame = None
         self._drift_accumulated_shift = (0, 0)
@@ -108,6 +112,11 @@ class CameraFeedWindow:
         self.displayed_feed_fps = 0.0
         self._display_fps_window_started_at = time.perf_counter()
         self._display_fps_window_frame_count = 0
+        # Cap how often the processed RGBA is pulled GPU->CPU for display. The
+        # pipeline still processes every captured frame; only the on-screen
+        # texture is rate-limited to the monitor's refresh.
+        self.display_fps_cap = 60.0
+        self._last_display_pull = 0.0
         self._lp_filter_previous_input  = None
         self._lp_filter_previous_output = None
         self._processing_stop_event = threading.Event()
@@ -268,11 +277,26 @@ class CameraFeedWindow:
         if hasattr(self, "texture_id") and dpg.does_item_exist(self.texture_id):
             dpg.delete_item(self.texture_id)
 
+        # Raw texture (not dynamic): Dear PyGui reads this buffer directly on the
+        # render thread every frame, so the feed is updated by writing into the
+        # buffer IN PLACE. dpg.set_value on a dynamic texture instead marshals
+        # millions of floats while holding the GIL (~24 ms/call at 1200x1200),
+        # which starves the processing thread and caps Processing FPS. The
+        # in-place write is a plain memcpy that releases the GIL.
+        #
+        # RGBA (4 ch): DX11 does not reliably support 3-channel 32-bit float
+        # (R32G32B32_FLOAT) as a sampleable texture, so an RGB raw texture renders
+        # BLACK on Windows even though add_raw_texture accepts mvFormat_Float_rgb.
+        self._feed_channels = 4
+        expected_size = self.image_width * self.image_height * self._feed_channels
+        self._raw_texture_buffer = np.zeros(expected_size, dtype=np.float32)
+
         with dpg.texture_registry(show=False):
-            self.texture_id = dpg.add_dynamic_texture(
+            self.texture_id = dpg.add_raw_texture(
                 width=self.image_width,
                 height=self.image_height,
-                default_value=self.imageArray,
+                default_value=self._raw_texture_buffer,
+                format=dpg.mvFormat_Float_rgba,
             )
 
         if hasattr(self, "image_draw_id") and dpg.does_item_exist(self.image_draw_id):
@@ -372,6 +396,11 @@ class CameraFeedWindow:
         dpg.configure_item(self.controls_window.bg_removal_sigma_input_id, enabled=self.bg_removal_enabled)
         dpg.bind_item_theme(self.controls_window.bg_removal_sigma_input_id, None if self.bg_removal_enabled else read_only_theme)
 
+        # EMA Alpha is only meaningful in temporal BG mode.
+        _temporal = (self.bg_mode == "temporal")
+        dpg.configure_item(self.controls_window.bg_temporal_alpha_input_id, enabled=_temporal)
+        dpg.bind_item_theme(self.controls_window.bg_temporal_alpha_input_id, None if _temporal else read_only_theme)
+
         scale_bar_width_enabled = not self.scale_bar_auto_width
         dpg.configure_item(self.controls_window.scale_bar_width_input_id, enabled=scale_bar_width_enabled)
         dpg.bind_item_theme(self.controls_window.scale_bar_width_input_id, None if scale_bar_width_enabled else read_only_theme)
@@ -383,6 +412,10 @@ class CameraFeedWindow:
         s.drift_correction_enabled = self.drift_correction_enabled
         s.bg_removal_enabled = self.bg_removal_enabled
         s.bg_removal_sigma = self.bg_removal_sigma
+        s.bg_mode = self.bg_mode
+        s.bg_temporal_alpha = self.bg_temporal_alpha
+        s.use_cpp_backend = self.use_cpp_backend
+        s.phase_every = self.phase_every
         s.crop_percent = self.crop_percent
         s.display_mode = self.display_mode
         s.frame_rate_hz = float(self.Andor.get_frame_rate())
@@ -623,8 +656,7 @@ class CameraFeedWindow:
 
     def _compute_display_bounds(self, frame=None):
         if frame is None:
-            with self.Andor.processed_frame_condition:
-                frame = self.Andor.processed_frame
+            frame = self.Andor.get_processed_frame_cpu()
 
         if self._is_signed_zero_reference_mode_active():
             signed_display_limit = self._get_signed_display_limit()
@@ -757,17 +789,16 @@ class CameraFeedWindow:
         return latest_frame
 
     def _refresh_display_image(self):
-        expected_rgba_size = self.image_width * self.image_height * 4
+        expected_rgba_size = self.image_width * self.image_height * self._feed_channels
+        rgba_ref = self.Andor.get_processed_rgba_cpu()
         with self.Andor.processed_frame_condition:
-            frame_ref  = self.Andor.processed_frame
-            rgba_ref   = self.Andor.processed_rgba
             rgba_scale = self.Andor.processed_rgba_scale
         if rgba_ref is not None and rgba_ref.size == expected_rgba_size:
             rgba = rgba_ref
             self._last_frame_display_min = float(rgba_scale[0])
             self._last_frame_display_max = float(rgba_scale[1])
         else:
-            rgba = self._frame_to_rgba(frame_ref)
+            rgba = self._frame_to_rgba(self.Andor.get_processed_frame_cpu())
         with self._image_state_lock:
             self.imageArray = rgba
             self.image_dirty = True
@@ -993,6 +1024,29 @@ class CameraFeedWindow:
             self._refresh_display_image()
             self._request_all_roi_rebuilds(clear_existing=True)
 
+    def _on_bg_mode_changed(self, sender, app_data):
+        self.bg_mode = "temporal" if str(app_data) == "Temporal" else "spatial"
+        self.Andor.settings.bg_mode = self.bg_mode
+        self._update_settings_controls_state()
+        self._sync_scale_state_to_active_frame()
+        self._refresh_display_image()
+        self._request_all_roi_rebuilds(clear_existing=True)
+
+    def _on_bg_temporal_alpha_changed(self, sender, app_data, user_data=None):
+        self.bg_temporal_alpha = float(np.clip(
+            dpg.get_value(self.controls_window.bg_temporal_alpha_input_id), 1e-4, 1.0))
+        dpg.set_value(self.controls_window.bg_temporal_alpha_input_id, self.bg_temporal_alpha)
+        self.Andor.settings.bg_temporal_alpha = self.bg_temporal_alpha
+
+    def _on_phase_every_changed(self, sender, app_data, user_data=None):
+        self.phase_every = max(1, int(dpg.get_value(self.controls_window.phase_every_input_id)))
+        dpg.set_value(self.controls_window.phase_every_input_id, self.phase_every)
+        self.Andor.settings.phase_every = self.phase_every
+
+    def _on_cpp_backend_changed(self, sender, app_data):
+        self.use_cpp_backend = bool(app_data)
+        self.Andor.settings.use_cpp_backend = self.use_cpp_backend
+
     def _on_crop_changed(self, sender, app_data):
         self.crop_percent = float(np.clip(float(app_data), 0.0, 100.0))
         self.Andor.settings.crop_percent = self.crop_percent
@@ -1196,18 +1250,27 @@ class CameraFeedWindow:
 
     def has_display_snapshot(self):
         with self.Andor.processed_frame_condition:
-            return self.Andor.processed_frame is not None
+            return self.Andor.processed_frame_gpu is not None
 
     def get_display_snapshot(self):
         with self.Andor.processed_frame_condition:
-            if self.Andor.processed_frame is None:
+            if self.Andor.processed_frame_gpu is None:
                 return None
 
         with self._image_state_lock:
-            rgba = np.array(self.imageArray, copy=True)
+            image = np.array(self.imageArray, copy=True)
 
-        expected_size = int(self.image_width) * int(self.image_height) * 4
-        if rgba.size != expected_size:
+        npix = int(self.image_width) * int(self.image_height)
+        # The live feed image is RGB (3 ch). The calibration modal expects a
+        # flat RGBA buffer, so expand RGB->RGBA (opaque alpha) here.
+        if image.size == npix * 3:
+            rgba = np.empty(npix * 4, dtype=np.float32)
+            rgba4 = rgba.reshape(-1, 4)
+            rgba4[:, :3] = image.reshape(-1, 3)
+            rgba4[:, 3] = 1.0
+        elif image.size == npix * 4:
+            rgba = image
+        else:
             return None
 
         canvas_width, canvas_height = self._get_canvas_size()
@@ -1233,8 +1296,7 @@ class CameraFeedWindow:
 
     def _process_frame(self, frame=None):
         if frame is None:
-            with self.Andor.processed_frame_condition:
-                frame = self.Andor.processed_frame
+            frame = self.Andor.get_processed_frame_cpu()
         return self.make_display_rgba(frame)
 
     def _get_canvas_size(self):
@@ -1912,25 +1974,42 @@ class CameraFeedWindow:
 
 
     def _process_camera_feed(self):
+        # Display throttle: the science pipeline runs at the full capture rate on
+        # the GPU, but the processed RGBA only needs to reach the screen at the
+        # monitor's refresh rate.  We pull (and transfer) at most display_fps_cap
+        # times per second; this is the single GPU->CPU transfer on the display
+        # path.  See Andor.get_processed_rgba_cpu.
         rendered_idx = -1
-        expected_rgba_size = self.image_width * self.image_height * 4
+        expected_rgba_size = self.image_width * self.image_height * self._feed_channels
         while not self._processing_stop_event.is_set():
             try:
                 with self.Andor.processed_frame_condition:
                     if self.Andor.processed_frame_idx == rendered_idx:
                         self.Andor.processed_frame_condition.wait(timeout=0.0016)
                         continue
-                    rendered_idx  = self.Andor.processed_frame_idx
-                    frame_ref     = self.Andor.processed_frame
-                    rgba_ref      = self.Andor.processed_rgba
-                    rgba_scale    = self.Andor.processed_rgba_scale
+                    new_idx = self.Andor.processed_frame_idx
+
+                # Rate-limit the pull/transfer to the display cap.  A new frame is
+                # available but if we pulled too recently we skip it and let the
+                # pipeline keep running at full rate without touching the host.
+                min_interval = 1.0 / max(1.0, self.display_fps_cap)
+                now = time.perf_counter()
+                if now - self._last_display_pull < min_interval:
+                    time.sleep(min(min_interval - (now - self._last_display_pull), 0.005))
+                    continue
+                self._last_display_pull = now
+                rendered_idx = new_idx
+
+                rgba_ref = self.Andor.get_processed_rgba_cpu()
+                with self.Andor.processed_frame_condition:
+                    rgba_scale = self.Andor.processed_rgba_scale
 
                 if rgba_ref is not None and rgba_ref.size == expected_rgba_size:
                     rgba = rgba_ref
                     self._last_frame_display_min = float(rgba_scale[0])
                     self._last_frame_display_max = float(rgba_scale[1])
                 else:
-                    rgba = self._frame_to_rgba(frame_ref)
+                    rgba = self._frame_to_rgba(self.Andor.get_processed_frame_cpu())
 
                 with self._image_state_lock:
                     self.imageArray = rgba
@@ -1974,6 +2053,7 @@ class CameraFeedWindow:
         if not is_left_button:
             return
 
+        
         if hit is None:
             self.selected_roi = None
             self.preview_bounds = (image_point[0], image_point[1], image_point[0], image_point[1])
@@ -2177,6 +2257,10 @@ class CameraFeedWindow:
                 "drift_correction_enabled": bool(self.drift_correction_enabled),
                 "bg_removal_enabled": bool(self.bg_removal_enabled),
                 "bg_removal_sigma": float(self.bg_removal_sigma),
+                "bg_mode": str(self.bg_mode),
+                "bg_temporal_alpha": float(self.bg_temporal_alpha),
+                "use_cpp_backend": bool(self.use_cpp_backend),
+                "phase_every": int(self.phase_every),
                 "crop_percent": float(self.crop_percent),
                 "zoom": float(self.zoom),
                 "view_center_x": float(self.view_center_x),
@@ -2253,6 +2337,10 @@ class CameraFeedWindow:
         self.drift_correction_enabled = bool(state.get("drift_correction_enabled", self.drift_correction_enabled))
         self.bg_removal_enabled = bool(state.get("bg_removal_enabled", self.bg_removal_enabled))
         self.bg_removal_sigma = float(state.get("bg_removal_sigma", self.bg_removal_sigma))
+        self.bg_mode = str(state.get("bg_mode", self.bg_mode))
+        self.bg_temporal_alpha = float(state.get("bg_temporal_alpha", self.bg_temporal_alpha))
+        self.use_cpp_backend = bool(state.get("use_cpp_backend", self.use_cpp_backend))
+        self.phase_every = max(1, int(state.get("phase_every", self.phase_every)))
         self.crop_percent = float(state.get("crop_percent", self.crop_percent))
         self.zoom = float(state.get("zoom", self.zoom))
         self.view_center_x = float(state.get("view_center_x", self.view_center_x))
@@ -2283,6 +2371,11 @@ class CameraFeedWindow:
         dpg.set_value(self.controls_window.bg_removal_checkbox_id, self.bg_removal_enabled)
         dpg.set_value(self.controls_window.bg_removal_sigma_input_id, self.bg_removal_sigma)
         dpg.configure_item(self.controls_window.bg_removal_sigma_input_id, enabled=self.bg_removal_enabled)
+        dpg.set_value(self.controls_window.bg_mode_combo_id,
+                      "Temporal" if self.bg_mode == "temporal" else "Spatial")
+        dpg.set_value(self.controls_window.bg_temporal_alpha_input_id, self.bg_temporal_alpha)
+        dpg.set_value(self.controls_window.use_cpp_backend_checkbox_id, self.use_cpp_backend)
+        dpg.set_value(self.controls_window.phase_every_input_id, self.phase_every)
         dpg.set_value(self.controls_window.crop_slider_id, self.crop_percent)
 
         self._clamp_view_center()
@@ -2331,8 +2424,21 @@ class CameraFeedWindow:
                 pending_image = self.imageArray
                 self.image_dirty = False
 
-        if pending_image is not None and hasattr(self, "texture_id") and dpg.does_item_exist(self.texture_id):
-            dpg.set_value(self.texture_id, pending_image)
+        raw_buffer = getattr(self, "_raw_texture_buffer", None)
+        if (pending_image is not None and raw_buffer is not None
+                and pending_image.size == raw_buffer.size
+                and hasattr(self, "texture_id") and dpg.does_item_exist(self.texture_id)):
+            # Write the new pixels into the bound buffer, then flag the re-upload.
+            # An in-place write ALONE does not refresh a raw texture — Dear PyGui
+            # only re-uploads it to the GPU when it is marked dirty, so without
+            # the set_value the feed froze on its initial buffer (black / single
+            # frame). set_value on a RAW texture is ~0.001 ms and GIL-friendly
+            # (the data is already in the bound buffer), unlike a DYNAMIC texture
+            # where set_value marshals every pixel (~24 ms while holding the GIL).
+            # A size mismatch only occurs transiently after an AOI change, before
+            # the texture is rebuilt; skip that frame.
+            raw_buffer[:] = np.asarray(pending_image, dtype=np.float32).reshape(-1)
+            dpg.set_value(self.texture_id, raw_buffer)
             self._display_fps_window_frame_count += 1
             elapsed_seconds = time.perf_counter() - self._display_fps_window_started_at
             if elapsed_seconds >= 0.5:

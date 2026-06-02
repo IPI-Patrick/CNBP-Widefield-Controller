@@ -100,7 +100,12 @@ def phase_cross_correlation_ds(reference, frame_f32, *, downsample=4, _ref_fft=N
         ref_ds = xp.asarray(reference[::ds, ::ds], dtype=xp.float64)
         scale = max(float(ref_ds.max()), float(frm_ds.max()), 1.0)
         cross = xp.fft.rfft2(ref_ds / scale) * xp.conj(xp.fft.rfft2(frm_ds / scale))
-    corr = to_cpu(xp.fft.irfft2(cross))   # small array — cheap transfer
+    # Single host transfer of the (small, downsampled) correlation map, then peak
+    # + sub-pixel on the CPU. This is intentionally ONE sync: splitting it into a
+    # GPU argmax + per-slice transfers adds sync latency and is slower. The FFTs
+    # dominate this function; a truly sync-free drift estimate belongs in the
+    # fused pipeline kernel (see IMPLEMENTATION.md M3).
+    corr = to_cpu(xp.fft.irfft2(cross))
 
     h, w = corr.shape
     flat_idx = int(np.argmax(corr))
