@@ -15,6 +15,7 @@ from Drivers.PicoScope import CHANNEL_NAMES, SUPPORTED_AWG_WAVEFORMS
 from pyAndorSDK3.andor_sdk3_exceptions import CameraException, ErrorCodes
 from Utils.StorageDTypes import get_raw_storage_bytes
 from Utils import diskspeed
+from Utils import fast_acquisition
 from Windows.SubWindows.AcquisitionPreviewWindow import AcquisitionPreviewWindow
 from Windows.SubWindows.CalibrationModal import CalibrationModal
 from Windows.SubWindows.CameraFeed import CameraFeedWindow
@@ -1788,6 +1789,7 @@ class CameraSystem:
             "bg_mode":                          str(getattr(self.camera_feed, "bg_mode", "spatial")),
             "bg_temporal_alpha":                float(getattr(self.camera_feed, "bg_temporal_alpha", 0.02)),
             "use_cpp_backend":                  bool(getattr(self.camera_feed, "use_cpp_backend", False)),
+            "use_acquisition_engine":           bool(getattr(self.camera_feed, "use_acquisition_engine", False)),
             "phase_every":                      int(getattr(self.camera_feed, "phase_every", 1)),
         }
 
@@ -2251,10 +2253,58 @@ class CameraSystem:
 
         return os.getcwd()
 
+    def _engine_start_preview(self):
+        """Create + start the GIL-free C++/CUDA acquisition engine for preview.
+
+        Returns True on success (``Andor.active_engine`` is set so the
+        processing thread submits frames to the engine and CameraFeed renders
+        from it); False to fall back to the standard CuPy pipeline.
+        """
+        try:
+            fa = fast_acquisition.module()
+        except Exception as exc:
+            print(f"Acquisition engine unavailable ({exc}); using standard pipeline.")
+            return False
+        if fa is None:
+            print("Acquisition engine unavailable (fastacq not built); using standard pipeline.")
+            return False
+        try:
+            H = int(self.Andor.frame_shape[0])
+            W = int(self.Andor.frame_shape[1])
+            engine = fa.AcquisitionEngine(H, W)
+            self.camera_feed.apply_engine_settings(engine)
+            engine.start("push")
+            self._engine = engine
+            self.Andor.active_engine = engine
+            return True
+        except Exception as exc:
+            print(f"Failed to start acquisition engine: {exc}")
+            try:
+                if getattr(self, "_engine", None) is not None:
+                    self._engine.stop()
+            except Exception:
+                pass
+            self._engine = None
+            self.Andor.active_engine = None
+            return False
+
+    def _engine_stop_preview(self):
+        """Detach + stop the acquisition engine (no-op if not running)."""
+        engine = getattr(self, "_engine", None)
+        # Detach first so the processing thread stops submitting before we join.
+        self.Andor.active_engine = None
+        if engine is not None:
+            try:
+                engine.stop()
+            except Exception as exc:
+                print(f"Error stopping acquisition engine: {exc}")
+        self._engine = None
+
     def toggle_preview(self):
         if self.started:
             if self.Andor.is_capturing:
                 self.Andor.stop_capture()
+            self._engine_stop_preview()
             self._stop_preview_scope_means()
             self.started = False
             self.preview_zero_reference_pending = False
@@ -2270,6 +2320,11 @@ class CameraSystem:
             zero_on_start = bool(dpg.get_value(self.preview_zero_on_start_checkbox_id))
             self.preview_zero_on_start = zero_on_start
             self.preview_zero_reference_pending = zero_on_start or int(getattr(self.Andor, "zero_version", 0)) <= 0
+            # Engine mode: stand up the GIL-free engine before capture starts so
+            # the processing thread submits to it from the first frame. Falls
+            # back to the standard pipeline if the extension isn't available.
+            if bool(getattr(self.camera_feed, "use_acquisition_engine", False)):
+                self._engine_start_preview()
             self.Andor.start_capture_continuous()
 
     def _get_camera_aoi_limits(self):

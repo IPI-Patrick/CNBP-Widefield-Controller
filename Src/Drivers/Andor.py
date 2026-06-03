@@ -106,6 +106,11 @@ class Andor:
         self.settings.add_change_callback(self._on_settings_changed)
         self.rois = []
 
+        # When set (by CameraControls in engine mode), the live processing thread
+        # submits raw frames to this GIL-free C++/CUDA AcquisitionEngine instead
+        # of running the CuPy pipeline. FPS getters delegate to it.
+        self.active_engine = None
+
         # FPS tracking for the processing thread
         self._processing_fps_times = deque(maxlen=600)
         self._processing_thread_stop_event = threading.Event()
@@ -1347,6 +1352,17 @@ class Andor:
                     # process_frame never mutates the raw input.
                     raw_frame   = self.latest_frame
 
+                # Engine mode: hand the raw frame to the GIL-free C++/CUDA
+                # acquisition engine, which does ALL processing on its own thread.
+                # This Python thread's only per-frame job is the (cheap) submit.
+                engine = self.active_engine
+                if engine is not None:
+                    try:
+                        engine.submit(raw_frame)
+                    except Exception as exc:
+                        print(f"engine.submit error: {exc}")
+                    continue
+
                 try:
                     # Live path: processed frame stays on the GPU (want_cpu_frame
                     # defaults to False). No full-frame host transfer here.
@@ -1554,6 +1570,12 @@ class Andor:
 
     def get_processing_fps(self):
         """Return the actual processed-frames-per-second of the live pipeline."""
+        engine = self.active_engine
+        if engine is not None:
+            try:
+                return float(engine.processing_fps())
+            except Exception:
+                return 0.0
         times = list(self._processing_fps_times)
         if len(times) < 2:
             return 0.0

@@ -249,6 +249,14 @@ class FeedControlsWindow:
                 callback=self.parent._on_cpp_backend_changed,
             )
 
+            # Full GIL-free C++/CUDA acquisition engine (fastacq). Takes effect on
+            # the next preview start; the engine owns the whole capture->process loop.
+            self.use_acquisition_engine_checkbox_id = dpg.add_checkbox(
+                label="Acquisition Engine (GIL-free)",
+                default_value=self.parent.use_acquisition_engine,
+                callback=self.parent._on_acquisition_engine_changed,
+            )
+
 
             self.crop_slider_id = dpg.add_slider_float(
                 label="Crop (%)",

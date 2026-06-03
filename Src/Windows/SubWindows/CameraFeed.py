@@ -7,6 +7,7 @@ from matplotlib import colormaps
 from matplotlib.colors import LinearSegmentedColormap, to_rgb
 from skimage.registration import phase_cross_correlation
 
+from Utils import fast_acquisition
 from Utils.ProcessingROI import ProcessingROI
 from Utils.StorageDTypes import get_raw_storage_max_value
 from Utils.state_persistence import delete_state_file, list_state_files, load_state_file, save_state_file
@@ -73,7 +74,8 @@ class CameraFeedWindow:
         self.bg_removal_sigma = 20.0
         self.bg_mode = "spatial"          # "spatial" (exact) or "temporal" (fast EMA, >1000fps)
         self.bg_temporal_alpha = 0.02     # EMA rate for temporal mode
-        self.use_cpp_backend = False      # GIL-free C++/CUDA backend for the temporal path
+        self.use_cpp_backend = False      # GIL-free C++/CUDA per-frame backend (fastproc)
+        self.use_acquisition_engine = False  # full GIL-free C++/CUDA acquisition engine (fastacq)
         self.phase_every = 1              # recompute drift shift every N frames (1 = every frame)
         self.crop_percent = 100.0
         self._drift_reference_frame = None
@@ -1046,6 +1048,10 @@ class CameraFeedWindow:
     def _on_cpp_backend_changed(self, sender, app_data):
         self.use_cpp_backend = bool(app_data)
         self.Andor.settings.use_cpp_backend = self.use_cpp_backend
+
+    def _on_acquisition_engine_changed(self, sender, app_data):
+        # Takes effect on the next preview start (the engine owns the whole loop).
+        self.use_acquisition_engine = bool(app_data)
 
     def _on_crop_changed(self, sender, app_data):
         self.crop_percent = float(np.clip(float(app_data), 0.0, 100.0))
@@ -2260,6 +2266,7 @@ class CameraFeedWindow:
                 "bg_mode": str(self.bg_mode),
                 "bg_temporal_alpha": float(self.bg_temporal_alpha),
                 "use_cpp_backend": bool(self.use_cpp_backend),
+                "use_acquisition_engine": bool(self.use_acquisition_engine),
                 "phase_every": int(self.phase_every),
                 "crop_percent": float(self.crop_percent),
                 "zoom": float(self.zoom),
@@ -2340,6 +2347,7 @@ class CameraFeedWindow:
         self.bg_mode = str(state.get("bg_mode", self.bg_mode))
         self.bg_temporal_alpha = float(state.get("bg_temporal_alpha", self.bg_temporal_alpha))
         self.use_cpp_backend = bool(state.get("use_cpp_backend", self.use_cpp_backend))
+        self.use_acquisition_engine = bool(state.get("use_acquisition_engine", self.use_acquisition_engine))
         self.phase_every = max(1, int(state.get("phase_every", self.phase_every)))
         self.crop_percent = float(state.get("crop_percent", self.crop_percent))
         self.zoom = float(state.get("zoom", self.zoom))
@@ -2375,6 +2383,7 @@ class CameraFeedWindow:
                       "Temporal" if self.bg_mode == "temporal" else "Spatial")
         dpg.set_value(self.controls_window.bg_temporal_alpha_input_id, self.bg_temporal_alpha)
         dpg.set_value(self.controls_window.use_cpp_backend_checkbox_id, self.use_cpp_backend)
+        dpg.set_value(self.controls_window.use_acquisition_engine_checkbox_id, self.use_acquisition_engine)
         dpg.set_value(self.controls_window.phase_every_input_id, self.phase_every)
         dpg.set_value(self.controls_window.crop_slider_id, self.crop_percent)
 
@@ -2405,6 +2414,156 @@ class CameraFeedWindow:
         self._redraw_overlay()
 
 
+    # ------------------------------------------------------------------
+    # Acquisition-engine (GIL-free C++/CUDA) integration
+    # ------------------------------------------------------------------
+
+    def _engine_rects(self):
+        """Build the engine ROI rectangle array from the Andor ProcessingROIs.
+
+        Returns ``(rects, rois)`` where *rects* is an ``int32`` array of shape
+        ``(N, 4)`` with rows ``[y0, y1, x0, x1]`` (the order ``set_rois`` /
+        ``k_roi`` expect) and *rois* is the matching list of ProcessingROIs, so
+        the means returned by ``get_roi_means`` line up by position. Empty ROIs
+        are emitted as a zero rect (skipped by the kernel).
+        """
+        H, W = int(self.image_height), int(self.image_width)
+        rois = list(self.Andor.rois)
+        rects = []
+        for roi in rois:
+            try:
+                if roi._frame_shape != (H, W):
+                    roi.update_mask((H, W))
+                y1, y2, x1, x2 = roi.slice_bounds
+                rects.append((int(y1), int(y2), int(x1), int(x2))
+                             if (y2 > y1 and x2 > x1) else (0, 0, 0, 0))
+            except Exception:
+                rects.append((0, 0, 0, 0))
+        arr = (np.asarray(rects, dtype=np.int32)
+               if rects else np.zeros((0, 4), dtype=np.int32))
+        return arr, rois
+
+    def apply_engine_settings(self, engine):
+        """Push the current science/display settings into the engine.
+
+        Called every render; all updates are guarded by a cached signature so
+        we only touch the engine (and trigger a GPU re-upload on its worker
+        thread) when something actually changed. This mirrors the temporal-EMA
+        CuPy pipeline the engine was validated against:
+
+        - Background removal is the temporal-EMA model (``alpha``); the engine
+          has no spatial ``uniform_filter`` path, and Normal/Difference produce
+          the same background-subtracted output (only Contrast differs).
+        - Difference/Contrast use the running EMA background as the reference,
+          not ``zero_frame`` (which the engine uses only as the drift template).
+        """
+        fa = fast_acquisition.module()
+        if fa is None:
+            return
+        s = self.Andor.settings
+        H, W = int(self.image_height), int(self.image_width)
+
+        # ---- Config ----
+        c = fa.Config()
+        c.drift = bool(s.drift_correction_enabled)
+        c.phase_every = max(1, int(getattr(s, "phase_every", 1)))
+        c.drift_ds = 4
+        c.lp = bool(s.lp_filter_enabled)
+        if c.lp:
+            sr = max(float(s.frame_rate_hz), 1e-6)
+            cutoff = float(np.clip(s.lp_filter_cutoff_hz, 1e-6, max(1e-6, sr * 0.5 * 0.99)))
+            k = float(np.tan(np.pi * cutoff / sr)); norm = 1.0 / (1.0 + k)
+            c.b0, c.b1, c.a1 = k * norm, k * norm, (k - 1.0) * norm
+        else:
+            c.b0 = c.b1 = c.a1 = 0.0
+        c.maxv = float(s.max_value)
+        c.alpha = float(getattr(s, "bg_temporal_alpha", 0.02))
+        c.mode = (2 if s.display_mode == "Contrast"
+                  else 1 if s.display_mode == "Difference" else 0)
+        c.crop = float(s.crop_percent)
+        c.autoscale = bool(s.autoscale_enabled)
+        c.scale_min = float(s.scale_min)
+        c.scale_max = float(s.scale_max)
+        c.grace = float(s.autoscale_grace_percent)
+        # Produce display products (RGBA + ROI means) at ~display rate, not the
+        # full capture rate — the science loop still runs every frame.
+        c.output_stride = max(1, int(round(float(s.frame_rate_hz) / 60.0)))
+        c.target_fps = 0.0  # push mode: the camera capture loop sets the pace
+
+        sig = (c.drift, c.phase_every, c.drift_ds, c.lp, c.b0, c.b1, c.a1,
+               c.maxv, c.alpha, c.mode, c.crop, c.autoscale, c.scale_min,
+               c.scale_max, c.grace, c.output_stride)
+        if sig != getattr(self, "_engine_cfg_sig", None):
+            engine.configure(c)
+            self._engine_cfg_sig = sig
+
+        # ---- Colormap LUT ----
+        double_sided = s.display_mode in ("Difference", "Contrast")
+        lut_key = (self._ensure_valid_colormap_selection(), bool(double_sided))
+        if lut_key != getattr(self, "_engine_lut_key", None):
+            lut = np.ascontiguousarray(
+                self._get_colormap_lut(double_sided=double_sided), dtype=np.float32)
+            engine.set_lut(lut.reshape(-1, 3))
+            self._engine_lut_key = lut_key
+
+        # ---- ROI rectangles ----
+        rects, rois = self._engine_rects()
+        rects_bytes = rects.tobytes()
+        if rects_bytes != getattr(self, "_engine_rects_bytes", None):
+            engine.set_rois(rects if rects.size else np.zeros((0, 4), dtype=np.int32))
+            self._engine_rects_bytes = rects_bytes
+        self._engine_roi_tags = [r.tag for r in rois]
+
+        # ---- Zero / drift reference ----
+        zero_version = int(getattr(self.Andor, "zero_version", 0))
+        if zero_version != getattr(self, "_engine_zero_version", None):
+            zero = getattr(self.Andor, "zero", None)
+            if zero is not None:
+                z = np.ascontiguousarray(np.asarray(zero), dtype=np.uint16)
+                if z.size == H * W:
+                    engine.set_zero(z.reshape(H, W))
+            self._engine_zero_version = zero_version
+
+    def _render_from_engine(self, engine, rois_window_visible):
+        self.apply_engine_settings(engine)
+
+        raw_buffer = getattr(self, "_raw_texture_buffer", None)
+        expected = self.image_width * self.image_height * 4
+        if (raw_buffer is not None and raw_buffer.size == expected
+                and hasattr(self, "texture_id") and dpg.does_item_exist(self.texture_id)):
+            try:
+                idx = engine.get_latest_rgba(raw_buffer)
+            except Exception:
+                idx = 0
+            if idx and idx != getattr(self, "_engine_last_idx", -1):
+                self._engine_last_idx = idx
+                dpg.set_value(self.texture_id, raw_buffer)
+
+                self._display_fps_window_frame_count += 1
+                elapsed_seconds = time.perf_counter() - self._display_fps_window_started_at
+                if elapsed_seconds >= 0.5:
+                    self.displayed_feed_fps = self._display_fps_window_frame_count / elapsed_seconds
+                    self._display_fps_window_started_at = time.perf_counter()
+                    self._display_fps_window_frame_count = 0
+
+                # Feed engine ROI means into the matching trace plots (by tag).
+                try:
+                    means = engine.get_roi_means()
+                except Exception:
+                    means = []
+                tags = getattr(self, "_engine_roi_tags", [])
+                if means and tags:
+                    by_tag = {roi.tag: roi for roi in self.rois}
+                    for i, tag in enumerate(tags):
+                        if i < len(means):
+                            target = by_tag.get(tag)
+                            if target is not None:
+                                target.feed_external_value(means[i])
+
+        if rois_window_visible:
+            for roi in list(self.rois):
+                roi.render()
+
     def render(self):
         if dpg.does_item_exist(self.window_id):
             rect = dpg.get_item_rect_size(self.window_id)
@@ -2417,6 +2576,15 @@ class CameraFeedWindow:
         self.rois_window.render()
         self._update_zero_window()
         rois_window_visible = self.rois_window.is_visible()
+
+        # Acquisition-engine mode: the GIL-free C++/CUDA engine owns the whole
+        # pipeline. Pull its latest display RGBA straight into the raw texture
+        # and feed its ROI means to the traces; skip the CuPy display path.
+        engine = getattr(self.Andor, "active_engine", None)
+        if engine is not None:
+            self._render_from_engine(engine, rois_window_visible)
+            self._update_focus_indicator()
+            return
 
         pending_image = None
         with self._image_state_lock:

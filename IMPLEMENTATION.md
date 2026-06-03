@@ -379,3 +379,107 @@ is unchanged; flip BG Mode→Temporal + C++ Backend to use it.
 **Still needs real-hardware validation** on the Zyla: confirm Processing FPS now tracks Capture FPS
 with the UI running, and eyeball the temporal-mode science. Future: sub-pixel shift in the kernel,
 and porting the spatial-BG/colormap into the engine if a fully GIL-free exact path is wanted.
+
+---
+
+## fastacq — fully GIL-free C++/CUDA acquisition engine (BUILT + VALIDATED)
+
+The remaining `setswitchinterval`/`fastproc.process()` approaches still had Python in the per-frame
+loop (event handshake + GIL to enter/exit the call), capping ~950 fps. The robust fix: move the
+**entire capture→process loop into a C++ `std::thread`** that never touches the GIL.
+
+**`src/APIs/fastacq/fastacq.cu`** — `AcquisitionEngine(H,W)`:
+- A C++ worker thread runs the whole pipeline: frame source → integer drift shift (cuFFT phase
+  correlation, `phase_every`) → LP IIR → temporal-EMA background → difference/contrast → crop → ROI
+  means → autoscale → colormap(LUT) → **RGBA float32**.
+- **Frame sources:** `"mock"` (frames generated on the GPU by a CUDA kernel — no Python at all) or
+  `"push"` (real camera: Python's Andor thread calls `submit(raw_u16)`; worker consumes).
+- **`output_stride`** decouples the expensive display products (autoscale + colormap + 16 B/px RGBA
+  D2H + ROI means) from the science loop — produced every N frames (≈display rate), not every frame.
+  This is what unlocks the throughput (matches the prototype's cadence idea).
+- Latest RGBA is **double-buffered** in pinned host memory; `get_latest_rgba(out)` copies it. ROI
+  means + `capture_fps()`/`processing_fps()` are published atomically. cudart is static; only
+  `cufft64_12.dll` is an external dep.
+
+**Build:** `src/APIs/fastacq/build.bat` (nvcc 13 + `-lcudart -lcufft` + MSVC). Loader
+`Utils/fast_acquisition.py` adds the **CUDA v13 toolkit `bin\x64`** to the DLL search path (the
+machine has both v12.9 and v13.0; `CUDA_PATH` pointed at v12.9 — fastacq needs v13's `cufft64_12.dll`).
+
+**Measured (RTX 4070 SUPER, ALL features: drift+LP+EMA-BG+contrast+crop+2 ROIs+autoscale+colormap):**
+| resolution | processing FPS | under a 10 ms/60 Hz Python GIL hog |
+|---|---|---|
+| 500×500 | **8313** | 8344 |
+| 1200×1200 | **2014** | 2005 |
+
+The GIL hog has **no effect** — the engine is fully independent of the renderer. Pipeline correctness
+sanity-checked (animation live, drift/ROI responsive, valid RGBA).
+
+### Integration plan (remaining — needs the real Zyla + GUI to validate)
+The renderer becomes a thin client of the engine:
+1. **Settings → `fastacq.Config`** mapping (drift/phase_every/lp coeffs/alpha/mode/crop/autoscale/
+   scale/LUT/ROI rects/zero/output_stride from the Feed Controls). `set_lut`, `set_rois`, `set_zero`.
+2. **Preview start (engine mode):** instead of `Andor.start_capture_continuous` + the Python
+   processing thread, `engine.start("mock")` (dev) or `engine.start("push")` + the Andor capture
+   thread calls `engine.submit(raw)` per frame.
+3. **Display:** `CameraFeed.render()` calls `engine.get_latest_rgba(self._raw_texture_buffer)` +
+   `set_value`; ROI traces from `engine.get_roi_means()`; the overlay FPS from
+   `engine.capture_fps()/processing_fps()`.
+4. **Stop / acquisition-save:** `engine.stop()`; the fixed-acquisition `.npz` path still needs the
+   raw-frame history (either keep the Python capture deque in push mode, or add a raw-ring to the
+   engine).
+Gate all of this behind a `use_acquisition_engine` flag with the existing pipeline as the default,
+and validate live on the camera. Sub-pixel drift shift in the kernel is a later refinement (currently
+integer shift with wraparound, the documented fast-path approximation).
+
+### Integration — WIRED INTO THE LIVE APP (mock-validated; Zyla pending)
+
+The engine is now a selectable preview backend, fully behind the **"Acquisition Engine (GIL-free)"**
+checkbox in Feed Controls (default **off**; persisted + in the acquisition snapshot). Default app
+behaviour is unchanged.
+
+**Worker refactor for live reconfigure:** every `AcquisitionEngine` setter
+(`configure`/`set_lut`/`set_rois`/`set_zero`) now only **stages** data + sets a dirty flag under a
+mutex; the worker thread applies *all* CUDA/cuFFT ops on its own stream at the top of each iteration.
+So the renderer can reconfigure the running engine every frame with no cross-thread CUDA race.
+
+**Push mode for both mock and Zyla.** The renderer uses one uniform path: the Andor capture loop
+produces frames → the Python processing thread's only per-frame job is `engine.submit(raw_u16)` (a
+GIL-released memcpy) → the GIL-free worker does everything else. (Testing with the Andor mock camera
+therefore exercises the exact path the Zyla will use.)
+
+Code wired:
+- **`CameraControls`** — `_engine_start_preview()` (build `AcquisitionEngine(H,W)` from
+  `Andor.frame_shape`, `apply_engine_settings`, `engine.start("push")`, set `Andor.active_engine`) /
+  `_engine_stop_preview()` (detach `active_engine` then `engine.stop()`); `toggle_preview` branches on
+  `camera_feed.use_acquisition_engine`. Falls back to the CuPy pipeline if the extension is absent.
+- **`Andor`** — `active_engine`; the processing `_loop` submits to it when set (else the CuPy path);
+  `get_processing_fps()` delegates to `engine.processing_fps()`.
+- **`CameraFeed`** — `apply_engine_settings(engine)` maps `Andor.settings` → `fastacq.Config` (+ LUT /
+  ROI rects / zero), guarded by cached signatures so the engine is only re-touched on actual change;
+  `_engine_rects()` builds the `int32 [y0,y1,x0,x1]` rect array from the `ProcessingROI`s;
+  `render()` branches to `_render_from_engine` → `get_latest_rgba` into the raw texture + `set_value`,
+  and feeds `get_roi_means()` to the trace plots by tag.
+- **`RegionOfInterest.feed_external_value(value)`** — engine-mode trace accumulator (the normal
+  incremental worker has no `processed_frame` to read in engine mode).
+
+**Validated (headless, mock camera, RTX 4070 SUPER):** GUI launches clean; enabling the engine +
+starting preview gives **capture 986 fps == processing 986 fps** (processing tracks capture exactly —
+the GIL-contention symptom is gone), display throttled to ~57 fps via `output_stride`; a created ROI
+yields a live engine mean and an accumulating trace; stop cleanly detaches (`active_engine → None`).
+(986 fps here is the Andor *mock* generation rate; the engine's own headroom is 2014 fps @1200² /
+8313 fps @500² as above.)
+
+**Known semantics / limitations (documented; fix with the Zyla / later):**
+- The engine implements the **temporal-EMA** pipeline only: background removal is always the EMA model
+  (`alpha`=`bg_temporal_alpha`); **Normal and Difference produce the same** background-subtracted
+  output (only Contrast differs), and Difference/Contrast use the running EMA background as the
+  reference — `zero_frame` is used *only* as the drift template, not as a static subtraction reference.
+- **ROI-mean traces accumulate at display (`output_stride`) cadence**, not the full capture rate
+  (means are a strided display product).
+- Drift is **integer** shift with wraparound edges (sub-pixel is a later kernel refinement).
+- Colormap normalization is single-sided (`[mn,mx]`); diverging maps are not yet zero-centred.
+- The **fixed-acquisition `.npz` save path is unchanged** (still the Andor/CuPy path) — the engine is
+  preview-only; a raw-ring in the engine for engine-mode saves is future work.
+
+**Next:** user validates live on the Zyla (flip the checkbox, Start Preview; confirm feed + that
+Processing FPS now tracks Capture FPS with the UI running) and fixes any hardware-specific bugs.

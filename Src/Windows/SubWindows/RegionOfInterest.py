@@ -123,10 +123,45 @@ class RegionOfInterest:
                 self.trace_min_value = 0.0
                 self.trace_max_value = 0.0
                 self.pending_version += 1
+                # Engine-mode trace accumulator (see feed_external_value).
+                ext = getattr(self, "_external_y", None)
+                if ext is not None:
+                    ext.clear()
             elif nan_pad and not self._full_history_mode:
                 # Only applies to live-camera mode.
                 self._rebuild_nan_pad = True
         self.rebuild_event.set()
+
+    def feed_external_value(self, value):
+        """Append one trace point supplied by an external source.
+
+        Used in **acquisition-engine mode**: the GIL-free C++/CUDA engine owns
+        the processing pipeline and computes ROI means itself, so the normal
+        incremental worker (which reads ``Andor.processed_frame``) has no frame
+        to act on. The render thread calls this with the engine's per-ROI mean
+        once per published display frame. We keep a private accumulator so this
+        path is independent of the worker thread's local ``y_axis`` deque.
+
+        Note: the engine produces ROI means at the display (output_stride)
+        cadence, not the full capture rate, so the trace accumulates at ~display
+        rate in engine mode.
+        """
+        ext = getattr(self, "_external_y", None)
+        if ext is None or ext.maxlen != self.max_points:
+            new_ext = deque(ext or (), maxlen=self.max_points)
+            self._external_y = ext = new_ext
+        ext.append(float(value))
+
+        y_axis = list(ext)
+        finite_vals = [v for v in y_axis if v == v]  # drop NaN
+        trace_min = min(finite_vals) if finite_vals else 0.0
+        trace_max = max(finite_vals) if finite_vals else 0.0
+        plot_x = self._get_plot_x_axis(len(y_axis))
+        with self.data_lock:
+            self.pending_plot_data = (plot_x, y_axis)
+            self.trace_min_value = float(trace_min)
+            self.trace_max_value = float(trace_max)
+            self.pending_version += 1
 
     def rebuild_trace_from_history(self):
         self.request_trace_rebuild(clear_existing=True)
