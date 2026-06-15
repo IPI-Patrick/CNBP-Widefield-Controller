@@ -1,4 +1,5 @@
 import dearpygui.dearpygui as dpg
+from Utils.custom_widgets import add_input_float
 
 from Drivers.PicoScope import SUPPORTED_AWG_WAVEFORMS
 from Utils.state_persistence import apply_item_open_states, apply_window_state, capture_item_open_states, capture_window_state, load_state_file, save_state_file
@@ -61,7 +62,7 @@ class FunctionGeneratorWindow:
                 callback=self._on_awg_waveform_changed,
             )
 
-            self.awg_frequency_input_id = dpg.add_input_float(
+            self.awg_frequency_input_id = add_input_float(
                 label="Period (ms)",
                 width=-120,
                 default_value=1000.0 / max(1e-6, float(driver.awg_config["frequency_hz"])),
@@ -71,7 +72,7 @@ class FunctionGeneratorWindow:
                 callback=self._on_awg_setting_changed,
             )
 
-            self.awg_amplitude_input_id = dpg.add_input_float(
+            self.awg_amplitude_input_id = add_input_float(
                 label="Amplitude (Vpp)",
                 width=-120,
                 default_value=driver.awg_config["amplitude_vpp_volts"],
@@ -80,7 +81,7 @@ class FunctionGeneratorWindow:
                 callback=self._on_awg_setting_changed,
             )
 
-            self.awg_offset_input_id = dpg.add_input_float(
+            self.awg_offset_input_id = add_input_float(
                 label="Offset (V)",
                 width=-120,
                 default_value=driver.awg_config["offset_volts"],

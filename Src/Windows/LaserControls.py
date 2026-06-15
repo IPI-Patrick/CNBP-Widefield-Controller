@@ -1,6 +1,7 @@
 import Drivers.MPC_6000 as LaserDriverModule
 from Drivers.PM1000 import PM1000
 import dearpygui.dearpygui as dpg
+from Utils.custom_widgets import add_input_float
 from Utils.fonts import get_segmdl2_icon_font
 import Utils.shared_state as shared_state
 from Utils.state_persistence import (
@@ -123,7 +124,7 @@ class LaserControls:
                     format="%.2f mW",
                     callback=self._on_power_changed,
                 )
-                self.laser_power_input_id = dpg.add_input_float(
+                self.laser_power_input_id = add_input_float(
                     label="Target Entry",
                     source=self.target_power_source,
                     min_value=0.0,
@@ -197,8 +198,9 @@ class LaserControls:
     def _toggle_emission(self, sender=None, app_data=None, user_data=None):
         self.laser.set_emission(not self.laser.get_state()["emission_on"])
 
-    def _on_power_changed(self, sender, app_data, user_data):
-        self.laser.set_power(app_data)
+    def _on_power_changed(self, sender, app_data, user_data=None):
+        power = app_data if app_data is not None else float(dpg.get_value(self.target_power_source))
+        self.laser.set_power(power)
 
     def _sync_laser_ui(self):
         state = self.laser.get_state()

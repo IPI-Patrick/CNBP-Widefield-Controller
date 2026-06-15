@@ -1,4 +1,5 @@
 import dearpygui.dearpygui as dpg
+from Utils.custom_widgets import add_input_float
 
 import Utils.shared_state as shared_state
 from Utils.shared_state import class_objects
@@ -40,6 +41,9 @@ class AppLayout:
         self._feed = None
         self._pico = None
         self._awg_btn = None
+        self._temp_btn = None
+        self._temp_tooltip_text = None
+        self._temp_cold_threshold_c = -9.5  # Task 3: red above this temperature
 
         icon_font_small = get_segmdl2_icon_font(12)
         icon_font = get_segmdl2_icon_font(18)
@@ -59,6 +63,13 @@ class AppLayout:
                 dpg.add_theme_color(dpg.mvThemeCol_Button, [0, 124, 80])
                 dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, [0, 150, 96])
                 dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, [0, 100, 65])
+
+        # Task 3: red theme for temperature indicator when sensor is too warm
+        with dpg.theme() as self._temp_red_theme:
+            with dpg.theme_component(dpg.mvButton):
+                dpg.add_theme_color(dpg.mvThemeCol_Button, [160, 30, 30])
+                dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, [190, 50, 50])
+                dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, [130, 20, 20])
 
         with dpg.theme() as self._icon_btn_theme:
             with dpg.theme_component(dpg.mvButton):
@@ -179,13 +190,23 @@ class AppLayout:
                         with dpg.tooltip(self._save_btn):
                             dpg.add_text("Save Acquisition")
 
-                        self._exposure_input = dpg.add_input_float(
+                        self._exposure_input = add_input_float(
                             tag="Toolbar_Exposure", width=160,
                             min_value=0.001, max_value=1.0, step=0.001,
-                            format="%.3f s", on_enter=True,
+                            format="%.3f s",
                             callback=self._on_exposure,
                         )
                         dpg.bind_item_theme(self._exposure_input, self._toolbar_ctrl_theme)
+
+                        # Task 3: Temperature indicator button (Segoe MDL2 "Frigid" / E9CA)
+                        self._temp_btn = dpg.add_button(
+                            label=chr(0xE9CA), tag="Toolbar_TempIndicator",
+                            width=30, height=30, callback=self._on_temp_btn,
+                        )
+                        dpg.bind_item_font(self._temp_btn, get_segmdl2_icon_font(18))
+                        dpg.bind_item_theme(self._temp_btn, self._icon_btn_theme)
+                        with dpg.tooltip(self._temp_btn):
+                            self._temp_tooltip_text = dpg.add_text("Sensor temperature: unknown\nClick to enable cooler at -10 °C")
 
                 self._toolbar_separator()
 
@@ -255,8 +276,10 @@ class AppLayout:
                         with dpg.tooltip(self._awg_btn):
                             dpg.add_text("AWG Output On / Off")
 
-            # Performance text — positioned dynamically at right edge each frame
-            self._perf_text_id = dpg.add_text("", tag="SoftwarePerformanceOverlayText", pos=(0, 16))
+            # Performance counters — three rows, positioned dynamically at right edge each frame
+            dpg.add_text("", tag="SoftwarePerformanceOverlay_UI",         pos=(0, 8))
+            dpg.add_text("", tag="SoftwarePerformanceOverlay_Capture",    pos=(0, 23))
+            dpg.add_text("", tag="SoftwarePerformanceOverlay_Processing", pos=(0, 38))
 
     def _toolbar_separator(self):
         dpg.add_spacer(width=6)
@@ -577,6 +600,26 @@ class AppLayout:
                 except Exception:
                     pass
 
+        # Task 3: Update temperature indicator button colour
+        if self._temp_btn is not None and dpg.does_item_exist(self._temp_btn):
+            temp_c = None
+            andor = getattr(cam, "Andor", None) if cam else None
+            if andor is not None:
+                try:
+                    temp_c = andor.get_sensor_temperature_c()
+                except Exception:
+                    pass
+            is_warm = (temp_c is None) or (temp_c > self._temp_cold_threshold_c)
+            dpg.bind_item_theme(
+                self._temp_btn,
+                self._temp_red_theme if is_warm else self._active_btn_theme,
+            )
+            tooltip_str = (
+                f"Sensor: {temp_c:.1f} °C" if temp_c is not None else "Sensor: unknown"
+            ) + "\nClick to enable cooler at -10 °C"
+            if self._temp_tooltip_text is not None and dpg.does_item_exist(self._temp_tooltip_text):
+                dpg.set_value(self._temp_tooltip_text, tooltip_str)
+
     # ------------------------------------------------------------------
     # Toolbar wiring (called once on first render when class_objects ready)
     # ------------------------------------------------------------------
@@ -628,6 +671,8 @@ class AppLayout:
     # ------------------------------------------------------------------
 
     def _on_spacebar(self, sender=None, app_data=None):
+        if shared_state.currently_editing:
+            return
         if dpg.is_key_down(dpg.mvKey_LShift) or dpg.is_key_down(dpg.mvKey_RShift):
             self._on_acquire()
         else:
@@ -666,11 +711,14 @@ class AppLayout:
             except Exception:
                 pass
 
-    def _on_exposure(self, sender, value):
+    def _on_exposure(self, sender, value, user_data=None):
         cam = self._cam or self._find("CameraSystem")
         if cam and hasattr(cam, "settings_exposure_time"):
             try:
-                dpg.set_value(cam.settings_exposure_time, float(value))
+                # value may be None when called from a deactivated_after_edit handler;
+                # fall back to reading the widget's current value in that case.
+                exposure = float(value) if value is not None else float(dpg.get_value("Toolbar_Exposure"))
+                dpg.set_value(cam.settings_exposure_time, exposure)
                 cam.setprop("ExposureTime", cam.settings_exposure_time)
             except Exception:
                 pass
@@ -726,6 +774,24 @@ class AppLayout:
         cam = self._cam or self._find("CameraSystem")
         if cam and hasattr(cam, "_show_save_dialog"):
             cam._show_save_dialog()
+
+    def _on_temp_btn(self):
+        """Task 3: Enable cooler and set setpoint to -10 °C when temperature button is clicked."""
+        cam = self._cam or self._find("CameraSystem")
+        if cam is None:
+            return
+        andor = getattr(cam, "Andor", None)
+        if andor is None:
+            return
+        try:
+            andor.set_sensor_cooling_enabled(True)
+            andor.set_temperature_setpoint_c(-10.0)
+            # Sync the cooler checkbox in CameraControls if it exists
+            cooler_chk = getattr(cam, "settings_cooler_checkbox_id", None)
+            if cooler_chk is not None and dpg.does_item_exist(cooler_chk):
+                dpg.set_value(cooler_chk, True)
+        except Exception as exc:
+            print(f"Warning: could not enable cooler from toolbar button: {exc}")
 
     def _on_awg_toggle(self):
         pico = self._pico or self._find("PicoScopeControl")

@@ -26,15 +26,19 @@ class Acquisition:
 
 class MockCamera:
     ExposureTime            = 0.01
+    min_ExposureTime        = 0.000028
+    max_ExposureTime        = 30.0
     FrameRate               = 100.0
+    min_FrameRate           = 0.001
+    max_FrameRate           = 1000.0
     TriggerMode             = "Internal"
     CycleMode               = "Continuous"
     min_AOIWidth            = 1
-    max_AOIWidth            = 1024
-    AOIWidth                = 1024
+    max_AOIWidth            = 2048
+    AOIWidth                = 2048
     min_AOIHeight           = 1
-    max_AOIHeight           = 1024
-    AOIHeight               = 1024
+    max_AOIHeight           = 2048
+    AOIHeight               = 2048
     BitDepth                = 16
     options_bitDepth        = [8, 10, 12, 14, 16]
     options_CycleMode       = ["Continuous", "Single"]
@@ -56,7 +60,12 @@ class MockCamera:
         self._mock_time_origin_perf = None
         self._mock_time_origin_wall = None
         self._mock_cached_acquisition = None
-        self._mock_visual_update_period_seconds = 1.0 / 60.0
+        # How often the animated frame CONTENT is regenerated (wall-clock),
+        # decoupled from the exposure/delivery rate. Frames are re-exposed by
+        # wait_buffer at the full FrameRate (up to max_FrameRate) regardless;
+        # this only controls visual animation cadence. Kept modest so the
+        # (relatively expensive) render does not dominate at high frame rates.
+        self._mock_visual_update_period_seconds = 0.1
         self._mock_cache_lock = threading.Lock()
         self._mock_frame_condition = threading.Condition(self._mock_cache_lock)
         self._mock_render_stop_event = threading.Event()
@@ -273,13 +282,16 @@ class MockCamera:
             remaining_seconds = float(deadline - time.perf_counter())
             if remaining_seconds <= 0.0:
                 return True
-            if remaining_seconds > 0.003:
+            if remaining_seconds > 0.0015:
                 time.sleep(remaining_seconds - 0.001)
-            elif remaining_seconds > 0.0005:
-                time.sleep(0)
             else:
-                while time.perf_counter() < deadline:
-                    pass
+                # Near the deadline, yield the GIL with sleep(0) rather than a
+                # `pass` busy-spin. A pure-Python `pass` spin HOLDS the GIL, so at
+                # high frame rates it starved the consumer threads (capture /
+                # processing) and capped the achievable rate. sleep(0) releases
+                # the GIL each iteration while still pacing tightly enough for a
+                # dev mock.
+                time.sleep(0)
 
     @staticmethod
     def _generate_particle_mask(rng, radius):
@@ -495,34 +507,28 @@ class MockCamera:
         return Acquisition(frame, self.BitDepth)
 
     def _mock_render_loop(self):
-        next_frame_deadline = time.perf_counter() + self._get_requested_frame_period_seconds()
+        # Regenerate the animated frame at a MODEST visual rate (~60 Hz),
+        # independent of the (possibly very high) delivery frame rate. Frame
+        # *exposure* is paced separately by wait_buffer, which simply re-delivers
+        # the latest cached frame — so the mock can expose up to max_FrameRate
+        # without re-rendering every frame. Re-rendering a full frame per
+        # delivery (and spinning this loop at the delivery rate) is what
+        # previously capped the achievable rate and starved consumer threads.
+        # The first frame is rendered immediately so wait_buffer has data at once.
+        next_deadline = time.perf_counter()
         while not self._mock_render_stop_event.is_set():
-            if not self._wait_until_deadline(next_frame_deadline):
-                break
-
-            now = time.perf_counter()
-
-            should_refresh_visual = False
-            with self._mock_frame_condition:
-                should_refresh_visual = (
-                    self._mock_cached_acquisition is None
-                    or self._mock_last_visual_render_time is None
-                    or (now - self._mock_last_visual_render_time) >= self._mock_visual_update_period_seconds
-                )
-
-            if should_refresh_visual:
-                acquisition = self._render_mock_frame()
-            else:
-                with self._mock_frame_condition:
-                    acquisition = self._mock_cached_acquisition
-
+            acquisition = self._render_mock_frame()
             with self._mock_frame_condition:
                 self._mock_cached_acquisition = acquisition
-                if should_refresh_visual:
-                    self._mock_last_visual_render_time = time.perf_counter()
+                self._mock_last_visual_render_time = time.perf_counter()
                 self._mock_frame_condition.notify_all()
 
-            next_frame_deadline += self._get_requested_frame_period_seconds()
+            next_deadline += self._mock_visual_update_period_seconds
+            now = time.perf_counter()
+            if next_deadline < now:          # fell behind on a slow render; don't accrue backlog
+                next_deadline = now + self._mock_visual_update_period_seconds
+            if not self._wait_until_deadline(next_deadline):
+                break
 
     # ── Camera properties ───────────────────────────────────────────────────────
 

@@ -37,6 +37,9 @@ class ROIsWindow:
         self._roi_ui = {}
         self._xaxis_ui = None
         self.trace_metric = "Mean"
+        self._last_marker_x = object()  # sentinel — forces first marker update
+        self._last_xaxis_values = None
+        self._overlay_tick = 0
 
         with dpg.theme() as self._table_theme:
             with dpg.theme_component(dpg.mvTable):
@@ -335,6 +338,9 @@ class ROIsWindow:
         self._roi_ui = {}
         self._xaxis_ui = None
         self._current_roi_tags = list(new_tags)
+        self._last_marker_x = object()  # force refresh after layout rebuild
+        self._last_xaxis_values = None
+        self._overlay_tick = 0
 
         if dpg.does_item_exist(self.content_id):
             dpg.delete_item(self.content_id, children_only=True)
@@ -500,7 +506,9 @@ class ROIsWindow:
         if not self.is_visible():
             return
         self._update_roi_markers()
-        self._update_overlay_positions()
+        self._overlay_tick += 1
+        if self._overlay_tick % 4 == 0:
+            self._update_overlay_positions()
         self._sync_xaxis()
 
     def _get_current_roi_marker_x(self):
@@ -513,6 +521,9 @@ class ROIsWindow:
 
     def _update_roi_markers(self):
         marker_x = self._get_current_roi_marker_x()
+        if marker_x == self._last_marker_x:
+            return
+        self._last_marker_x = marker_x
         if marker_x is None:
             for ui in self._roi_ui.values():
                 marker_series_id = ui.get("marker_series_id")
@@ -548,12 +559,14 @@ class ROIsWindow:
 
         # Push a dummy series to the shared x-axis row so it auto-fits to the
         # global x range.  Individual ROI plots use auto_fit=True natively.
+        if not have_points:
+            return
+        xaxis_values = [x_min, x_min + 1.0] if x_min == x_max else [x_min, x_max]
+        if xaxis_values == self._last_xaxis_values:
+            return
+        self._last_xaxis_values = xaxis_values
         xaxis_series = self._xaxis_ui["series_id"]
-        if have_points and dpg.does_item_exist(xaxis_series):
-            if x_min == x_max:
-                xaxis_values = [x_min, x_min + 1.0]
-            else:
-                xaxis_values = [x_min, x_max]
+        if dpg.does_item_exist(xaxis_series):
             dpg.set_value(xaxis_series, [xaxis_values, [0.0, 0.0]])
 
     def render_roi(self, roi):

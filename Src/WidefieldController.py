@@ -12,7 +12,7 @@ from Utils.state_persistence import apply_viewport_state, capture_viewport_state
 from Utils.utils import load_window_classes
 
 WINDOWS_FOLDER = os.path.join(os.path.dirname(__file__), "Windows")
-SOFTWARE_FPS_TIMES = deque(maxlen=60)
+SOFTWARE_FPS_TIMES = deque(maxlen=6000)
 STATE_AUTOSAVE_INTERVAL_SECONDS = 1.0
 LAST_STATE_SAVE_TIME = 0.0
 VIEWPORT_STATE_NAME = "WidefieldController"
@@ -54,27 +54,37 @@ def request_viewport_state_save():
 
 def update_performance_overlay():
     SOFTWARE_FPS_TIMES.append(time.perf_counter())
-    if len(SOFTWARE_FPS_TIMES) < 2:
-        ui_fps = 0.0
-    else:
-        elapsed = SOFTWARE_FPS_TIMES[-1] - SOFTWARE_FPS_TIMES[0]
-        ui_fps = 0.0 if elapsed <= 0.0 else (len(SOFTWARE_FPS_TIMES) - 1) / elapsed
+    _times = list(SOFTWARE_FPS_TIMES)
+    _cutoff = _times[-1] - 5.0
+    _recent = [t for t in _times if t >= _cutoff]
+    ui_fps = 0.0 if len(_recent) < 2 else (len(_recent) - 1) / max(_recent[-1] - _recent[0], 1e-9)
 
     capture_fps = 0.0
+    processing_fps = 0.0
     shared_andor = getattr(shared_state, "shared_andor", None)
-    if shared_andor is not None and hasattr(shared_andor, "get_capture_loop_fps"):
-        try:
-            capture_fps = float(shared_andor.get_capture_loop_fps())
-        except Exception:
-            capture_fps = 0.0
+    if shared_andor is not None:
+        if hasattr(shared_andor, "get_capture_loop_fps"):
+            try:
+                capture_fps = float(shared_andor.get_capture_loop_fps())
+            except Exception:
+                capture_fps = 0.0
+        if hasattr(shared_andor, "get_processing_fps"):
+            try:
+                processing_fps = float(shared_andor.get_processing_fps())
+            except Exception:
+                processing_fps = 0.0
 
-    label = f"{int(ui_fps)} UI FPS | {int(capture_fps)} Capture FPS"
-    if dpg.does_item_exist("SoftwarePerformanceOverlayText"):
-        dpg.set_value("SoftwarePerformanceOverlayText", label)
-        label_w = max(200, int(len(label) * 7))
-        toolbar_w = dpg.get_viewport_client_width()
-        x = max(8, toolbar_w - label_w - 12)
-        dpg.set_item_pos("SoftwarePerformanceOverlayText", (x, 20))
+    if dpg.does_item_exist("SoftwarePerformanceOverlay_UI"):
+        PERF_LABEL_W = 150  # fixed width — never shifts as numbers change
+        x = max(8, dpg.get_viewport_client_width() - PERF_LABEL_W - 12)
+        rows = (
+            ("SoftwarePerformanceOverlay_UI",         f"{int(ui_fps):>3} UI FPS",         8),
+            ("SoftwarePerformanceOverlay_Capture",    f"{int(capture_fps):>3} Capture FPS",   23),
+            ("SoftwarePerformanceOverlay_Processing", f"{int(processing_fps):>3} Processing FPS", 38),
+        )
+        for tag, text, y in rows:
+            dpg.set_value(tag, text)
+            dpg.set_item_pos(tag, (x, y))
 
 
 def save_all_states():
@@ -121,6 +131,8 @@ def on_viewport_resized(sender=None, app_data=None):
 
 
 def on_reset_viewport_shortcut(sender=None, app_data=None):
+    if shared_state.currently_editing:
+        return
     if not (dpg.is_key_down(dpg.mvKey_LControl) or dpg.is_key_down(dpg.mvKey_RControl)):
         return
 
@@ -158,6 +170,14 @@ def _register_viewport_drop_callback(window_objects):
 def setup():
     # Create the window
     global LAST_STATE_SAVE_TIME
+
+    # Lower the GIL switch interval (default 5 ms). At high capture rates the
+    # main Dear PyGui render loop holds the GIL in long chunks; the default 5 ms
+    # lets it starve the camera processing thread (which needs the GIL for its
+    # per-frame CuPy launches), capping Processing FPS below Capture FPS. A finer
+    # switch interval lets the processing thread interleave each frame.
+    sys.setswitchinterval(0.0005)
+
     install_console_capture(max_lines=100)
     loaded_viewport_state = load_state_file(VIEWPORT_STATE_NAME).get("viewport")
     viewport_state = normalize_viewport_state(loaded_viewport_state)

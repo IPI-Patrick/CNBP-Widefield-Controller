@@ -1,4 +1,5 @@
 import dearpygui.dearpygui as dpg
+from Utils.custom_widgets import add_input_float, add_input_int
 from Utils.state_persistence import apply_item_open_states, apply_window_state, capture_item_open_states, capture_window_state, load_state_file, save_state_file
 
 
@@ -36,7 +37,7 @@ class FeedControlsWindow:
                 callback=self.parent._on_autoscale_changed,
             )
 
-            self.scale_min_input_id = dpg.add_input_float(
+            self.scale_min_input_id = add_input_float(
                 label="Min Z (%)",
                 width=-120,
                 default_value=self.parent.get_scale_min_percent(),
@@ -45,9 +46,10 @@ class FeedControlsWindow:
                 step=0.001,
                 format="%.3f",
                 callback=self.parent._on_scale_limits_changed,
-            )
+            )                            
 
-            self.scale_max_input_id = dpg.add_input_float(
+
+            self.scale_max_input_id = add_input_float(
                 label="Max Z (%)",
                 width=-120,
                 default_value=self.parent.get_scale_max_percent(),
@@ -58,7 +60,7 @@ class FeedControlsWindow:
                 callback=self.parent._on_scale_limits_changed,
             )
 
-            self.autoscale_grace_input_id = dpg.add_input_float(
+            self.autoscale_grace_input_id = add_input_float(
                 label="Grace (%)",
                 width=-120,
                 default_value=self.parent.autoscale_grace_percent,
@@ -96,7 +98,7 @@ class FeedControlsWindow:
                 callback=self.parent._on_scale_bar_auto_width_changed,
             )
 
-            self.scale_bar_width_input_id = dpg.add_input_float(
+            self.scale_bar_width_input_id = add_input_float(
                 label="Width",
                 width=-120,
                 default_value=self.parent.scale_bar_width_um,
@@ -104,15 +106,11 @@ class FeedControlsWindow:
                 min_clamped=True,
                 step=10.0,
                 format="%.3f um",
-                on_enter=True,
                 callback=self.parent._on_scale_bar_width_changed,
             )
 
-            with dpg.item_handler_registry(tag=f"{self.parent.tag}_ScaleBarWidthHandler"):
-                dpg.add_item_deactivated_after_edit_handler(callback=self.parent._on_scale_bar_width_changed)
-            dpg.bind_item_handler_registry(self.scale_bar_width_input_id, f"{self.parent.tag}_ScaleBarWidthHandler")
 
-            self.scale_bar_size_input_id = dpg.add_input_float(
+            self.scale_bar_size_input_id = add_input_float(
                 label="Size",
                 width=-120,
                 default_value=self.parent.scale_bar_size,
@@ -120,12 +118,8 @@ class FeedControlsWindow:
                 min_clamped=True,
                 step=0.1,
                 format="%.2f",
-                on_enter=True,
                 callback=self.parent._on_scale_bar_size_changed,
             )
-            with dpg.item_handler_registry(tag=f"{self.parent.tag}_ScaleBarSizeHandler"):
-                dpg.add_item_deactivated_after_edit_handler(callback=self.parent._on_scale_bar_size_changed)
-            dpg.bind_item_handler_registry(self.scale_bar_size_input_id, f"{self.parent.tag}_ScaleBarSizeHandler")
 
             self.scale_bar_position_combo_id = dpg.add_combo(
                 label="Position",
@@ -135,29 +129,21 @@ class FeedControlsWindow:
                 callback=self.parent._on_scale_bar_position_changed,
             )
 
-            self.scale_bar_x_offset_input_id = dpg.add_input_int(
+            self.scale_bar_x_offset_input_id = add_input_int(
                 label="X-Offset",
                 width=-120,
                 default_value=self.parent.scale_bar_x_offset,
                 step=1,
-                on_enter=True,
                 callback=self.parent._on_scale_bar_x_offset_changed,
             )
-            with dpg.item_handler_registry(tag=f"{self.parent.tag}_ScaleBarXOffsetHandler"):
-                dpg.add_item_deactivated_after_edit_handler(callback=self.parent._on_scale_bar_x_offset_changed)
-            dpg.bind_item_handler_registry(self.scale_bar_x_offset_input_id, f"{self.parent.tag}_ScaleBarXOffsetHandler")
 
-            self.scale_bar_y_offset_input_id = dpg.add_input_int(
+            self.scale_bar_y_offset_input_id = add_input_int(
                 label="Y-Offset",
                 width=-120,
                 default_value=self.parent.scale_bar_y_offset,
                 step=1,
-                on_enter=True,
                 callback=self.parent._on_scale_bar_y_offset_changed,
             )
-            with dpg.item_handler_registry(tag=f"{self.parent.tag}_ScaleBarYOffsetHandler"):
-                dpg.add_item_deactivated_after_edit_handler(callback=self.parent._on_scale_bar_y_offset_changed)
-            dpg.bind_item_handler_registry(self.scale_bar_y_offset_input_id, f"{self.parent.tag}_ScaleBarYOffsetHandler")
 
         dpg.add_separator()
 
@@ -189,20 +175,16 @@ class FeedControlsWindow:
                 callback=self.parent._on_lp_filter_enabled_changed,
             )
 
-            self.lp_filter_cutoff_input_id = dpg.add_input_float(
+            self.lp_filter_cutoff_input_id = add_input_float(
                 label="Cuttoff Frequency",
                 width=-120,
                 default_value=self.parent.lp_filter_cutoff_hz,
                 min_value=0.001,
                 min_clamped=True,
                 step=0.5,
-                on_enter=True,
                 callback=self.parent._on_lp_filter_cutoff_changed,
             )
 
-            with dpg.item_handler_registry(tag=f"{self.parent.tag}_LpFilterCutoffHandler"):
-                dpg.add_item_deactivated_after_edit_handler(callback=self.parent._on_lp_filter_cutoff_changed)
-            dpg.bind_item_handler_registry(self.lp_filter_cutoff_input_id, f"{self.parent.tag}_LpFilterCutoffHandler")
 
             self.drift_correction_checkbox_id = dpg.add_checkbox(
                 label="Drift Correction",
@@ -216,7 +198,7 @@ class FeedControlsWindow:
                 callback=self.parent._on_bg_removal_enabled_changed,
             )
 
-            self.bg_removal_sigma_input_id = dpg.add_input_float(
+            self.bg_removal_sigma_input_id = add_input_float(
                 label="BG Sigma (px)",
                 width=-120,
                 default_value=self.parent.bg_removal_sigma,
@@ -224,13 +206,57 @@ class FeedControlsWindow:
                 max_value=200.0,
                 step=1.0,
                 format="%.1f",
-                on_enter=True,
                 callback=self.parent._on_bg_removal_sigma_changed,
             )
 
-            with dpg.item_handler_registry(tag=f"{self.parent.tag}_BgRemovalSigmaHandler"):
-                dpg.add_item_deactivated_after_edit_handler(callback=self.parent._on_bg_removal_sigma_changed)
-            dpg.bind_item_handler_registry(self.bg_removal_sigma_input_id, f"{self.parent.tag}_BgRemovalSigmaHandler")
+            # Background model: Spatial (exact uniform_filter) or Temporal
+            # (fast fused EMA kernel — the >1000 fps path).
+            self.bg_mode_combo_id = dpg.add_combo(
+                label="BG Mode",
+                items=["Spatial", "Temporal"],
+                default_value="Temporal" if self.parent.bg_mode == "temporal" else "Spatial",
+                width=-120,
+                callback=self.parent._on_bg_mode_changed,
+            )
+
+            self.bg_temporal_alpha_input_id = add_input_float(
+                label="EMA Alpha",
+                width=-120,
+                default_value=self.parent.bg_temporal_alpha,
+                min_value=0.0001,
+                max_value=1.0,
+                step=0.01,
+                format="%.4f",
+                callback=self.parent._on_bg_temporal_alpha_changed,
+            )
+
+            # Recompute drift every N frames, reuse the shift between (1 = every frame).
+            self.phase_every_input_id = add_input_int(
+                label="Drift Every N",
+                width=-120,
+                default_value=self.parent.phase_every,
+                min_value=1,
+                max_value=240,
+                step=1,
+                callback=self.parent._on_phase_every_changed,
+            )
+
+            # GIL-free C++/CUDA backend for the temporal path (requires the
+            # compiled fastproc extension; only active when BG Mode = Temporal).
+            self.use_cpp_backend_checkbox_id = dpg.add_checkbox(
+                label="C++ Backend (temporal)",
+                default_value=self.parent.use_cpp_backend,
+                callback=self.parent._on_cpp_backend_changed,
+            )
+
+            # Full GIL-free C++/CUDA acquisition engine (fastacq). Takes effect on
+            # the next preview start; the engine owns the whole capture->process loop.
+            self.use_acquisition_engine_checkbox_id = dpg.add_checkbox(
+                label="Acquisition Engine (GIL-free)",
+                default_value=self.parent.use_acquisition_engine,
+                callback=self.parent._on_acquisition_engine_changed,
+            )
+
 
             self.crop_slider_id = dpg.add_slider_float(
                 label="Crop (%)",

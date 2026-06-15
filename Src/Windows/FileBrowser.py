@@ -73,6 +73,7 @@ class FileBrowser:
             directory_selector=True,
             show=False,
             callback=self._on_directory_selected,
+            cancel_callback=self._on_directory_dialog_cancelled,
             width=700,
             height=400,
             modal=True,
@@ -114,11 +115,16 @@ class FileBrowser:
         self._watch_thread.start()
 
     def _show_directory_dialog(self, sender=None, app_data=None, user_data=None):
+        shared_state.currently_editing = True
         dpg.show_item(self.directory_dialog_id)
 
     def _on_directory_selected(self, sender, app_data, user_data=None):
+        shared_state.currently_editing = False
         selected_path = str(app_data.get("file_path_name") or "").strip()
         self._set_directory(selected_path)
+
+    def _on_directory_dialog_cancelled(self, sender=None, app_data=None, user_data=None):
+        shared_state.currently_editing = False
 
     def _on_directory_input_submitted(self, sender, app_data, user_data=None):
         self._set_directory(str(app_data or "").strip())

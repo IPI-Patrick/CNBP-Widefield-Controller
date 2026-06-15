@@ -3,10 +3,13 @@ import threading
 import time
 
 import dearpygui.dearpygui as dpg
+from Utils.custom_widgets import add_input_float, add_input_int
 import numpy as np
 from matplotlib import colormaps
 from matplotlib.colors import LinearSegmentedColormap, to_rgb
 
+import Utils.shared_state as shared_state
+from Utils.ProcessingSettings import ProcessingSettings
 from Utils.StorageDTypes import get_raw_storage_max_value
 from Utils.fonts import get_segmdl2_icon_font
 from Utils.state_persistence import apply_item_open_states, apply_window_state, capture_item_open_states, capture_window_state, load_state_file, save_state_file
@@ -231,6 +234,11 @@ class AcquisitionPreviewWindow:
         self._export_frame_dialog_id = None
         self._export_video_dialog_id = None
         self._export_status_text_id = None
+        self._preview_processing_settings = ProcessingSettings()
+        self._preview_stop_event = threading.Event()
+        self._preview_process_thread = None
+        self._preview_storage_buffer = None
+        self._processing_progress_bar_id = None
 
         # Rendered Info overlay
         self.info_show_frame_index = False
@@ -325,6 +333,7 @@ class AcquisitionPreviewWindow:
         with dpg.file_dialog(
             show=False,
             callback=self._on_export_frame_selected,
+            cancel_callback=self._on_export_dialog_cancelled,
             width=700,
             height=400,
             modal=True,
@@ -336,6 +345,7 @@ class AcquisitionPreviewWindow:
         with dpg.file_dialog(
             show=False,
             callback=self._on_export_video_selected,
+            cancel_callback=self._on_export_dialog_cancelled,
             width=700,
             height=400,
             modal=True,
@@ -406,7 +416,7 @@ class AcquisitionPreviewWindow:
                 default_value=self.autoscale_enabled,
                 callback=self._on_autoscale_changed,
             )
-            self.scale_min_input_id = dpg.add_input_float(
+            self.scale_min_input_id = add_input_float(
                 label="Min Z (%)",
                 width=-120,
                 default_value=0.0,
@@ -416,7 +426,7 @@ class AcquisitionPreviewWindow:
                 format="%.3f",
                 callback=self._on_scale_limits_changed,
             )
-            self.scale_max_input_id = dpg.add_input_float(
+            self.scale_max_input_id = add_input_float(
                 label="Max Z (%)",
                 width=-120,
                 default_value=100.0,
@@ -426,7 +436,7 @@ class AcquisitionPreviewWindow:
                 format="%.3f",
                 callback=self._on_scale_limits_changed,
             )
-            self.autoscale_grace_input_id = dpg.add_input_float(
+            self.autoscale_grace_input_id = add_input_float(
                 label="Grace (%)",
                 width=-120,
                 default_value=self.autoscale_grace_percent,
@@ -463,19 +473,15 @@ class AcquisitionPreviewWindow:
                 default_value=self.lp_filter_enabled,
                 callback=self._on_lp_filter_enabled_changed,
             )
-            self.lp_filter_cutoff_input_id = dpg.add_input_float(
+            self.lp_filter_cutoff_input_id = add_input_float(
                 label="Cutoff (Hz)",
                 width=-120,
                 default_value=self.lp_filter_cutoff_hz,
                 min_value=0.001,
                 min_clamped=True,
                 step=0.5,
-                on_enter=True,
                 callback=self._on_lp_filter_cutoff_changed,
             )
-            with dpg.item_handler_registry(tag=f"{self.tag}_LpCutoffHandler"):
-                dpg.add_item_deactivated_after_edit_handler(callback=self._on_lp_filter_cutoff_changed)
-            dpg.bind_item_handler_registry(self.lp_filter_cutoff_input_id, f"{self.tag}_LpCutoffHandler")
             self.drift_correction_checkbox_id = dpg.add_checkbox(
                 label="Drift Correction",
                 default_value=self.drift_correction_enabled,
@@ -486,7 +492,7 @@ class AcquisitionPreviewWindow:
                 default_value=self.bg_removal_enabled,
                 callback=self._on_bg_removal_enabled_changed,
             )
-            self.bg_removal_sigma_input_id = dpg.add_input_float(
+            self.bg_removal_sigma_input_id = add_input_float(
                 label="BG Sigma (px)",
                 width=-120,
                 default_value=self.bg_removal_sigma,
@@ -494,12 +500,8 @@ class AcquisitionPreviewWindow:
                 max_value=200.0,
                 step=1.0,
                 format="%.1f",
-                on_enter=True,
                 callback=self._on_bg_removal_sigma_changed,
             )
-            with dpg.item_handler_registry(tag=f"{self.tag}_BgRemovalSigmaHandler"):
-                dpg.add_item_deactivated_after_edit_handler(callback=self._on_bg_removal_sigma_changed)
-            dpg.bind_item_handler_registry(self.bg_removal_sigma_input_id, f"{self.tag}_BgRemovalSigmaHandler")
             self.crop_slider_id = dpg.add_slider_float(
                 label="Crop (%)",
                 width=-120,
@@ -545,7 +547,7 @@ class AcquisitionPreviewWindow:
                 default_value=self.info_show_voltage,
                 callback=self._on_info_overlay_changed,
             )
-            self.info_overlay_font_size_id = dpg.add_input_int(
+            self.info_overlay_font_size_id = add_input_int(
                 label="Font Size",
                 width=-120,
                 default_value=self.info_font_size,
@@ -589,17 +591,16 @@ class AcquisitionPreviewWindow:
                 default_value=self.scale_bar_auto_width,
                 callback=self._on_scale_bar_auto_width_changed,
             )
-            self.scale_bar_width_input_id = dpg.add_input_float(
+            self.scale_bar_width_input_id = add_input_float(
                 label="Width (um)",
                 width=-120,
                 default_value=self.scale_bar_width_um,
                 min_value=0.001,
                 step=10.0,
                 format="%.1f",
-                on_enter=True,
                 callback=self._on_scale_bar_width_changed,
             )
-            self.scale_bar_size_input_id = dpg.add_input_float(
+            self.scale_bar_size_input_id = add_input_float(
                 label="Size",
                 width=-120,
                 default_value=self.scale_bar_size,
@@ -607,7 +608,6 @@ class AcquisitionPreviewWindow:
                 max_value=5.0,
                 step=0.1,
                 format="%.2f",
-                on_enter=True,
                 callback=self._on_scale_bar_size_changed,
             )
             self.scale_bar_position_combo_id = dpg.add_combo(
@@ -617,20 +617,18 @@ class AcquisitionPreviewWindow:
                 width=-120,
                 callback=self._on_scale_bar_position_changed,
             )
-            self.scale_bar_x_offset_input_id = dpg.add_input_int(
+            self.scale_bar_x_offset_input_id = add_input_int(
                 label="X-Offset",
                 width=-120,
                 default_value=self.scale_bar_x_offset,
                 step=1,
-                on_enter=True,
                 callback=self._on_scale_bar_x_offset_changed,
             )
-            self.scale_bar_y_offset_input_id = dpg.add_input_int(
+            self.scale_bar_y_offset_input_id = add_input_int(
                 label="Y-Offset",
                 width=-120,
                 default_value=self.scale_bar_y_offset,
                 step=1,
-                on_enter=True,
                 callback=self._on_scale_bar_y_offset_changed,
             )
         dpg.add_separator()
@@ -663,6 +661,13 @@ class AcquisitionPreviewWindow:
                 dpg.add_button(label=">|", width=44, callback=self._on_jump_to_end)
                 dpg.bind_item_font(self.play_button_id, self.icon_font)
                 dpg.bind_item_font(self.repeat_button_id, self.icon_font)
+                dpg.add_spacer(width=-1)
+                self._processing_progress_bar_id = dpg.add_progress_bar(
+                    default_value=1.0,
+                    width=120,
+                    overlay="100%",
+                    show=False,
+                )
 
     def is_closed(self):
         return self._is_closed
@@ -836,11 +841,13 @@ class AcquisitionPreviewWindow:
         self._current_zero_frame = np.array(payload["zero_frame"], copy=True)
         frame_height = int(payload["normal_frames"].shape[1])
         frame_width = int(payload["normal_frames"].shape[2])
+        frame_count = int(payload["frame_count"])
+        self._preview_storage_buffer = np.zeros((frame_count, frame_height, frame_width), dtype=np.float32)
         self._ensure_texture_shape(frame_height, frame_width)
         self._sync_scale_inputs_from_values()
         self._update_settings_controls_state()
         self._initialize_loaded_ui()
-        self._mark_image_dirty()   # also calls _push_processed_frame
+        self._trigger_preview_reprocessing()   # processes current frame sync, background for all
 
         if dpg.does_item_exist(self.loading_text_id):
             dpg.set_value(self.loading_text_id, os.path.basename(self.file_path))
@@ -925,14 +932,87 @@ class AcquisitionPreviewWindow:
         self._push_processed_frame()
 
     def _push_processed_frame(self):
-        frame = self._get_display_frame()
-        if frame is None:
-            return
-        processed = np.asarray(frame, dtype=np.float32)
+        buf = self._preview_storage_buffer
+        if buf is not None and 0 <= self.current_frame_index < len(buf):
+            processed = buf[self.current_frame_index]
+        else:
+            frame = self._get_display_frame()
+            if frame is None:
+                return
+            processed = np.asarray(frame, dtype=np.float32)
         with self.Andor.processed_frame_condition:
             self.Andor.processed_frame = processed
             self.Andor.processed_frame_idx += 1
             self.Andor.processed_frame_condition.notify_all()
+
+    def _build_preview_settings(self):
+        """Build a ProcessingSettings snapshot from the current UI state."""
+        s = self._preview_processing_settings
+        s.lp_filter_enabled = self.lp_filter_enabled
+        s.lp_filter_cutoff_hz = self.lp_filter_cutoff_hz
+        s.drift_correction_enabled = self.drift_correction_enabled
+        s.bg_removal_enabled = self.bg_removal_enabled
+        s.bg_removal_sigma = self.bg_removal_sigma
+        s.crop_percent = self.crop_percent
+        s.display_mode = self.display_mode
+        s.zero_frame = np.array(self._current_zero_frame, copy=True) if self._current_zero_frame is not None else None
+        s.frame_rate_hz = max(float(self.playback_fps), 1.0)
+        s.max_value = float(self.display_max)
+        return s
+
+    def _set_processing_progress(self, frac):
+        if self._processing_progress_bar_id is None or not dpg.does_item_exist(self._processing_progress_bar_id):
+            return
+        pct = int(round(float(frac) * 100.0))
+        dpg.configure_item(self._processing_progress_bar_id, show=True)
+        dpg.set_value(self._processing_progress_bar_id, float(frac))
+        dpg.configure_item(self._processing_progress_bar_id, overlay=f"{pct}%")
+
+    def _trigger_preview_reprocessing(self):
+        """Stop any in-flight background reprocessing, process the current frame
+        immediately for instant feedback, then reprocess all frames in the background."""
+        payload = self._loaded_payload
+        andor = shared_state.shared_andor
+        if payload is None or andor is None or self._preview_storage_buffer is None:
+            self._mark_image_dirty()
+            return
+
+        # Stop previous background thread.
+        self._preview_stop_event.set()
+        if self._preview_process_thread is not None and self._preview_process_thread.is_alive():
+            self._preview_process_thread.join(timeout=0.1)
+        self._preview_stop_event.clear()
+
+        settings = self._build_preview_settings()
+        raw_frames = np.asarray(payload["acquisitions"])
+        buf = self._preview_storage_buffer
+
+        # Synchronously process current frame for instant feedback.
+        cur = int(np.clip(self.current_frame_index, 0, len(raw_frames) - 1))
+        state = {"lp_prev_input": None, "lp_prev_output": None}
+        processed, _ = andor.process_frame(raw_frames[cur], settings, rois=[], state=state,
+                                           want_cpu_frame=True)
+        buf[cur] = processed
+        self._push_processed_frame()
+        self._mark_image_dirty()
+
+        # Background: reprocess all frames.
+        stop_ev = self._preview_stop_event
+
+        def _background_reprocess():
+            andor.process_frames(
+                raw_frames, settings, rois=[],
+                result_buffer=buf,
+                stop_event=stop_ev,
+                progress_callback=self._set_processing_progress,
+            )
+            self._set_processing_progress(1.0)
+
+        self._preview_process_thread = threading.Thread(
+            target=_background_reprocess, daemon=True,
+            name=f"{self.tag}_PreviewReprocess",
+        )
+        self._preview_process_thread.start()
 
     def _invalidate_lp_cache(self):
         self._lp_filter_frames_cache = None
@@ -972,16 +1052,18 @@ class AcquisitionPreviewWindow:
 
     def _on_lp_filter_enabled_changed(self, sender, app_data):
         self.lp_filter_enabled = bool(app_data)
-        self._mark_image_dirty()
+        self._invalidate_lp_cache()
+        self._invalidate_drift_cache()
+        self._trigger_preview_reprocessing()
         self._request_all_roi_rebuilds()
 
-    def _on_lp_filter_cutoff_changed(self, sender=None, app_data=None):
+    def _on_lp_filter_cutoff_changed(self, sender=None, app_data=None, user_data=None):
         if self.lp_filter_cutoff_input_id is not None and dpg.does_item_exist(self.lp_filter_cutoff_input_id):
             self.lp_filter_cutoff_hz = max(1e-3, float(dpg.get_value(self.lp_filter_cutoff_input_id)))
         self._invalidate_lp_cache()
-        self._invalidate_drift_cache()   # drift is computed on LP-filtered frames
+        self._invalidate_drift_cache()
         if self.lp_filter_enabled:
-            self._mark_image_dirty()
+            self._trigger_preview_reprocessing()
             self._request_all_roi_rebuilds()
 
     # ── Drift correction ──────────────────────────────────────────────────
@@ -1090,7 +1172,7 @@ class AcquisitionPreviewWindow:
     def _on_drift_correction_changed(self, sender, app_data):
         self.drift_correction_enabled = bool(app_data)
         self._invalidate_drift_cache()
-        self._mark_image_dirty()
+        self._trigger_preview_reprocessing()
         self._request_all_roi_rebuilds()
 
     # ── Background removal ─────────────────────────────────────────────────────
@@ -1108,19 +1190,19 @@ class AcquisitionPreviewWindow:
             from Utils.themes import read_only_theme
             dpg.configure_item(self.bg_removal_sigma_input_id, enabled=enabled)
             dpg.bind_item_theme(self.bg_removal_sigma_input_id, None if enabled else read_only_theme)
-        self._mark_image_dirty()
+        self._trigger_preview_reprocessing()
         self._request_all_roi_rebuilds()
 
-    def _on_bg_removal_sigma_changed(self, sender, app_data):
+    def _on_bg_removal_sigma_changed(self, sender, app_data, user_data=None):
         self.bg_removal_sigma = max(1.0, float(dpg.get_value(self.bg_removal_sigma_input_id)))
         dpg.set_value(self.bg_removal_sigma_input_id, self.bg_removal_sigma)
         if self.bg_removal_enabled:
-            self._mark_image_dirty()
+            self._trigger_preview_reprocessing()
             self._request_all_roi_rebuilds()
 
     def _on_crop_changed(self, sender, app_data):
         self.crop_percent = float(np.clip(float(app_data), 0.0, 100.0))
-        self._mark_image_dirty()
+        self._trigger_preview_reprocessing()
 
     @staticmethod
     def _compute_crop_mask(height, width, crop_percent):
@@ -2584,6 +2666,8 @@ class AcquisitionPreviewWindow:
         self._set_zoom_at_point(app_data, self._get_mouse_local())
 
     def _on_delete_key_pressed(self, sender, app_data):
+        if shared_state.currently_editing:
+            return
         if self.selected_roi is None:
             return
         if not dpg.is_item_focused(self.window_id):
@@ -2611,7 +2695,7 @@ class AcquisitionPreviewWindow:
         self._update_settings_controls_state()
         self._mark_image_dirty()
 
-    def _on_scale_limits_changed(self, sender, app_data):
+    def _on_scale_limits_changed(self, sender, app_data, user_data=None):
         scale_min = float(self._scale_percent_to_value(dpg.get_value(self.scale_min_input_id)))
         scale_max = float(self._scale_percent_to_value(dpg.get_value(self.scale_max_input_id)))
 
@@ -2630,8 +2714,9 @@ class AcquisitionPreviewWindow:
         self._sync_scale_inputs_from_values()
         self._mark_image_dirty()
 
-    def _on_autoscale_grace_changed(self, sender, app_data):
-        self.autoscale_grace_percent = max(0.0, float(app_data))
+    def _on_autoscale_grace_changed(self, sender, app_data, user_data=None):
+        grace = app_data if app_data is not None else float(dpg.get_value(self.autoscale_grace_input_id))
+        self.autoscale_grace_percent = max(0.0, float(grace))
         self._mark_image_dirty()
 
     def _on_mirrored_difference_changed(self, sender, app_data):
@@ -2659,7 +2744,7 @@ class AcquisitionPreviewWindow:
         self.scale_min, self.scale_max = self._compute_display_bounds()
         self._update_settings_controls_state()
         self._request_all_roi_rebuilds(clear_existing=True)
-        self._mark_image_dirty()
+        self._trigger_preview_reprocessing()
 
     def _on_colormap_changed(self, sender, app_data):
         self.colormap_name = self._parse_colormap_label(app_data)
@@ -2675,7 +2760,7 @@ class AcquisitionPreviewWindow:
         self._current_zero_frame = np.array(frame, copy=True)
         self.zero_version += 1
         self._request_all_roi_rebuilds(clear_existing=True)
-        self._mark_image_dirty()
+        self._trigger_preview_reprocessing()
 
     def _on_toggle_play(self, sender=None, app_data=None, user_data=None):
         if self._get_frame_count() <= 0:
@@ -2994,15 +3079,18 @@ class AcquisitionPreviewWindow:
         if self._loaded_payload is None:
             return
         if self._export_frame_dialog_id is not None and dpg.does_item_exist(self._export_frame_dialog_id):
+            shared_state.currently_editing = True
             dpg.show_item(self._export_frame_dialog_id)
 
     def _show_export_video_dialog(self):
         if self._loaded_payload is None:
             return
         if self._export_video_dialog_id is not None and dpg.does_item_exist(self._export_video_dialog_id):
+            shared_state.currently_editing = True
             dpg.show_item(self._export_video_dialog_id)
 
     def _on_export_frame_selected(self, sender, app_data):
+        shared_state.currently_editing = False
         file_path = str(app_data.get("file_path_name") or "").strip()
         if not file_path:
             return
@@ -3011,12 +3099,16 @@ class AcquisitionPreviewWindow:
         threading.Thread(target=self._write_frame_image, args=(file_path,), daemon=True).start()
 
     def _on_export_video_selected(self, sender, app_data):
+        shared_state.currently_editing = False
         file_path = str(app_data.get("file_path_name") or "").strip()
         if not file_path:
             return
         if os.path.splitext(file_path.lower())[1] != ".mp4":
             file_path = f"{file_path}.mp4"
         threading.Thread(target=self._write_video_mp4, args=(file_path,), daemon=True).start()
+
+    def _on_export_dialog_cancelled(self, sender=None, app_data=None, user_data=None):
+        shared_state.currently_editing = False
 
     def _compose_frame_rgb(self, frame):
         """Return RGB uint8 ndarray for frame with info/scalebar/colorbar composited."""

@@ -9,10 +9,13 @@ import time
 import zipfile
 import numpy as np
 import dearpygui.dearpygui as dpg
+from Utils.custom_widgets import add_input_float, add_input_int, add_input_text
 from Drivers.Andor import Andor
 from Drivers.PicoScope import CHANNEL_NAMES, SUPPORTED_AWG_WAVEFORMS
+from pyAndorSDK3.andor_sdk3_exceptions import CameraException, ErrorCodes
 from Utils.StorageDTypes import get_raw_storage_bytes
 from Utils import diskspeed
+from Utils import fast_acquisition
 from Windows.SubWindows.AcquisitionPreviewWindow import AcquisitionPreviewWindow
 from Windows.SubWindows.CalibrationModal import CalibrationModal
 from Windows.SubWindows.CameraFeed import CameraFeedWindow
@@ -34,7 +37,7 @@ class CameraSystem:
         self.acquisition_scope_sample_rate_hz = 1000.0
         self.calculate_frame_mean = True
         self.auto_scope_freq = False
-        self.max_exposure = False
+        self.max_exposure = False  # kept for backward-compat state loading only
         self.acquisition_storage_dtype_name = "16"
         self.acquisition_zero_on_start = False
         self.preview_zero_on_start = False
@@ -194,7 +197,7 @@ class CameraSystem:
             with dpg.child_window(border=False, width=-1, height=400, no_scrollbar=False) as self.content_area_id:
                 with dpg.tree_node(label="Camera Settings", default_open=True, span_full_width=True) as camera_settings_node_id:
                     self.section_node_ids["camera_settings"] = camera_settings_node_id
-                    self.settings_frame_rate = dpg.add_input_float(
+                    self.settings_frame_rate = add_input_float(
                         label           = "FPS",
                         width           = -110,
                         default_value   = self.acquisition_frame_rate_hz,
@@ -204,25 +207,37 @@ class CameraSystem:
                         format          = "%.0f",
                         callback        = lambda: self.setprop("FrameRate", self.settings_frame_rate)
                     )
-
                     self.acquisition_frame_rate_input_id = self.settings_frame_rate
 
-                    self.settings_exposure_time = dpg.add_input_float(
+                    self.settings_exposure_time = add_input_float(
                         label           = "Exposure Time",
                         width           = -110,
-                        default_value   = cam.ExposureTime,
-                        min_value       = 0.001,
-                        max_value       = 1,
-                        step            = 0.01,
-                        format          = "%.3f s",
+                        default_value   = cam.ExposureTime * 1000.0,
+                        min_value       = 0.01,
+                        max_value       = 1000.0,
+                        step            = 0.1,
+                        format          = "%.2f ms",
                         callback        = lambda: self.setprop("ExposureTime", self.settings_exposure_time)
                     )
-
-                    self.settings_max_exposure_checkbox_id = dpg.add_checkbox(
-                        label="Max Exposure",
-                        default_value=self.max_exposure,
-                        callback=self._on_max_exposure_changed,
+                    # Read-only display showing the maximum achievable frame rate
+                    # for the current exposure time.  Updated whenever exposure changes.
+                    self.settings_max_frame_rate_id = add_input_float(
+                        label="Max Frame Rate",
+                        width=-110,
+                        default_value=self._compute_max_frame_rate(float(cam.ExposureTime)),
+                        format="%.2f fps",
+                        enabled=False,
                     )
+                    dpg.bind_item_theme(self.settings_max_frame_rate_id, self.hardware_readout_theme)
+                    # Checkbox: when checked, automatically apply the computed max frame rate
+                    # to the camera whenever exposure changes.
+                    self.settings_max_frame_rate_checkbox_id = dpg.add_checkbox(
+                        label="Auto Max FPS",
+                        default_value=False,
+                    )
+                    # Alias kept so that the SaveState/LoadState key "max_exposure" still
+                    # resolves to a real widget id (we just treat it as unused).
+                    self.settings_max_exposure_checkbox_id = self.settings_max_frame_rate_id
 
                     self.settings_trigger_mode = dpg.add_combo(
                         label           = "Trigger Mode",
@@ -248,7 +263,7 @@ class CameraSystem:
                         enabled=self.temperature_setpoint_supported,
                     )
 
-                    self.cooler_temperature_input_id = dpg.add_input_float(
+                    self.cooler_temperature_input_id = add_input_float(
                         label="Temperature",
                         width=-110,
                         default_value=float(self.Andor.get_sensor_temperature_c() or 0.0),
@@ -267,7 +282,7 @@ class CameraSystem:
                         callback        = lambda: self.setprop("AOIBinning", self.settings_pixel_binning)
                     )
 
-                    self.settings_image_width = dpg.add_input_int(
+                    self.settings_image_width = add_input_int(
                         label           = "Width",
                         width           = -110,
                         default_value   = cam.AOIWidth,
@@ -275,8 +290,7 @@ class CameraSystem:
                         max_value       = cam.AOIWidth,
                         callback        = lambda: self.setprop("AOIWidth", self.settings_image_width)
                     )
-
-                    self.settings_image_height = dpg.add_input_int(
+                    self.settings_image_height = add_input_int(
                         label           = "Height",
                         width           = -110,
                         default_value   = cam.AOIHeight,
@@ -284,8 +298,7 @@ class CameraSystem:
                         max_value       = cam.AOIHeight,
                         callback        = lambda: self.setprop("AOIHeight", self.settings_image_height),
                     )
-
-                    self.settings_image_left = dpg.add_input_int(
+                    self.settings_image_left = add_input_int(
                         label           = "Left",
                         width           = -110,
                         default_value   = cam.AOILeft,
@@ -293,8 +306,7 @@ class CameraSystem:
                         max_value       = cam.AOILeft,
                         callback        = lambda: self.setprop("AOILeft", self.settings_image_left),
                     )
-
-                    self.settings_image_top = dpg.add_input_int(
+                    self.settings_image_top = add_input_int(
                         label           = "Top",
                         width           = -110,
                         default_value   = cam.AOITop,
@@ -302,7 +314,6 @@ class CameraSystem:
                         max_value       = cam.AOITop,
                         callback        = lambda: self.setprop("AOITop", self.settings_image_top),
                     )
-
                     self.settings_aoi_auto_center_checkbox_id = dpg.add_checkbox(
                         label="Auto Center",
                         default_value=self.aoi_auto_center_enabled,
@@ -312,7 +323,7 @@ class CameraSystem:
                 dpg.add_separator()
                 with dpg.tree_node(label="Preview Settings", default_open=True, span_full_width=True) as preview_settings_node_id:
                     self.section_node_ids["preview_settings"] = preview_settings_node_id
-                    self.settings_preview_max_frames = dpg.add_input_int(
+                    self.settings_preview_max_frames = add_input_int(
                         label="Max Frames",
                         width=-110,
                         default_value=self.preview_max_frames,
@@ -373,7 +384,7 @@ class CameraSystem:
                 dpg.add_separator()
                 with dpg.tree_node(label="Acquisition Settings", default_open=True, span_full_width=True) as acquisition_settings_node_id:
                     self.section_node_ids["acquisition_settings"] = acquisition_settings_node_id
-                    self.acquisition_duration_input_id = dpg.add_input_float(
+                    self.acquisition_duration_input_id = add_input_float(
                         label="Seconds",
                         width=-110,
                         default_value=self.acquisition_duration_seconds,
@@ -410,7 +421,7 @@ class CameraSystem:
                         )
 
                         with dpg.group(show=True) as self.acquisition_awg_dc_group_id:
-                            self.acquisition_awg_dc_offset_input_id = dpg.add_input_float(
+                            self.acquisition_awg_dc_offset_input_id = add_input_float(
                                 label="Offset (V)",
                                 width=-110,
                                 default_value=self.acquisition_awg_dc_offset_volts,
@@ -418,7 +429,7 @@ class CameraSystem:
                             )
 
                         with dpg.group(show=False) as self.acquisition_awg_periodic_group_id:
-                            self.acquisition_awg_frequency_input_id = dpg.add_input_float(
+                            self.acquisition_awg_frequency_input_id = add_input_float(
                                 label="Frequency (Hz)",
                                 width=-110,
                                 default_value=self.acquisition_awg_frequency_hz,
@@ -426,7 +437,7 @@ class CameraSystem:
                                 min_clamped=True,
                                 step=100.0,
                             )
-                            self.acquisition_awg_amplitude_input_id = dpg.add_input_float(
+                            self.acquisition_awg_amplitude_input_id = add_input_float(
                                 label="Amplitude (Vpp)",
                                 width=-110,
                                 default_value=self.acquisition_awg_amplitude_vpp_volts,
@@ -434,14 +445,14 @@ class CameraSystem:
                                 min_clamped=True,
                                 step=0.1,
                             )
-                            self.acquisition_awg_periodic_offset_input_id = dpg.add_input_float(
+                            self.acquisition_awg_periodic_offset_input_id = add_input_float(
                                 label="Offset (V)",
                                 width=-110,
                                 default_value=self.acquisition_awg_periodic_offset_volts,
                                 step=0.1,
                             )
 
-                            self.acquisition_awg_start_after_input_id = dpg.add_input_float(
+                            self.acquisition_awg_start_after_input_id = add_input_float(
                                 label="AWG Delay (s)",
                                 width=-110,
                                 default_value=self.acquisition_awg_start_after_seconds,
@@ -451,7 +462,7 @@ class CameraSystem:
                                 format="%.2f s",
                             )
 
-                            self.acquisition_scope_rate_input_id = dpg.add_input_float(
+                            self.acquisition_scope_rate_input_id = add_input_float(
                                 label="Scope Hz",
                                 width=-110,
                                 default_value=self.acquisition_scope_sample_rate_hz,
@@ -513,13 +524,13 @@ class CameraSystem:
                             callback=self._show_save_directory_dialog,
                         )
 
-                    self.save_base_filename_input_id = dpg.add_input_text(
+                    self.save_base_filename_input_id = add_input_text(
                         label="Base Name",
                         width=-110,
                         default_value=self.save_base_filename,
                     )
 
-                    self.save_file_index_input_id = dpg.add_input_int(
+                    self.save_file_index_input_id = add_input_int(
                         label="Index",
                         width=-110,
                         default_value=self.save_file_index,
@@ -592,6 +603,7 @@ class CameraSystem:
                 directory_selector=False,
                 show=False,
                 callback=self._on_save_dialog_selected,
+                cancel_callback=self._on_save_dialog_cancelled,
                 width=700,
                 height=400,
                 modal=True,
@@ -606,6 +618,7 @@ class CameraSystem:
                 directory_selector=True,
                 show=False,
                 callback=self._on_save_directory_selected,
+                cancel_callback=self._on_save_dialog_cancelled,
                 width=700,
                 height=400,
                 modal=True,
@@ -1736,8 +1749,10 @@ class CameraSystem:
 
     def _collect_settings_snapshot(self):
         return {
-            "exposure_time":                    float(dpg.get_value(self.settings_exposure_time)),
-            "max_exposure":                     bool(dpg.get_value(self.settings_max_exposure_checkbox_id)),
+            "exposure_time":                    float(dpg.get_value(self.settings_exposure_time)) / 1000.0,
+            "max_frame_rate":                   float(dpg.get_value(self.settings_max_frame_rate_id)),
+            "max_frame_rate_enabled":           bool(dpg.get_value(self.settings_max_frame_rate_checkbox_id)),
+            "max_exposure":                     False,  # Task 1: checkbox removed; kept for compat
             "trigger_mode":                     str(dpg.get_value(self.settings_trigger_mode)),
             "cooler_enabled":                   bool(dpg.get_value(self.settings_cooler_checkbox_id)),
             "temperature_setpoint":             str(dpg.get_value(self.settings_temp_set_input_id)),
@@ -1771,6 +1786,11 @@ class CameraSystem:
             "save_base_filename":               str(dpg.get_value(self.save_base_filename_input_id) or ""),
             "save_file_index":                  int(dpg.get_value(self.save_file_index_input_id)),
             "save_prompt_every_time":           bool(dpg.get_value(self.save_prompt_every_time_checkbox_id)),
+            "bg_mode":                          str(getattr(self.camera_feed, "bg_mode", "spatial")),
+            "bg_temporal_alpha":                float(getattr(self.camera_feed, "bg_temporal_alpha", 0.02)),
+            "use_cpp_backend":                  bool(getattr(self.camera_feed, "use_cpp_backend", False)),
+            "use_acquisition_engine":           bool(getattr(self.camera_feed, "use_acquisition_engine", False)),
+            "phase_every":                      int(getattr(self.camera_feed, "phase_every", 1)),
         }
 
     def _build_completed_acquisition_payload(self, stopped_early):
@@ -2034,9 +2054,11 @@ class CameraSystem:
             self._set_acquisition_progress(0.0, f"Error: {exc}")
 
     def _show_save_directory_dialog(self, sender=None, app_data=None, user_data=None):
+        shared_state.currently_editing = True
         dpg.show_item(self.save_directory_dialog_id)
 
     def _on_save_directory_selected(self, sender, app_data, user_data=None):
+        shared_state.currently_editing = False
         selected_path = str(app_data.get("file_path_name") or "").strip()
         if selected_path:
             self.save_directory = os.path.abspath(selected_path)
@@ -2169,6 +2191,7 @@ class CameraSystem:
             )
             self._save_dialog_mode = "snapshot"
             dpg.configure_item(self.save_dialog_id, default_path=save_dir)
+            shared_state.currently_editing = True
             dpg.show_item(self.save_dialog_id)
         else:
             self._trigger_snapshot_save()
@@ -2187,6 +2210,7 @@ class CameraSystem:
             )
             self._save_dialog_mode = "acquisition"
             dpg.configure_item(self.save_dialog_id, default_path=save_directory)
+            shared_state.currently_editing = True
             dpg.show_item(self.save_dialog_id)
 
     def _open_acquisition_preview(self, file_path):
@@ -2197,6 +2221,7 @@ class CameraSystem:
         self._acquisition_preview_window = AcquisitionPreviewWindow(file_path)
 
     def _on_save_dialog_selected(self, sender, app_data, user_data=None):
+        shared_state.currently_editing = False
         file_path = str(app_data.get("file_path_name") or "").strip()
         if not file_path:
             return
@@ -2212,6 +2237,9 @@ class CameraSystem:
         else:
             self._do_save_acquisition(file_path)
 
+    def _on_save_dialog_cancelled(self, sender=None, app_data=None, user_data=None):
+        shared_state.currently_editing = False
+
     def _resolve_save_directory(self, directory):
         requested_directory = str(directory or "").strip()
         if requested_directory:
@@ -2225,10 +2253,58 @@ class CameraSystem:
 
         return os.getcwd()
 
+    def _engine_start_preview(self):
+        """Create + start the GIL-free C++/CUDA acquisition engine for preview.
+
+        Returns True on success (``Andor.active_engine`` is set so the
+        processing thread submits frames to the engine and CameraFeed renders
+        from it); False to fall back to the standard CuPy pipeline.
+        """
+        try:
+            fa = fast_acquisition.module()
+        except Exception as exc:
+            print(f"Acquisition engine unavailable ({exc}); using standard pipeline.")
+            return False
+        if fa is None:
+            print("Acquisition engine unavailable (fastacq not built); using standard pipeline.")
+            return False
+        try:
+            H = int(self.Andor.frame_shape[0])
+            W = int(self.Andor.frame_shape[1])
+            engine = fa.AcquisitionEngine(H, W)
+            self.camera_feed.apply_engine_settings(engine)
+            engine.start("push")
+            self._engine = engine
+            self.Andor.active_engine = engine
+            return True
+        except Exception as exc:
+            print(f"Failed to start acquisition engine: {exc}")
+            try:
+                if getattr(self, "_engine", None) is not None:
+                    self._engine.stop()
+            except Exception:
+                pass
+            self._engine = None
+            self.Andor.active_engine = None
+            return False
+
+    def _engine_stop_preview(self):
+        """Detach + stop the acquisition engine (no-op if not running)."""
+        engine = getattr(self, "_engine", None)
+        # Detach first so the processing thread stops submitting before we join.
+        self.Andor.active_engine = None
+        if engine is not None:
+            try:
+                engine.stop()
+            except Exception as exc:
+                print(f"Error stopping acquisition engine: {exc}")
+        self._engine = None
+
     def toggle_preview(self):
         if self.started:
             if self.Andor.is_capturing:
                 self.Andor.stop_capture()
+            self._engine_stop_preview()
             self._stop_preview_scope_means()
             self.started = False
             self.preview_zero_reference_pending = False
@@ -2244,6 +2320,11 @@ class CameraSystem:
             zero_on_start = bool(dpg.get_value(self.preview_zero_on_start_checkbox_id))
             self.preview_zero_on_start = zero_on_start
             self.preview_zero_reference_pending = zero_on_start or int(getattr(self.Andor, "zero_version", 0)) <= 0
+            # Engine mode: stand up the GIL-free engine before capture starts so
+            # the processing thread submits to it from the first frame. Falls
+            # back to the standard pipeline if the extension isn't available.
+            if bool(getattr(self.camera_feed, "use_acquisition_engine", False)):
+                self._engine_start_preview()
             self.Andor.start_capture_continuous()
 
     def _get_camera_aoi_limits(self):
@@ -2342,10 +2423,61 @@ class CameraSystem:
     def _refresh_aoi_controls_from_camera(self):
         self._sync_aoi_widgets(self._get_current_aoi_settings())
 
+    def _compute_max_frame_rate(self, exposure_seconds):
+        """Return the maximum achievable frame rate for the given exposure time."""
+        exposure_seconds = max(float(exposure_seconds), 1e-9)
+        fps_from_exposure = 1.0 / exposure_seconds
+        try:
+            cam_max_fps = float(getattr(self.camera, "max_FrameRate", fps_from_exposure))
+        except Exception:
+            cam_max_fps = fps_from_exposure
+        return min(cam_max_fps, fps_from_exposure)
+
+    def _set_frame_rate_with_retry(self, fps):
+        """Set camera FrameRate, retrying with a 10 % step-down on AT_ERR_OUTOFRANGE."""
+        if not hasattr(self.camera, "FrameRate"):
+            return
+        cam_min_fps = float(getattr(self.camera, "min_FrameRate", 0.001))
+        attempt_fps = float(fps)
+        while attempt_fps >= cam_min_fps:
+            try:
+                self.camera.FrameRate = attempt_fps
+                return
+            except (CameraException, Exception) as _fps_exc:
+                is_out_of_range = (
+                    isinstance(_fps_exc, CameraException)
+                    and getattr(_fps_exc, "err_code", None) == ErrorCodes.AT_ERR_OUTOFRANGE
+                )
+                if is_out_of_range:
+                    attempt_fps *= 0.9
+                    if attempt_fps < cam_min_fps:
+                        print(f"Warning: could not set FrameRate to {fps:.2f} fps — AT_ERR_OUTOFRANGE, hit minimum ({cam_min_fps:.3f} fps)")
+                        return
+                else:
+                    raise
+
+    def _update_max_frame_rate_display(self, exposure_seconds):
+        """Write the computed max frame rate into the read-only display widget.
+
+        When the Auto Max FPS checkbox is on, also apply that rate to the camera
+        and sync the FPS input so the UI stays consistent.
+        """
+        try:
+            max_fps = self._compute_max_frame_rate(exposure_seconds)
+            dpg.set_value(self.settings_max_frame_rate_id, max_fps)
+            if bool(dpg.get_value(self.settings_max_frame_rate_checkbox_id)):
+                self._set_frame_rate_with_retry(max_fps)
+                actual_fps = float(getattr(self.camera, "FrameRate", max_fps))
+                dpg.set_value(self.settings_frame_rate, actual_fps)
+                self.acquisition_frame_rate_hz = actual_fps
+        except Exception:
+            pass
+
     def _apply_frame_rate_exposure_constraints(self, changed_prop):
         requested_frame_rate_hz = max(0.1, float(dpg.get_value(self.settings_frame_rate)))
-        max_exposure_enabled = bool(dpg.get_value(self.settings_max_exposure_checkbox_id))
-        requested_exposure_seconds = max(1e-6, float(dpg.get_value(self.settings_exposure_time)))
+        # max_exposure_enabled is no longer a checkbox — always False after Task 1.
+        max_exposure_enabled = False
+        requested_exposure_seconds = max(1e-6, float(dpg.get_value(self.settings_exposure_time)) / 1000.0)
 
         if max_exposure_enabled:
             frame_rate_hz = requested_frame_rate_hz
@@ -2359,30 +2491,29 @@ class CameraSystem:
 
         try:
             if changed_prop == "ExposureTime":
-                if hasattr(self.camera, "FrameRate"):
-                    self.camera.FrameRate = frame_rate_hz
+                self._set_frame_rate_with_retry(frame_rate_hz)
                 self.camera.ExposureTime = exposure_seconds
             else:
                 self.camera.ExposureTime = exposure_seconds
-                if hasattr(self.camera, "FrameRate"):
-                    self.camera.FrameRate = frame_rate_hz
+                self._set_frame_rate_with_retry(frame_rate_hz)
         except Exception:
             dpg.set_value(self.settings_frame_rate, float(getattr(self.camera, "FrameRate", requested_frame_rate_hz)))
-            dpg.set_value(self.settings_exposure_time, float(getattr(self.camera, "ExposureTime", requested_exposure_seconds)))
+            dpg.set_value(self.settings_exposure_time, float(getattr(self.camera, "ExposureTime", requested_exposure_seconds)) * 1000.0)
             raise
 
         actual_frame_rate_hz = float(getattr(self.camera, "FrameRate", frame_rate_hz))
         actual_exposure_seconds = float(getattr(self.camera, "ExposureTime", exposure_seconds))
         dpg.set_value(self.settings_frame_rate, actual_frame_rate_hz)
-        dpg.set_value(self.settings_exposure_time, actual_exposure_seconds)
+        dpg.set_value(self.settings_exposure_time, actual_exposure_seconds * 1000.0)
         self.acquisition_frame_rate_hz = actual_frame_rate_hz
         self._apply_auto_scope_frequency_settings(actual_frame_rate_hz)
+        # Task 1: update Max Frame Rate display whenever exposure changes
+        self._update_max_frame_rate_display(actual_exposure_seconds)
         self.Andor.frame_ready_event.set()
 
     def _on_max_exposure_changed(self, sender=None, app_data=None, user_data=None):
-        self.max_exposure = bool(app_data)
-        self._apply_frame_rate_exposure_constraints("FrameRate")
-        self._refresh_hardware_requirements(force=True)
+        # No-op: "Max Exposure" checkbox replaced by "Max Frame Rate" display (Task 1).
+        pass
 
     def _render_frame_scope_window(self, *, force=False):
         if self.frame_scope_window is None:
@@ -2535,9 +2666,13 @@ class CameraSystem:
             self.settings_cooler_checkbox_id,
             enabled=(not self.Andor.is_capturing and self.cooler_supported),
         )
-        exposure_enabled = (not self.Andor.is_capturing) and (not bool(dpg.get_value(self.settings_max_exposure_checkbox_id)))
+        # Task 1: exposure input is enabled whenever not capturing (no max_exposure checkbox)
+        exposure_enabled = not self.Andor.is_capturing
         dpg.configure_item(self.settings_exposure_time, enabled=exposure_enabled)
         dpg.bind_item_theme(self.settings_exposure_time, None if exposure_enabled else read_only_theme)
+        # Max Frame Rate display is always read-only
+        dpg.configure_item(self.settings_max_frame_rate_id, enabled=False)
+        dpg.bind_item_theme(self.settings_max_frame_rate_id, self.hardware_readout_theme)
         dpg.configure_item(self.cooler_temperature_input_id, enabled=False)
         if hasattr(self, "_cooler_enabled_value"):
             dpg.set_value(self.settings_cooler_checkbox_id, bool(self._cooler_enabled_value))
@@ -2589,8 +2724,9 @@ class CameraSystem:
             type(self).__name__,
             {
                 "sections": capture_item_open_states(self.section_node_ids),
-                "exposure_time": float(dpg.get_value(self.settings_exposure_time)),
-                "max_exposure": bool(dpg.get_value(self.settings_max_exposure_checkbox_id)),
+                "exposure_time": float(dpg.get_value(self.settings_exposure_time)) / 1000.0,
+                "max_frame_rate_enabled": bool(dpg.get_value(self.settings_max_frame_rate_checkbox_id)),
+                "max_exposure": False,  # Task 1: checkbox removed; kept for backward compat
                 "trigger_mode": str(dpg.get_value(self.settings_trigger_mode)),
                 "cooler_enabled": bool(dpg.get_value(self.settings_cooler_checkbox_id)),
                 "temperature_setpoint": str(self.temperature_setpoint_value),
@@ -2643,8 +2779,11 @@ class CameraSystem:
         if state:
             apply_item_open_states(self.section_node_ids, state.get("sections"))
 
+            if "exposure_time" in state:
+                exposure_seconds = float(state["exposure_time"])
+                dpg.set_value(self.settings_exposure_time, exposure_seconds * 1000.0)
+                self.camera.ExposureTime = exposure_seconds
             property_map = (
-                ("exposure_time", "ExposureTime", self.settings_exposure_time),
                 ("trigger_mode", "TriggerMode", self.settings_trigger_mode),
                 ("pixel_binning", "AOIBinning", self.settings_pixel_binning),
             )
@@ -2685,9 +2824,10 @@ class CameraSystem:
                     dpg.set_value(self.settings_temp_set_input_id, requested_option)
                     self.Andor.set_temperature_setpoint_option(requested_option)
 
-            if "max_exposure" in state:
-                dpg.set_value(self.settings_max_exposure_checkbox_id, bool(state["max_exposure"]))
-                self.max_exposure = bool(state["max_exposure"])
+            # Task 1: "max_exposure" checkbox removed; key kept for backward-compat only.
+            # self.max_exposure = bool(state.get("max_exposure", False))
+            if "max_frame_rate_enabled" in state:
+                dpg.set_value(self.settings_max_frame_rate_checkbox_id, bool(state["max_frame_rate_enabled"]))
 
             saved_objectives = state.get("objectives")
             if isinstance(saved_objectives, dict):
@@ -2762,7 +2902,7 @@ class CameraSystem:
             self.acquisition_frame_rate_hz = float(dpg.get_value(self.acquisition_frame_rate_input_id))
             self.acquisition_scope_sample_rate_hz = float(dpg.get_value(self.acquisition_scope_rate_input_id))
             self.acquisition_storage_dtype_name = self.Andor.storage_dtype_name
-            self.max_exposure = bool(dpg.get_value(self.settings_max_exposure_checkbox_id))
+            self.max_exposure = False  # Task 1: checkbox removed
             self.acquisition_zero_on_start = bool(dpg.get_value(self.acquisition_zero_on_start_checkbox_id))
             # self.calculate_frame_mean remains as set (default True); no checkbox widget
             self.auto_scope_freq = bool(dpg.get_value(self.auto_scope_freq_checkbox_id))

@@ -1,4 +1,5 @@
 import dearpygui.dearpygui as dpg
+from Utils.custom_widgets import add_input_float
 import numpy as np
 import threading
 
@@ -114,7 +115,7 @@ class PicoScopeControl:
 
             with dpg.tree_node(label="Sample Settings", default_open=True, span_full_width=True) as sample_settings_node_id:
                 self.section_node_ids["sample_settings"] = sample_settings_node_id
-                self.sample_rate_input_id = dpg.add_input_float(
+                self.sample_rate_input_id = add_input_float(
                     label="Sample Rate",
                     width=-120,
                     default_value=max(1000.0, self.driver.sample_rate_hz),
@@ -122,8 +123,7 @@ class PicoScopeControl:
                     step=100.0,
                     callback=self._on_sample_rate_changed,
                 )
-
-                self.seconds_input_id = dpg.add_input_float(
+                self.seconds_input_id = add_input_float(
                     label="Seconds",
                     width=-120,
                     default_value=self.driver.history_seconds,
@@ -452,13 +452,15 @@ class PicoScopeControl:
         self._sync_driver_channels()
         self._refresh_status_labels()
 
-    def _on_sample_rate_changed(self, sender, app_data, user_data):
-        if not self._apply_stopped_configuration(lambda: self.driver.set_settings(sample_rate_hz=app_data)):
+    def _on_sample_rate_changed(self, sender, app_data, user_data=None):
+        rate = app_data if app_data is not None else float(dpg.get_value(self.sample_rate_input_id))
+        if not self._apply_stopped_configuration(lambda: self.driver.set_settings(sample_rate_hz=rate)):
             dpg.set_value(self.sample_rate_input_id, self.driver.sample_rate_hz)
         self._configure_scope_plot_axes()
 
-    def _on_history_seconds_changed(self, sender, app_data, user_data):
-        if not self._apply_stopped_configuration(lambda: self.driver.set_settings(history_seconds=app_data)):
+    def _on_history_seconds_changed(self, sender, app_data, user_data=None):
+        seconds = app_data if app_data is not None else float(dpg.get_value(self.seconds_input_id))
+        if not self._apply_stopped_configuration(lambda: self.driver.set_settings(history_seconds=seconds)):
             dpg.set_value(self.seconds_input_id, self.driver.history_seconds)
         self._configure_scope_plot_axes()
 
