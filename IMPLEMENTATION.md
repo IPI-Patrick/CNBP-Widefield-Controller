@@ -483,3 +483,36 @@ yields a live engine mean and an accumulating trace; stop cleanly detaches (`act
 
 **Next:** user validates live on the Zyla (flip the checkbox, Start Preview; confirm feed + that
 Processing FPS now tracks Capture FPS with the UI running) and fixes any hardware-specific bugs.
+
+### UI-framerate decoupling fix (engine mode) — root-caused + fixed
+
+Symptom: with the engine on, the UI render loop dropped from ~160 fps (idle) to ~50 fps while
+capturing — still coupled to the capture rate even though the engine compute is GIL-free. Bisected
+headless (mock @~940 fps capture, measuring the *main render-loop* fps):
+
+| change | render fps while capturing |
+|---|---|
+| original | ~53 |
+| + idle the processing thread, submit from capture loop, share `latest_frame`, GIL-release `get_latest_rgba` | ~69 |
+| + restore GIL switch interval to 0.005 in engine mode | **~159** (≈ the ~162 idle rate) |
+
+Root cause was **not** the engine compute (genuinely GIL-free) but the **Python plumbing feeding it**:
+1. **`sys.setswitchinterval(0.0005)`** (set in `setup()` so the legacy CuPy *processing* thread can
+   interleave with the render loop) — in engine mode there is no such thread, so the fine 0.5 ms
+   interval only lets the ~940 Hz capture thread preempt the UI render thread mid-frame. This was the
+   dominant factor (~58 → ~154 fps alone). `CameraControls._engine_start_preview` now raises it to
+   0.005 while the engine runs and `_engine_stop_preview` restores the prior value (legacy path
+   unchanged).
+2. **The processing thread** woke ~once per captured frame just to forward it to `engine.submit` — a
+   whole ~capture-rate Python thread of GIL contention. The **capture loop now submits directly**
+   (`Andor._capture_loop`), and the processing thread **idles** (`sleep(0.05)`) whenever
+   `active_engine` is set.
+3. Minor: in engine mode the capture loop shares the `storage_frame` reference for `latest_frame`
+   instead of a second full-frame copy, and `get_latest_rgba` releases the GIL across its 16 B/px
+   memcpy (helps most at large AOIs).
+
+Net: the UI render rate while capturing now matches the idle rate, capture still runs at ~940 fps, and
+ROI means / RGBA / clean teardown all re-verified. (On the real Zyla the capture loop's `wait_buffer`
+blocks in the SDK with the GIL released, so residual contention should be even lower than the mock.)
+A future *full* decouple — zero Python in the per-frame path — would have the C++ engine pull frames
+straight from the camera SDK; not needed now that the UI is decoupled.

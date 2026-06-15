@@ -710,6 +710,8 @@ class Andor:
                 _consecutive_timeout_count = 0
 
                 # Update the latest frame in a thread-safe manner
+                submit_frame = None
+                engine = self.active_engine
                 with self.frame_lock:
                     raw_frame = np.asarray(acq.image, dtype=self.sensor_dtype)
 
@@ -729,7 +731,12 @@ class Andor:
                         self.acquisitions.append(storage_frame)
                         self.timestamps.append(frame_timestamp)
                         self._capture_fps_times.append(time.time())
-                        self.latest_frame = np.array(storage_frame, copy=True)
+                        # storage_frame is a fresh array that is never mutated after
+                        # this point, and the deque copies it on append — so in
+                        # engine mode we can share the reference instead of paying a
+                        # second full-frame copy (less GIL-held work per capture).
+                        self.latest_frame = (storage_frame if engine is not None
+                                             else np.array(storage_frame, copy=True))
 
                         self._append_scope_frame_values_from_source_locked()
 
@@ -737,9 +744,25 @@ class Andor:
                         self.frame_ready_event.set()
                         self.frameIdx += 1
 
+                        # Engine mode: submit straight to the GIL-free engine HERE
+                        # rather than waking the Python processing thread to forward
+                        # it. That eliminates an entire ~capture-rate Python thread
+                        # of GIL contention which otherwise starves the UI render
+                        # loop (the engine compute itself is already GIL-free).
+                        if engine is not None:
+                            submit_frame = storage_frame
+
                         # If not in continuous mode and we've reached the max acquisitions, stop
                         if not continuous and self.frameIdx >= self.max_acquisitions:
                             break
+
+                # submit() releases the GIL for the memcpy; do it outside frame_lock
+                # so we never hold the lock across the copy into the engine.
+                if submit_frame is not None:
+                    try:
+                        engine.submit(submit_frame)
+                    except Exception as exc:
+                        print(f"engine.submit error: {exc}")
 
                 # Re-add this buffer to the queue; handle AT_ERR_INVALIDSIZE by
                 # restarting the buffer pool with the current image size.
@@ -1338,6 +1361,15 @@ class Andor:
             state = {}
 
             while not stop_event.is_set():
+                # Engine mode: the capture loop submits frames to the GIL-free
+                # engine directly, so this thread has no per-frame work. Idle at a
+                # low rate instead of waking on every frame_ready_event — a Python
+                # thread spinning at the capture rate (even just to no-op) holds
+                # the GIL often enough to starve the UI render loop.
+                if self.active_engine is not None:
+                    time.sleep(0.05)
+                    continue
+
                 fired = self.frame_ready_event.wait(timeout=0.1)
                 if not fired:
                     continue
@@ -1351,17 +1383,6 @@ class Andor:
                     # full-frame CPU copy saves ~0.4 ms/frame at 1200x1200, and
                     # process_frame never mutates the raw input.
                     raw_frame   = self.latest_frame
-
-                # Engine mode: hand the raw frame to the GIL-free C++/CUDA
-                # acquisition engine, which does ALL processing on its own thread.
-                # This Python thread's only per-frame job is the (cheap) submit.
-                engine = self.active_engine
-                if engine is not None:
-                    try:
-                        engine.submit(raw_frame)
-                    except Exception as exc:
-                        print(f"engine.submit error: {exc}")
-                    continue
 
                 try:
                     # Live path: processed frame stays on the GPU (want_cpu_frame

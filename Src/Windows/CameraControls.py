@@ -2,6 +2,7 @@ import ctypes
 from collections import deque
 import datetime
 import os
+import sys
 import shutil
 import tempfile
 import threading
@@ -2276,6 +2277,15 @@ class CameraSystem:
             engine.start("push")
             self._engine = engine
             self.Andor.active_engine = engine
+            # The app lowers the GIL switch interval (setup(): 0.5 ms) so the
+            # CuPy processing thread can interleave with the render loop. In
+            # engine mode processing is GIL-free, so that fine interval only
+            # serves to preempt the UI render thread mid-frame (capture thread
+            # steals the GIL every 0.5 ms) — measured ~58 vs ~154 render fps.
+            # Restore the coarser default while the engine runs so the UI keeps
+            # up; the capture thread still gets enough turns (~930 fps).
+            self._prev_switchinterval = sys.getswitchinterval()
+            sys.setswitchinterval(0.005)
             return True
         except Exception as exc:
             print(f"Failed to start acquisition engine: {exc}")
@@ -2291,7 +2301,7 @@ class CameraSystem:
     def _engine_stop_preview(self):
         """Detach + stop the acquisition engine (no-op if not running)."""
         engine = getattr(self, "_engine", None)
-        # Detach first so the processing thread stops submitting before we join.
+        # Detach first so the capture loop stops submitting before we join.
         self.Andor.active_engine = None
         if engine is not None:
             try:
@@ -2299,6 +2309,11 @@ class CameraSystem:
             except Exception as exc:
                 print(f"Error stopping acquisition engine: {exc}")
         self._engine = None
+        # Restore the fine GIL switch interval the legacy CuPy pipeline relies on.
+        prev = getattr(self, "_prev_switchinterval", None)
+        if prev is not None:
+            sys.setswitchinterval(prev)
+            self._prev_switchinterval = None
 
     def toggle_preview(self):
         if self.started:

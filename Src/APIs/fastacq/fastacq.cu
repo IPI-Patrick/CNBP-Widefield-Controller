@@ -206,9 +206,12 @@ public:
           std::memcpy(h_push,p,N*sizeof(unsigned short)); have_push=true; push_cv.notify_one(); } }
 
     // copy latest RGBA into the provided float32 array (H*W*4). Returns frame index.
+    // The memcpy is large (16 B/px); release the GIL across it so the render
+    // thread calling this doesn't hold the GIL for the whole copy.
     long get_latest_rgba(py::array_t<float,py::array::c_style> out){
         if((size_t)out.size()!=N*4) throw std::runtime_error("rgba size mismatch");
-        int fi=front.load(); std::memcpy(out.mutable_data(),h_rgba[fi],N*4*sizeof(float));
+        int fi=front.load(); float* dst=out.mutable_data(); const float* src=h_rgba[fi];
+        { py::gil_scoped_release rel; std::memcpy(dst,src,N*4*sizeof(float)); }
         return published_index.load(); }
 
     std::vector<double> get_roi_means(){ std::lock_guard<std::mutex> lk(out_mtx); return last_means; }
