@@ -39,7 +39,10 @@
       "Bash(Select-Object -ExpandProperty FullName)",
       "Bash(Get-ChildItem -Path \"c:\\\\CodingProjects\\\\Widefield-Controller\\\\src\" -Recurse -Filter \"*.py\")",
       "Bash(Select-Object -Property FullName)",
-      "Bash(Sort-Object FullName)"
+      "Bash(Sort-Object FullName)",
+      "PowerShell(cd \"c:\\\\code\\\\CNBP-Widefield-Controller\"; foreach \\($win in @\\('ConsoleWindow','AppLayout','FileBrowser','LaserControls','MockCameraControls','PicoScope','StageControls','CameraControls'\\)\\) { $result = .\\\\venv\\\\Scripts\\\\python.exe -c \"import sys; sys.path.insert\\(0,'Src'\\); import Src.Windows.$win; print\\('OK: $win'\\)\" 2>&1; Write-Host \"$win : exit=$LASTEXITCODE : $result\" })",
+      "PowerShell(cd \"c:\\\\code\\\\CNBP-Widefield-Controller\"; .\\\\venv\\\\Scripts\\\\python.exe -c \"import sys; sys.path.insert\\(0,'Src'\\); import pyAndorSDK3; print\\('andor ok'\\)\" 2>&1; Write-Host \"exit: $LASTEXITCODE\")",
+      "Bash(./venv/Scripts/pip install *)"
     ]
   }
 }

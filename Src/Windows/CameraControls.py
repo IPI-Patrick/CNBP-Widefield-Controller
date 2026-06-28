@@ -153,7 +153,8 @@ class CameraSystem:
             self.temperature_setpoint_min_c = -10.0
             self.temperature_setpoint_max_c = 10.0
             self.temperature_setpoint_options = self._get_temperature_setpoint_items()
-            self.temperature_setpoint_value = self.temperature_setpoint_options[0] if self.temperature_setpoint_options else ""
+            _sp_default = self.Andor._resolve_temperature_setpoint_option(-10.0)
+            self.temperature_setpoint_value = _sp_default if _sp_default in self.temperature_setpoint_options else (self.temperature_setpoint_options[0] if self.temperature_setpoint_options else "")
 
             # Set up the Preview Window
             _feed_container = shared_state.layout_containers.get("center_live_tab") or self.window_id
@@ -206,7 +207,7 @@ class CameraSystem:
                         min_clamped     = True,
                         step            = 1.0,
                         format          = "%.0f",
-                        callback        = lambda: self.setprop("FrameRate", self.settings_frame_rate)
+                        callback        = lambda *_: self.setprop("FrameRate", self.settings_frame_rate)
                     )
                     self.acquisition_frame_rate_input_id = self.settings_frame_rate
 
@@ -218,7 +219,7 @@ class CameraSystem:
                         max_value       = 1000.0,
                         step            = 0.1,
                         format          = "%.2f ms",
-                        callback        = lambda: self.setprop("ExposureTime", self.settings_exposure_time)
+                        callback        = lambda *_: self.setprop("ExposureTime", self.settings_exposure_time)
                     )
                     # Read-only display showing the maximum achievable frame rate
                     # for the current exposure time.  Updated whenever exposure changes.
@@ -245,7 +246,7 @@ class CameraSystem:
                         width           = -110,
                         items           = cam.options_TriggerMode,
                         default_value   = cam.TriggerMode,
-                        callback        = lambda: self.setprop("TriggerMode", self.settings_trigger_mode)
+                        callback        = lambda *_: self.setprop("TriggerMode", self.settings_trigger_mode)
                     )
 
                     self.settings_cooler_checkbox_id = dpg.add_checkbox(
@@ -280,7 +281,7 @@ class CameraSystem:
                         width           = -110,
                         items           = cam.options_AOIBinning,
                         default_value   = cam.AOIBinning,
-                        callback        = lambda: self.setprop("AOIBinning", self.settings_pixel_binning)
+                        callback        = lambda *_: self.setprop("AOIBinning", self.settings_pixel_binning)
                     )
 
                     self.settings_image_width = add_input_int(
@@ -289,7 +290,7 @@ class CameraSystem:
                         default_value   = cam.AOIWidth,
                         min_value       = 1,
                         max_value       = cam.AOIWidth,
-                        callback        = lambda: self.setprop("AOIWidth", self.settings_image_width)
+                        callback        = lambda *_: self.setprop("AOIWidth", self.settings_image_width)
                     )
                     self.settings_image_height = add_input_int(
                         label           = "Height",
@@ -297,7 +298,7 @@ class CameraSystem:
                         default_value   = cam.AOIHeight,
                         min_value       = 1,
                         max_value       = cam.AOIHeight,
-                        callback        = lambda: self.setprop("AOIHeight", self.settings_image_height),
+                        callback        = lambda *_: self.setprop("AOIHeight", self.settings_image_height),
                     )
                     self.settings_image_left = add_input_int(
                         label           = "Left",
@@ -305,7 +306,7 @@ class CameraSystem:
                         default_value   = cam.AOILeft,
                         min_value       = 1,
                         max_value       = cam.AOILeft,
-                        callback        = lambda: self.setprop("AOILeft", self.settings_image_left),
+                        callback        = lambda *_: self.setprop("AOILeft", self.settings_image_left),
                     )
                     self.settings_image_top = add_input_int(
                         label           = "Top",
@@ -313,7 +314,7 @@ class CameraSystem:
                         default_value   = cam.AOITop,
                         min_value       = 1,
                         max_value       = cam.AOITop,
-                        callback        = lambda: self.setprop("AOITop", self.settings_image_top),
+                        callback        = lambda *_: self.setprop("AOITop", self.settings_image_top),
                     )
                     self.settings_aoi_auto_center_checkbox_id = dpg.add_checkbox(
                         label="Auto Center",
@@ -1748,6 +1749,15 @@ class CameraSystem:
         except Exception as exc:
             print(f"Acquisition AWG enable failed: {exc}")
 
+    def _get_laser_power_mw(self):
+        try:
+            laser = next((o for o in class_objects if type(o).__name__ == "LaserControls"), None)
+            if laser is not None:
+                return float(laser.laser.get_state().get("target_power_mw", 0.0))
+        except Exception:
+            pass
+        return 0.0
+
     def _collect_settings_snapshot(self):
         return {
             "exposure_time":                    float(dpg.get_value(self.settings_exposure_time)) / 1000.0,
@@ -1792,6 +1802,7 @@ class CameraSystem:
             "use_cpp_backend":                  bool(getattr(self.camera_feed, "use_cpp_backend", False)),
             "use_acquisition_engine":           bool(getattr(self.camera_feed, "use_acquisition_engine", False)),
             "phase_every":                      int(getattr(self.camera_feed, "phase_every", 1)),
+            "laser_power_mw":                   self._get_laser_power_mw(),
         }
 
     def _build_completed_acquisition_payload(self, stopped_early):
@@ -2738,6 +2749,7 @@ class CameraSystem:
         save_state_file(
             type(self).__name__,
             {
+                "_state_version": 2,
                 "sections": capture_item_open_states(self.section_node_ids),
                 "exposure_time": float(dpg.get_value(self.settings_exposure_time)) / 1000.0,
                 "max_frame_rate_enabled": bool(dpg.get_value(self.settings_max_frame_rate_checkbox_id)),
@@ -2822,10 +2834,15 @@ class CameraSystem:
                 requested_aoi["top"] = int(state["image_top"])
             self._apply_aoi_settings(requested_aoi)
 
+            state_version = int(state.get("_state_version", 1))
             if "cooler_enabled" in state:
                 self.Andor.set_sensor_cooling_enabled(bool(state["cooler_enabled"]))
             if "temperature_setpoint" in state:
                 requested_option = str(state["temperature_setpoint"])
+                if state_version < 2:
+                    migrated = self.Andor._resolve_temperature_setpoint_option(-10.0)
+                    if migrated in self.temperature_setpoint_options:
+                        requested_option = migrated
                 if requested_option in self.temperature_setpoint_options:
                     self.temperature_setpoint_value = requested_option
                     dpg.set_value(self.settings_temp_set_input_id, requested_option)

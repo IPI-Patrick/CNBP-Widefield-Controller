@@ -130,7 +130,7 @@ class FunctionGeneratorWindow:
         driver = self._get_driver()
         try:
             if hasattr(driver, "configure_awg"):
-                driver.configure_awg(**self.get_awg_settings())
+                driver.configure_awg(**self.get_awg_settings(), enabled=self._awg_enabled)
             if hasattr(driver, "set_awg_enabled"):
                 driver.set_awg_enabled(self._awg_enabled)
         except Exception as exc:

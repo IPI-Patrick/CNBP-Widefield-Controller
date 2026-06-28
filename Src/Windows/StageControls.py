@@ -922,7 +922,7 @@ class StageControls:
     def _input_is_focused(self) -> bool:
         """Return True if a text/numeric input widget currently has keyboard focus."""
         focused = dpg.get_focused_item()
-        if focused <= 0:
+        if not focused or (isinstance(focused, int) and focused <= 0):
             return False
         try:
             item_type = dpg.get_item_type(focused)

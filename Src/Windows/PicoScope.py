@@ -284,6 +284,31 @@ class PicoScopeControl:
             except Exception as exc:
                 errors.append(f"{driver_family}: {exc}")
 
+        # ps4000aEnumerateUnits returns PICO_INTERNAL_ERROR when the device is already
+        # opened by an existing handle. If the current driver is open but its device
+        # didn't appear in the enumeration results, reconstruct the entry so it stays
+        # selectable in the UI without showing an error.
+        if self.driver.is_open:
+            serial = self.driver.serial_number or ""
+            model = getattr(self.driver, "device_model", self.driver_family)
+            label = f"{model} | {serial}" if serial else model
+            already_listed = any(
+                d.get("driver_family") == self.driver_family and d.get("serial") == serial
+                for d in devices
+            )
+            if not already_listed:
+                devices.append({
+                    "model": model,
+                    "serial": serial,
+                    "has_verified_serial": bool(serial),
+                    "variant": model,
+                    "instance_id": serial or model,
+                    "instance_tail": serial if serial else model,
+                    "label": label,
+                    "driver_family": self.driver_family,
+                })
+                errors = [e for e in errors if not e.startswith(f"{self.driver_family}:")]
+
         self._device_refresh_pending = devices
         if errors and not devices:
             self._device_refresh_error = "\n".join(errors)
@@ -311,12 +336,13 @@ class PicoScopeControl:
             for device in self.available_devices:
                 if device.get("driver_family") == self._loaded_device_driver_family and device["serial"] == self._loaded_device_serial:
                     selected_label = device["label"]
-                    self._swap_driver(device.get("driver_family", self.driver_family), device.get("serial", "") if device.get("has_verified_serial") else "")
+                    if not self.driver.is_open and not self.driver.is_collecting:
+                        self._swap_driver(device.get("driver_family", self.driver_family), device.get("serial", "") if device.get("has_verified_serial") else "")
                     break
 
         if selected_label is None:
             selected_label = items[0]
-            if self.available_devices:
+            if self.available_devices and not self.driver.is_open and not self.driver.is_collecting:
                 selected_device = self.available_devices[0]
                 self._swap_driver(
                     selected_device.get("driver_family", self.driver_family),

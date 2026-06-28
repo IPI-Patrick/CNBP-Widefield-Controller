@@ -171,6 +171,7 @@ def setup():
     # Create the window
     global LAST_STATE_SAVE_TIME
 
+
     # Lower the GIL switch interval (default 5 ms). At high capture rates the
     # main Dear PyGui render loop holds the GIL in long chunks; the default 5 ms
     # lets it starve the camera processing thread (which needs the GIL for its
@@ -183,6 +184,7 @@ def setup():
     viewport_state = normalize_viewport_state(loaded_viewport_state)
     if loaded_viewport_state != viewport_state:
         save_state_file(VIEWPORT_STATE_NAME, {"viewport": viewport_state})
+
 
     dpg.create_context()
     dpg.configure_app(init_file=str(get_init_file_path()))
@@ -204,6 +206,7 @@ def setup():
 
     
     dpg.setup_dearpygui()
+
     apply_viewport_state(viewport_state)
     
     # Create the disabled theme 
@@ -251,7 +254,6 @@ def setup():
     with dpg.handler_registry(tag="WidefieldControllerKeyHandlers"):
         dpg.add_key_press_handler(key=dpg.mvKey_R, callback=on_reset_viewport_shortcut)
 
-
     dpg.show_viewport()
     apply_viewport_state(viewport_state)
     dpg.set_viewport_resize_callback(on_viewport_resized)
@@ -284,6 +286,7 @@ def render_loop(window_objects):
 # This script sets up the Widefield Controller GUI using Dear PyGui.
 if __name__ == "__main__":
     dev_mode = "-dev" in sys.argv
+
     
     # Check for dev=True in .env file
     env_path = os.path.join(os.path.dirname(__file__), "..", ".env")
@@ -293,7 +296,7 @@ if __name__ == "__main__":
                 if line.strip().startswith("dev=True"):
                     dev_mode = True
                     break
-    
+
     if dev_mode:
         import Utils.shared_state as _shared_state
         _shared_state.dev_mode = True

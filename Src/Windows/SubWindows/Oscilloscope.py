@@ -31,7 +31,7 @@ class OscilloscopeWindow:
 		self.root_container_id = None
 
 		with dpg.font_registry():
-			label_font_path = os.path.abspath("src/Assets/Fonts/arial.ttf")
+			label_font_path = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "..", "Assets", "Fonts", "arial.ttf"))
 			self.channel_label_font = dpg.add_font(label_font_path, 18)
 
 		if self._embedded:

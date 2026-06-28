@@ -126,13 +126,13 @@ class LaserControls:
                 )
                 self.laser_power_input_id = add_input_float(
                     label="Target Entry",
-                    source=self.target_power_source,
+                    default_value=float(dpg.get_value(self.target_power_source)),
                     min_value=0.0,
                     max_value=self.laser.max_power_mw,
                     min_clamped=True,
                     max_clamped=True,
                     step=0.5,
-                    format="%.2f mW",
+                    format="%.2f",
                     callback=self._on_power_changed,
                 )
                 self.laser_actual_id = dpg.add_progress_bar(
@@ -199,7 +199,7 @@ class LaserControls:
         self.laser.set_emission(not self.laser.get_state()["emission_on"])
 
     def _on_power_changed(self, sender, app_data, user_data=None):
-        power = app_data if app_data is not None else float(dpg.get_value(self.target_power_source))
+        power = app_data if app_data is not None else float(dpg.get_value(self.laser_power_input_id))
         self.laser.set_power(power)
 
     def _sync_laser_ui(self):
@@ -207,6 +207,8 @@ class LaserControls:
         connected = state["connected"]
 
         dpg.set_value(self.target_power_source, state["target_power_mw"])
+        if not shared_state.currently_editing:
+            dpg.set_value(self.laser_power_input_id, state["target_power_mw"])
         dpg.set_value(self.actual_power_source, state["actual_power_mw"])
 
         fraction = state["actual_power_mw"] / self.laser.max_power_mw if self.laser.max_power_mw > 0 else 0.0
@@ -362,7 +364,13 @@ class LaserControls:
             dpg.configure_item(self.laser_com_port_id, items=ports or ["Not Found"])
             if saved_port in ports:
                 dpg.set_value(self.laser_com_port_id, saved_port)
-            self.laser.COMPort = "" if saved_port == "Not Found" else saved_port
+                self.laser.COMPort = saved_port
+                try:
+                    self.laser.connect(saved_port)
+                except Exception as exc:
+                    print(f"Laser auto-connect failed on {saved_port}: {exc}")
+            else:
+                self.laser.COMPort = "" if saved_port == "Not Found" else saved_port
 
         target_power = state.get("target_power_mw")
         if target_power is not None:

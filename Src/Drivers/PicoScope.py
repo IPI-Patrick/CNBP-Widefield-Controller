@@ -196,11 +196,7 @@ def _list_available_devices():
         raise RuntimeError(msg) from exc
 
     if status != PICO_STATUS_OK and count.value == 0:
-        msg = (
-            f"ps4000aEnumerateUnits returned {_status_name(status)}. "
-            "If this is PICO_HARDWARE_VERSION_NOT_SUPPORTED or PICO_INTERNAL_ERROR, "
-            "update PicoScope SDK / PicoScope software to the latest version."
-        )
+        msg = f"ps4000aEnumerateUnits returned {_status_name(status)} with no devices found."
         print(f"[PicoScope] {msg}", file=sys.stderr)
         raise RuntimeError(msg)
 
@@ -407,7 +403,7 @@ def _run_4824a_capture(handle, config, output_queue, stop_event, control_queue, 
                         control_queue.get_nowait()
                     except queue.Empty:
                         break
-                    # AWG commands are silently ignored; the 4824A has no signal generator.
+                    pass  # control_queue reserved for future use; AWG is applied via _apply_awg_state() outside the worker
 
             with api_lock:
                 ps4000a.ps4000aGetStreamingLatestValues(ctypes.c_int16(handle), callback, None)

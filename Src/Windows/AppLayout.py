@@ -247,19 +247,21 @@ class AppLayout:
                         with dpg.tooltip(self._autoscale_btn):
                             dpg.add_text("Auto Scale On / Off")
 
-                        self._scale_min_slider = dpg.add_slider_float(
+                        self._scale_min_input = add_input_float(
                             tag="Toolbar_ScaleMin", width=160,
                             min_value=0.0, max_value=100.0,
-                            format="%.1f%%", callback=self._on_scale_min,
+                            min_clamped=True, max_clamped=True,
+                            format="%.1f", callback=self._on_scale_min,
                         )
-                        dpg.bind_item_theme(self._scale_min_slider, self._toolbar_ctrl_theme)
+                        dpg.bind_item_theme(self._scale_min_input, self._toolbar_ctrl_theme)
 
-                        self._scale_max_slider = dpg.add_slider_float(
+                        self._scale_max_input = add_input_float(
                             tag="Toolbar_ScaleMax", width=160,
                             min_value=0.0, max_value=100.0, default_value=100.0,
-                            format="%.1f%%", callback=self._on_scale_max,
+                            min_clamped=True, max_clamped=True,
+                            format="%.1f", callback=self._on_scale_max,
                         )
-                        dpg.bind_item_theme(self._scale_max_slider, self._toolbar_ctrl_theme)
+                        dpg.bind_item_theme(self._scale_max_input, self._toolbar_ctrl_theme)
 
                 self._toolbar_separator()
 
@@ -563,7 +565,7 @@ class AppLayout:
         if laser is not None:
             emission = False
             try:
-                emission = bool(laser.laser.get_state().get("emission_enabled", False))
+                emission = bool(laser.laser.get_state().get("emission_on", False))
             except Exception:
                 pass
             if dpg.does_item_exist(self._laser_btn):
@@ -647,8 +649,12 @@ class AppLayout:
         laser = self._laser
         if laser:
             try:
-                state = laser.laser.get_state()
-                dpg.set_value("Toolbar_LaserPower", float(state.get("target_power_mw", 0.0)))
+                max_pw = float(getattr(laser.laser, "max_power_mw", 200.0))
+                dpg.configure_item(
+                    "Toolbar_LaserPower",
+                    max_value=max_pw,
+                    source=laser.target_power_source,
+                )
             except Exception:
                 pass
 
@@ -740,7 +746,8 @@ class AppLayout:
             except Exception:
                 pass
 
-    def _on_scale_min(self, sender, value):
+    def _on_scale_min(self, sender=None, app_data=None, user_data=None):
+        value = dpg.get_value("Toolbar_ScaleMin")
         feed = self._feed
         if feed is None:
             cam = self._cam or self._find("CameraSystem")
@@ -755,7 +762,8 @@ class AppLayout:
             except Exception:
                 pass
 
-    def _on_scale_max(self, sender, value):
+    def _on_scale_max(self, sender=None, app_data=None, user_data=None):
+        value = dpg.get_value("Toolbar_ScaleMax")
         feed = self._feed
         if feed is None:
             cam = self._cam or self._find("CameraSystem")
@@ -776,7 +784,7 @@ class AppLayout:
             cam._show_save_dialog()
 
     def _on_temp_btn(self):
-        """Task 3: Enable cooler and set setpoint to -10 °C when temperature button is clicked."""
+        """Enable cooler and set setpoint to -10 °C; syncs Camera tab widgets."""
         cam = self._cam or self._find("CameraSystem")
         if cam is None:
             return
@@ -785,11 +793,12 @@ class AppLayout:
             return
         try:
             andor.set_sensor_cooling_enabled(True)
-            andor.set_temperature_setpoint_c(-10.0)
-            # Sync the cooler checkbox in CameraControls if it exists
             cooler_chk = getattr(cam, "settings_cooler_checkbox_id", None)
             if cooler_chk is not None and dpg.does_item_exist(cooler_chk):
                 dpg.set_value(cooler_chk, True)
+            opt = andor._resolve_temperature_setpoint_option(-10.0)
+            if hasattr(cam, "_on_camera_temp_set_changed"):
+                cam._on_camera_temp_set_changed(None, opt, None)
         except Exception as exc:
             print(f"Warning: could not enable cooler from toolbar button: {exc}")
 

@@ -87,6 +87,21 @@ class PreviewAndorAdapter:
     def coerce_raw_frame_to_storage(self, frame):
         return np.asarray(frame, dtype=self.storage_dtype)
 
+    def get_roi_crop_cpu(self, y1, y2, x1, x2):
+        if y2 <= y1 or x2 <= x1:
+            return None
+        with self.processed_frame_condition:
+            frame = self.processed_frame
+        if frame is None or frame.ndim < 2:
+            return None
+        h, w = frame.shape[:2]
+        yy1, yy2 = max(0, int(y1)), min(h, int(y2))
+        xx1, xx2 = max(0, int(x1)), min(w, int(x2))
+        if yy2 <= yy1 or xx2 <= xx1:
+            return None
+        crop = np.array(frame[yy1:yy2, xx1:xx2], copy=True)
+        return crop if crop.dtype == np.float32 else crop.astype(np.float32)
+
 
 class AcquisitionPreviewWindow:
 
